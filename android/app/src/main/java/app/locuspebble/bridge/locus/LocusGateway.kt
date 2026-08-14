@@ -47,7 +47,11 @@ class LocusGateway(private val context: Context) {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING && current.state != BridgeProtocol.RecordingState.PAUSED) {
                         return BridgeProtocol.Result.INVALID_STATE
                     }
-                    ActionBasics.actionTrackRecordPause(context, version)
+                    when (LocusCommandRouting.actionFor(command, current.state)) {
+                        LocusRecordingAction.PAUSE -> ActionBasics.actionTrackRecordPause(context, version)
+                        LocusRecordingAction.START_OR_RESUME -> ActionBasics.actionTrackRecordStart(context, version)
+                        else -> error("Unexpected pause/resume routing")
+                    }
                 }
                 BridgeProtocol.Command.STOP_SAVE -> {
                     if (current.state == BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
@@ -65,3 +69,30 @@ class LocusGateway(private val context: Context) {
     }
 }
 
+enum class LocusRecordingAction { START_OR_RESUME, PAUSE, STOP_SAVE, ADD_WAYPOINT, INVALID }
+
+object LocusCommandRouting {
+    fun actionFor(
+        command: BridgeProtocol.Command,
+        state: BridgeProtocol.RecordingState,
+    ): LocusRecordingAction = when (command) {
+        BridgeProtocol.Command.START -> if (state == BridgeProtocol.RecordingState.STOPPED) {
+            LocusRecordingAction.START_OR_RESUME
+        } else {
+            LocusRecordingAction.INVALID
+        }
+        BridgeProtocol.Command.PAUSE_RESUME -> when (state) {
+            BridgeProtocol.RecordingState.RECORDING -> LocusRecordingAction.PAUSE
+            BridgeProtocol.RecordingState.PAUSED -> LocusRecordingAction.START_OR_RESUME
+            else -> LocusRecordingAction.INVALID
+        }
+        BridgeProtocol.Command.STOP_SAVE -> if (
+            state == BridgeProtocol.RecordingState.RECORDING || state == BridgeProtocol.RecordingState.PAUSED
+        ) LocusRecordingAction.STOP_SAVE else LocusRecordingAction.INVALID
+        BridgeProtocol.Command.ADD_WAYPOINT -> if (state == BridgeProtocol.RecordingState.RECORDING) {
+            LocusRecordingAction.ADD_WAYPOINT
+        } else {
+            LocusRecordingAction.INVALID
+        }
+    }
+}
