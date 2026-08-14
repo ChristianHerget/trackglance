@@ -199,16 +199,42 @@ static TextLayer *make_text(Layer *root, GRect frame, GFont font, GTextAlignment
 
 static void main_load(Window *window) {
   Layer *root = window_get_root_layer(window);
-  s_status_layer = make_text(root, GRect(2, 0, 140, 20), fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GTextAlignmentCenter);
+  GRect bounds = layer_get_bounds(root);
+#if defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+  const int status_height = 26;
+  GFont status_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  GFont value_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+#else
+  const int status_height = 20;
+  GFont status_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  GFont label_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+  GFont value_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+#endif
+  s_status_layer = make_text(root, GRect(2, 0, bounds.size.w - 4, status_height),
+      status_font, GTextAlignmentCenter);
   const char *labels[] = {"Time", "Distance", "Speed", "Average", "Altitude", "Ascent"};
+#ifdef PBL_ROUND
+  const int content_x = 24;
+  const int content_width = bounds.size.w - 48;
+  const int content_y = 30;
+  const int row_height = (bounds.size.h - 52) / 3;
+#else
+  const int content_x = 0;
+  const int content_width = bounds.size.w;
+  const int content_y = status_height;
+  const int row_height = (bounds.size.h - status_height) / 3;
+#endif
+  const int column_width = content_width / 2;
   for (int i = 0; i < 6; ++i) {
     int col = i % 2, row = i / 2;
-    int x = col * 72, y = 20 + row * 48;
-    s_label_layers[i] = make_text(root, GRect(x + 2, y, 68, 18),
-        fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GTextAlignmentCenter);
+    int x = content_x + col * column_width, y = content_y + row * row_height;
+    s_label_layers[i] = make_text(root, GRect(x + 2, y, column_width - 4, row_height / 2),
+        label_font, GTextAlignmentCenter);
     text_layer_set_text(s_label_layers[i], labels[i]);
-    s_value_layers[i] = make_text(root, GRect(x + 1, y + 14, 70, 30),
-        fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GTextAlignmentCenter);
+    s_value_layers[i] = make_text(root,
+        GRect(x + 1, y + row_height / 3, column_width - 2, row_height * 2 / 3),
+        value_font, GTextAlignmentCenter);
   }
   render();
 }

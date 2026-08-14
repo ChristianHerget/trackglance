@@ -9,7 +9,7 @@
     "displayName": "Locus Bridge",
     "uuid": "51c8d7cf-4cb2-4ef8-98c9-641706feb250",
     "sdkVersion": "3",
-    "targetPlatforms": ["basalt"],
+    "targetPlatforms": ["emery", "gabbro"],
     "watchapp": {"watchface": false},
     "resources": {"media": []},
     "messageKeys": {
@@ -39,4 +39,3 @@
     }
   }
 }
-
