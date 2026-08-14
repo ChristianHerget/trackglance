@@ -1,0 +1,13 @@
+.gradle/
+/build/
+.idea/
+*.iml
+local.properties
+android/.kotlin/
+android/app/build/
+android/build/
+watchapp/build/
+watchapp/node_modules/
+watchapp/.lock-waf_*
+*.pbw
+*.pbl

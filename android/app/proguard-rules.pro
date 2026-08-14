@@ -1,0 +1,2 @@
+-keep class locus.api.objects.** { *; }
+

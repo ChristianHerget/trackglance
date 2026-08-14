@@ -1,0 +1,42 @@
+{
+  "name": "locus-pebble-bridge",
+  "author": "Christian Herget",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": ["locus", "hiking", "fitness"],
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Locus Bridge",
+    "uuid": "51c8d7cf-4cb2-4ef8-98c9-641706feb250",
+    "sdkVersion": "3",
+    "targetPlatforms": ["basalt"],
+    "watchapp": {"watchface": false},
+    "resources": {"media": []},
+    "messageKeys": {
+      "PROTOCOL_VERSION": 0,
+      "MESSAGE_TYPE": 1,
+      "COMMAND_ID": 2,
+      "COMMAND": 3,
+      "RESULT": 4,
+      "RECORDING_STATE": 5,
+      "SAMPLE_EPOCH_SECONDS": 6,
+      "ELAPSED_SECONDS": 10,
+      "DISTANCE_METRES": 11,
+      "CURRENT_SPEED_CMPS": 12,
+      "AVERAGE_SPEED_CMPS": 13,
+      "ALTITUDE_DECIMETRES": 14,
+      "ASCENT_DECIMETRES": 15,
+      "UNIT_SYSTEM": 16
+    },
+    "companionApp": {
+      "android": {
+        "url": "https://github.com/",
+        "apps": [
+          {"package": "app.locuspebble.bridge"},
+          {"package": "app.locuspebble.bridge.debug"}
+        ]
+      }
+    }
+  }
+}
+
