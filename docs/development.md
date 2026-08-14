@@ -77,10 +77,13 @@ if a recording is already active:
 ```sh
 adb connect arc
 ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true
+  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true \
+  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000
 ```
 
 The test waits for and asserts every observable state transition: start, pause, resume, and stop.
+The optional observation delay (capped at ten seconds) keeps each confirmed state visible in the
+Locus UI for manual inspection.
 The watch's waypoint command saves a point named `Pebble waypoint` immediately (`autoSave=true`),
 so it does not require interaction with the phone. It is excluded from the state-transition test
 because the public update container does not expose the active recording's waypoint count.

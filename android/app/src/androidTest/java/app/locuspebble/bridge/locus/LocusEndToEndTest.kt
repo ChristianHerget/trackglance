@@ -44,12 +44,15 @@ class LocusEndToEndTest {
         assertCommand(BridgeProtocol.Command.START)
         testStartedRecording = true
         assertTrue("Locus did not enter recording state", awaitState(BridgeProtocol.RecordingState.RECORDING))
+        pauseForObservation()
 
         assertCommand(BridgeProtocol.Command.PAUSE_RESUME)
         assertTrue("Locus did not pause", awaitState(BridgeProtocol.RecordingState.PAUSED))
+        pauseForObservation()
 
         assertCommand(BridgeProtocol.Command.PAUSE_RESUME)
         assertTrue("Locus did not resume", awaitState(BridgeProtocol.RecordingState.RECORDING))
+        pauseForObservation()
 
         assertCommand(BridgeProtocol.Command.STOP_SAVE)
         assertTrue("Locus did not stop", awaitState(BridgeProtocol.RecordingState.STOPPED))
@@ -58,6 +61,12 @@ class LocusEndToEndTest {
 
     private fun assertCommand(command: BridgeProtocol.Command) {
         assertEquals("Locus rejected $command", BridgeProtocol.Result.OK, gateway.execute(command))
+    }
+
+    private fun pauseForObservation() {
+        val delay = InstrumentationRegistry.getArguments()
+            .getString("observationDelayMillis")?.toLongOrNull() ?: 0L
+        if (delay > 0) Thread.sleep(delay.coerceAtMost(10_000L))
     }
 
     private fun awaitState(expected: BridgeProtocol.RecordingState, timeoutMillis: Long = 15_000): Boolean {
