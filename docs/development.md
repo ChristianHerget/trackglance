@@ -81,6 +81,6 @@ ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
 ```
 
 The test waits for and asserts every observable state transition: start, pause, resume, and stop.
-The watch's waypoint command opens Locus's interactive waypoint editor (`autoSave=false`). It is
-excluded from unattended testing because saving it requires user input and the public update
-container does not expose the active recording's waypoint count.
+The watch's waypoint command saves a point named `Pebble waypoint` immediately (`autoSave=true`),
+so it does not require interaction with the phone. It is excluded from the state-transition test
+because the public update container does not expose the active recording's waypoint count.

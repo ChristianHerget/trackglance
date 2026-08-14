@@ -3,6 +3,7 @@ package app.locuspebble.bridge.locus
 import app.locuspebble.bridge.protocol.BridgeProtocol.Command
 import app.locuspebble.bridge.protocol.BridgeProtocol.RecordingState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocusCommandRoutingTest {
@@ -18,6 +19,7 @@ class LocusCommandRoutingTest {
     }
 
     @Test fun waypointRequiresAnActivelyRecordingTrack() {
+        assertTrue("Watch waypoints must not require the phone", LocusCommandRouting.WAYPOINT_AUTO_SAVE)
         assertEquals(
             LocusRecordingAction.ADD_WAYPOINT,
             LocusCommandRouting.actionFor(Command.ADD_WAYPOINT, RecordingState.RECORDING),

@@ -59,9 +59,12 @@ class LocusGateway(private val context: Context) {
                 }
                 BridgeProtocol.Command.ADD_WAYPOINT -> {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING) return BridgeProtocol.Result.INVALID_STATE
-                    // Interactive mode mirrors Locus's first "add" option and lets the user
-                    // edit the waypoint details on the phone before saving.
-                    ActionBasics.actionTrackRecordAddWpt(context, version, "Pebble waypoint", false)
+                    ActionBasics.actionTrackRecordAddWpt(
+                        context,
+                        version,
+                        "Pebble waypoint",
+                        LocusCommandRouting.WAYPOINT_AUTO_SAVE,
+                    )
                 }
             }
             BridgeProtocol.Result.OK
@@ -74,6 +77,8 @@ class LocusGateway(private val context: Context) {
 enum class LocusRecordingAction { START_OR_RESUME, PAUSE, STOP_SAVE, ADD_WAYPOINT, INVALID }
 
 object LocusCommandRouting {
+    const val WAYPOINT_AUTO_SAVE = true
+
     fun actionFor(
         command: BridgeProtocol.Command,
         state: BridgeProtocol.RecordingState,

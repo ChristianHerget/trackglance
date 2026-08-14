@@ -34,6 +34,9 @@ static uint32_t s_next_command_id;
 static uint32_t s_session_id;
 static char s_values[6][20];
 static char s_status[32] = "Connecting...";
+static char s_notice[32];
+static time_t s_notice_until;
+static int s_pending_command;
 
 static int32_t tuple_int(DictionaryIterator *iter, uint32_t key, int32_t fallback) {
   Tuple *tuple = dict_find(iter, key);
@@ -46,7 +49,11 @@ static void render(void) {
   const char *state = s_snapshot.state == STATE_RECORDING ? "Recording" :
       s_snapshot.state == STATE_PAUSED ? "Paused" :
       s_snapshot.state == STATE_STOPPED ? "Stopped" : "No Locus";
-  snprintf(s_status, sizeof(s_status), "%s%s", state, stale ? " | stale" : "");
+  if (now < s_notice_until) {
+    snprintf(s_status, sizeof(s_status), "%s", s_notice);
+  } else {
+    snprintf(s_status, sizeof(s_status), "%s%s", state, stale ? " | stale" : "");
+  }
   text_layer_set_text(s_status_layer, s_status);
 
   uint32_t elapsed = s_snapshot.elapsed_seconds;
@@ -84,7 +91,10 @@ static void send_message(int message_type, int command) {
 }
 
 static void send_command(int command) {
-  snprintf(s_status, sizeof(s_status), "Sending...");
+  s_pending_command = command;
+  snprintf(s_notice, sizeof(s_notice), "Sending...");
+  s_notice_until = time(NULL) + 5;
+  snprintf(s_status, sizeof(s_status), "%s", s_notice);
   text_layer_set_text(s_status_layer, s_status);
   send_message(MSG_COMMAND, command);
   window_stack_pop(true);
@@ -182,7 +192,15 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   } else if (type == MSG_COMMAND_RESULT) {
     int result = tuple_int(iter, MESSAGE_KEY_RESULT, 3);
     vibes_short_pulse();
-    snprintf(s_status, sizeof(s_status), result == 0 ? "Command accepted" : "Command failed (%d)", result);
+    if (result == 0 && s_pending_command == CMD_ADD_WAYPOINT) {
+      snprintf(s_notice, sizeof(s_notice), "Waypoint added");
+    } else if (result == 0) {
+      snprintf(s_notice, sizeof(s_notice), "Command accepted");
+    } else {
+      snprintf(s_notice, sizeof(s_notice), "Command failed (%d)", result);
+    }
+    s_notice_until = time(NULL) + 3;
+    snprintf(s_status, sizeof(s_status), "%s", s_notice);
     text_layer_set_text(s_status_layer, s_status);
   }
 }
