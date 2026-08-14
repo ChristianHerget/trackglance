@@ -30,7 +30,7 @@ static SimpleMenuItem s_confirm_items[2];
 static SimpleMenuSection s_menu_section;
 static SimpleMenuSection s_confirm_section;
 static Snapshot s_snapshot = {.state = STATE_UNAVAILABLE};
-static uint32_t s_next_command_id = 1;
+static uint32_t s_next_command_id;
 static char s_values[6][20];
 static char s_status[32] = "Connecting...";
 
@@ -252,6 +252,9 @@ static void controls_unload(Window *window) {
 }
 
 static void init(void) {
+  // Include the launch time so Android cannot confuse commands from a newly
+  // opened watchapp with IDs retained from an earlier session.
+  s_next_command_id = (uint32_t)time(NULL);
   s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers){.load = main_load, .unload = main_unload});
   window_set_click_config_provider(s_main_window, main_click_config);

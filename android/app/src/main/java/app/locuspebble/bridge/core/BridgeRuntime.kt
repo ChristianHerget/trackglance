@@ -36,6 +36,7 @@ class BridgeRuntime private constructor(context: Context) {
         if (updateJob?.isActive == true) return
         transitioningUntil = System.currentTimeMillis() + 15_000
         updateJob = scope.launch {
+            commandMutex.withLock { commandResults.clear() }
             while (isActive) {
                 refresh()
                 val policy = RefreshPolicy(Preferences.refreshMode(appContext))
