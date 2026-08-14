@@ -61,3 +61,26 @@ End-to-end acceptance requires snapshots and all four controls to round-trip thr
 the Android bridge, and Locus. Physical Bluetooth, GPS, battery, and background-restriction tests
 remain a later hardware smoke test.
 
+## Locus integration tests
+
+Normal verification compiles the instrumentation test but does not change Locus data:
+
+```sh
+./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
+  :android:app:compileDebugAndroidTestKotlin
+```
+
+The real Locus contract test is deliberately opt-in. It requires an idle Locus Map installation,
+creates a short recording using Locus's active profile, and saves the recording. It refuses to run
+if a recording is already active:
+
+```sh
+adb connect arc
+ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true
+```
+
+The test waits for and asserts every observable state transition: start, pause, resume, and stop.
+The watch's waypoint command opens Locus's interactive waypoint editor (`autoSave=false`). It is
+excluded from unattended testing because saving it requires user input and the public update
+container does not expose the active recording's waypoint count.

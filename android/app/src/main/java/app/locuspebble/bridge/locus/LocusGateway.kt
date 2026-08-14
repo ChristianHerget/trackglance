@@ -59,7 +59,9 @@ class LocusGateway(private val context: Context) {
                 }
                 BridgeProtocol.Command.ADD_WAYPOINT -> {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING) return BridgeProtocol.Result.INVALID_STATE
-                    ActionBasics.actionTrackRecordAddWpt(context, version, "Pebble waypoint", true)
+                    // Interactive mode mirrors Locus's first "add" option and lets the user
+                    // edit the waypoint details on the phone before saving.
+                    ActionBasics.actionTrackRecordAddWpt(context, version, "Pebble waypoint", false)
                 }
             }
             BridgeProtocol.Result.OK
