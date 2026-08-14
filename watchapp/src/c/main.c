@@ -23,10 +23,12 @@ static Window *s_confirm_window;
 static TextLayer *s_status_layer;
 static TextLayer *s_label_layers[6];
 static TextLayer *s_value_layers[6];
-static TextLayer *s_confirm_layer;
 static SimpleMenuLayer *s_simple_menu;
+static SimpleMenuLayer *s_confirm_menu;
 static SimpleMenuItem s_menu_items[4];
+static SimpleMenuItem s_confirm_items[2];
 static SimpleMenuSection s_menu_section;
+static SimpleMenuSection s_confirm_section;
 static Snapshot s_snapshot = {.state = STATE_UNAVAILABLE};
 static uint32_t s_next_command_id = 1;
 static char s_values[6][20];
@@ -83,7 +85,7 @@ static void send_command(int command) {
   snprintf(s_status, sizeof(s_status), "Sending...");
   text_layer_set_text(s_status_layer, s_status);
   send_message(MSG_COMMAND, command);
-  if (s_controls_window) window_stack_pop(true);
+  window_stack_pop(true);
 }
 
 static void control_selected(int index, void *context) {
@@ -136,13 +138,30 @@ static void main_click_config(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, main_select);
 }
 
-static void confirm_select(ClickRecognizerRef recognizer, void *context) {
-  window_stack_pop(true);
-  send_command(CMD_STOP_SAVE);
+static void confirm_selected(int index, void *context) {
+  if (index == 0) {
+    window_stack_pop(false);
+    send_command(CMD_STOP_SAVE);
+  } else {
+    window_stack_pop(true);
+  }
 }
 
-static void confirm_click_config(void *context) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, confirm_select);
+static void confirm_load(Window *window) {
+  s_confirm_items[0] = (SimpleMenuItem){
+      .title = "Save & stop", .subtitle = "Finish the recording", .callback = confirm_selected};
+  s_confirm_items[1] = (SimpleMenuItem){
+      .title = "Cancel", .subtitle = "Keep recording", .callback = confirm_selected};
+  s_confirm_section = (SimpleMenuSection){
+      .title = "Stop recording?", .num_items = 2, .items = s_confirm_items};
+  s_confirm_menu = simple_menu_layer_create(
+      layer_get_bounds(window_get_root_layer(window)), window, &s_confirm_section, 1, NULL);
+  layer_add_child(window_get_root_layer(window), simple_menu_layer_get_layer(s_confirm_menu));
+}
+
+static void confirm_unload(Window *window) {
+  simple_menu_layer_destroy(s_confirm_menu);
+  s_confirm_menu = NULL;
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
@@ -181,12 +200,12 @@ static TextLayer *make_text(Layer *root, GRect frame, GFont font, GTextAlignment
 static void main_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   s_status_layer = make_text(root, GRect(2, 0, 140, 20), fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GTextAlignmentCenter);
-  const char *labels[] = {"TIME", "DISTANCE", "SPEED", "AVERAGE", "ALTITUDE", "ASCENT"};
+  const char *labels[] = {"Time", "Distance", "Speed", "Average", "Altitude", "Ascent"};
   for (int i = 0; i < 6; ++i) {
     int col = i % 2, row = i / 2;
     int x = col * 72, y = 20 + row * 48;
-    s_label_layers[i] = make_text(root, GRect(x + 2, y, 68, 16),
-        fonts_get_system_font(FONT_KEY_GOTHIC_14), GTextAlignmentCenter);
+    s_label_layers[i] = make_text(root, GRect(x + 2, y, 68, 18),
+        fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GTextAlignmentCenter);
     text_layer_set_text(s_label_layers[i], labels[i]);
     s_value_layers[i] = make_text(root, GRect(x + 1, y + 14, 70, 30),
         fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), GTextAlignmentCenter);
@@ -206,14 +225,6 @@ static void controls_unload(Window *window) {
   if (s_simple_menu) { simple_menu_layer_destroy(s_simple_menu); s_simple_menu = NULL; }
 }
 
-static void confirm_load(Window *window) {
-  s_confirm_layer = make_text(window_get_root_layer(window), GRect(10, 35, 124, 90),
-      fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), GTextAlignmentCenter);
-  text_layer_set_text(s_confirm_layer, "Stop and save?\n\nSelect: yes");
-}
-
-static void confirm_unload(Window *window) { text_layer_destroy(s_confirm_layer); }
-
 static void init(void) {
   s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers){.load = main_load, .unload = main_unload});
@@ -222,7 +233,6 @@ static void init(void) {
   window_set_window_handlers(s_controls_window, (WindowHandlers){.unload = controls_unload});
   s_confirm_window = window_create();
   window_set_window_handlers(s_confirm_window, (WindowHandlers){.load = confirm_load, .unload = confirm_unload});
-  window_set_click_config_provider(s_confirm_window, confirm_click_config);
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(512, 128);
