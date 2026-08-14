@@ -23,12 +23,13 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             return ReceiveResult.Ack
         }
         if (type != BridgeProtocol.MessageType.COMMAND.wire) return ReceiveResult.Nack
+        val sessionId = PebbleMessages.integer(data, BridgeProtocol.Key.SESSION_ID) ?: return ReceiveResult.Nack
         val id = PebbleMessages.integer(data, BridgeProtocol.Key.COMMAND_ID) ?: return ReceiveResult.Nack
         val wireCommand = PebbleMessages.integer(data, BridgeProtocol.Key.COMMAND)?.toInt()
             ?: return ReceiveResult.Nack
         val command = BridgeProtocol.Command.entries.firstOrNull { it.wire == wireCommand }
             ?: return ReceiveResult.Nack
-        BridgeRuntime.get(this).handleCommand(id, command)
+        BridgeRuntime.get(this).handleCommand(sessionId, id, command)
         return ReceiveResult.Ack
     }
 
@@ -40,4 +41,3 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         if (watchappUUID == BridgeProtocol.APP_UUID) BridgeRuntime.get(this).watchAppClosed()
     }
 }
-

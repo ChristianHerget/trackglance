@@ -31,6 +31,7 @@ static SimpleMenuSection s_menu_section;
 static SimpleMenuSection s_confirm_section;
 static Snapshot s_snapshot = {.state = STATE_UNAVAILABLE};
 static uint32_t s_next_command_id;
+static uint32_t s_session_id;
 static char s_values[6][20];
 static char s_status[32] = "Connecting...";
 
@@ -72,10 +73,11 @@ static void render(void) {
 static void send_message(int message_type, int command) {
   DictionaryIterator *iter;
   if (app_message_outbox_begin(&iter) != APP_MSG_OK) return;
-  dict_write_int32(iter, MESSAGE_KEY_PROTOCOL_VERSION, 1);
+  dict_write_int32(iter, MESSAGE_KEY_PROTOCOL_VERSION, 2);
   dict_write_int32(iter, MESSAGE_KEY_MESSAGE_TYPE, message_type);
   if (message_type == MSG_COMMAND) {
     dict_write_uint32(iter, MESSAGE_KEY_COMMAND_ID, s_next_command_id++);
+    dict_write_uint32(iter, MESSAGE_KEY_SESSION_ID, s_session_id);
     dict_write_int32(iter, MESSAGE_KEY_COMMAND, command);
   }
   app_message_outbox_send();
@@ -165,7 +167,7 @@ static void confirm_unload(Window *window) {
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
-  if (tuple_int(iter, MESSAGE_KEY_PROTOCOL_VERSION, 0) != 1) return;
+  if (tuple_int(iter, MESSAGE_KEY_PROTOCOL_VERSION, 0) != 2) return;
   int type = tuple_int(iter, MESSAGE_KEY_MESSAGE_TYPE, 0);
   if (type == MSG_SNAPSHOT) {
     s_snapshot.state = tuple_int(iter, MESSAGE_KEY_RECORDING_STATE, STATE_UNAVAILABLE);
@@ -254,7 +256,8 @@ static void controls_unload(Window *window) {
 static void init(void) {
   // Include the launch time so Android cannot confuse commands from a newly
   // opened watchapp with IDs retained from an earlier session.
-  s_next_command_id = (uint32_t)time(NULL);
+  s_session_id = (uint32_t)time(NULL);
+  s_next_command_id = 1;
   s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers){.load = main_load, .unload = main_unload});
   window_set_click_config_provider(s_main_window, main_click_config);

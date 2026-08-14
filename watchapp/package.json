@@ -20,6 +20,7 @@
       "RESULT": 4,
       "RECORDING_STATE": 5,
       "SAMPLE_EPOCH_SECONDS": 6,
+      "SESSION_ID": 7,
       "ELAPSED_SECONDS": 10,
       "DISTANCE_METRES": 11,
       "CURRENT_SPEED_CMPS": 12,

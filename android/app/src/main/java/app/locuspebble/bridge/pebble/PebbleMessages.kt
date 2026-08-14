@@ -22,10 +22,11 @@ object PebbleMessages {
         BridgeProtocol.Key.UNIT_SYSTEM.toUInt() to i(value.unitSystem.wire),
     )
 
-    fun result(commandId: Long, result: BridgeProtocol.Result): PebbleDictionary = mapOf(
+    fun result(sessionId: Long, commandId: Long, result: BridgeProtocol.Result): PebbleDictionary = mapOf(
         BridgeProtocol.Key.VERSION.toUInt() to i(BridgeProtocol.VERSION),
         BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to i(BridgeProtocol.MessageType.COMMAND_RESULT.wire),
         BridgeProtocol.Key.COMMAND_ID.toUInt() to u(commandId),
+        BridgeProtocol.Key.SESSION_ID.toUInt() to u(sessionId),
         BridgeProtocol.Key.RESULT.toUInt() to i(result.wire),
     )
 
@@ -41,4 +42,3 @@ object PebbleMessages {
         else -> null
     }
 }
-

@@ -3,7 +3,7 @@ package app.locuspebble.bridge.protocol
 import kotlin.math.roundToInt
 
 object BridgeProtocol {
-    const val VERSION = 1
+    const val VERSION = 2
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
     object Key {
@@ -14,6 +14,7 @@ object BridgeProtocol {
         const val RESULT = 4
         const val RECORDING_STATE = 5
         const val SAMPLE_EPOCH_SECONDS = 6
+        const val SESSION_ID = 7
         const val ELAPSED_SECONDS = 10
         const val DISTANCE_METRES = 11
         const val CURRENT_SPEED_CMPS = 12
@@ -47,4 +48,3 @@ object BridgeProtocol {
         fun ascentWire() = (ascentMetres.coerceAtLeast(0f) * 10).roundToInt()
     }
 }
-

@@ -24,11 +24,7 @@ class BridgeRuntime private constructor(context: Context) {
     private val sender = DefaultPebbleSender(appContext)
     private var updateJob: Job? = null
     private val commandMutex = Mutex()
-    private val commandResults = object : LinkedHashMap<Long, BridgeProtocol.Result>(32, 0.75f, true) {
-        override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<Long, BridgeProtocol.Result>,
-        ): Boolean = size > 32
-    }
+    private val commandResults = CommandResultCache()
     @Volatile private var transitioningUntil = 0L
 
     fun watchAppOpened() {
@@ -36,7 +32,6 @@ class BridgeRuntime private constructor(context: Context) {
         if (updateJob?.isActive == true) return
         transitioningUntil = System.currentTimeMillis() + 15_000
         updateJob = scope.launch {
-            commandMutex.withLock { commandResults.clear() }
             while (isActive) {
                 refresh()
                 val policy = RefreshPolicy(Preferences.refreshMode(appContext))
@@ -51,15 +46,18 @@ class BridgeRuntime private constructor(context: Context) {
         BridgeState.update { it.copy(watchAppOpen = false) }
     }
 
-    suspend fun handleCommand(commandId: Long, command: BridgeProtocol.Command) {
+    suspend fun handleCommand(sessionId: Long, commandId: Long, command: BridgeProtocol.Command) {
         val result = commandMutex.withLock {
-            commandResults[commandId] ?: run {
+            commandResults.get(sessionId, commandId) ?: run {
                 transitioningUntil = System.currentTimeMillis() + 15_000
                 withContext(Dispatchers.IO) { locus.execute(command) }
-                    .also { commandResults[commandId] = it }
+                    .also { commandResults.put(sessionId, commandId, it) }
             }
         }
-        sender.sendDataToPebble(BridgeProtocol.APP_UUID, PebbleMessages.result(commandId, result))
+        sender.sendDataToPebble(
+            BridgeProtocol.APP_UUID,
+            PebbleMessages.result(sessionId, commandId, result),
+        )
         refresh()
     }
 
