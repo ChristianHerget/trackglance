@@ -7,6 +7,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProfileProtocolTest {
+    @Test fun profileTransferDistinguishesEmptyLocusResultFromProfiles() {
+        assertEquals(BridgeProtocol.Result.FAILED, BridgeProtocol.profileListResult(""))
+        assertEquals(BridgeProtocol.Result.OK, BridgeProtocol.profileListResult("Wandern"))
+    }
+
     @Test fun profileNamesAndCaseInsensitiveMatchingAreValidated() {
         assertTrue(BridgeProtocol.validProfileName("Trail run"))
         assertFalse(BridgeProtocol.validProfileName(""))
@@ -14,6 +19,15 @@ class ProfileProtocolTest {
         assertFalse(BridgeProtocol.validProfileName("bad|name"))
         assertEquals("HIKING", BridgeProtocol.autoMatchProfile("hiking", listOf("HIKING", "Bike")))
         assertNull(BridgeProtocol.autoMatchProfile("Run", listOf("Hiking")))
+        assertTrue(BridgeProtocol.validLocusProfileName("A very long exact Locus profile name Ä"))
+    }
+
+    @Test fun profileChunksPreserveExactUnicodeNamesAndByteBoundaries() {
+        val names = listOf("A very long exact Locus profile name", "Wandern ÄÖÜ 🥾", "Running")
+        val chunks = BridgeProtocol.utf8Chunks(names.joinToString("\n"), 12)
+        val payload = chunks.joinToString("")
+        assertEquals(names.joinToString("\n"), payload)
+        chunks.forEach { assertTrue(it.toByteArray(Charsets.UTF_8).size <= 12) }
     }
 
     @Test fun chunksOnlyPublishACompleteConsistentTransfer() {

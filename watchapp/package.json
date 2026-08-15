@@ -1,11 +1,11 @@
 {
   "name": "locus-pebble-bridge",
   "author": "Christian Herget",
-  "version": "0.1.1",
+  "version": "0.1.4",
   "private": true,
   "keywords": ["locus", "hiking", "fitness"],
   "scripts": {
-    "test": "node test/config.test.js"
+    "test": "node test/config.test.js && node test/watch_stack.test.js"
   },
   "dependencies": {},
   "devDependencies": {
@@ -55,7 +55,8 @@
       "CHUNK_COUNT": 31,
       "CHUNK_DATA": 32,
       "TRANSFER_ID": 33,
-      "LOCUS_MODE": 34
+      "LOCUS_MODE": 34,
+      "APP_VERSION": 35
     },
     "companionApp": {
       "android": {

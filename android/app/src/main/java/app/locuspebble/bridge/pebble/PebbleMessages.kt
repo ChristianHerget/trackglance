@@ -1,5 +1,6 @@
 package app.locuspebble.bridge.pebble
 
+import app.locuspebble.bridge.BuildConfig
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
@@ -11,6 +12,7 @@ object PebbleMessages {
 
     fun snapshot(value: BridgeProtocol.Snapshot): PebbleDictionary = mapOf(
         BridgeProtocol.Key.VERSION.toUInt() to i(BridgeProtocol.VERSION),
+        BridgeProtocol.Key.APP_VERSION.toUInt() to text(BuildConfig.VERSION_NAME),
         BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to i(BridgeProtocol.MessageType.SNAPSHOT.wire),
         BridgeProtocol.Key.RECORDING_STATE.toUInt() to i(value.state.wire),
         BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS.toUInt() to u(value.sampledAtEpochSeconds),
@@ -38,6 +40,7 @@ object PebbleMessages {
 
     fun result(sessionId: Long, commandId: Long, result: BridgeProtocol.Result): PebbleDictionary = mapOf(
         BridgeProtocol.Key.VERSION.toUInt() to i(BridgeProtocol.VERSION),
+        BridgeProtocol.Key.APP_VERSION.toUInt() to text(BuildConfig.VERSION_NAME),
         BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to i(BridgeProtocol.MessageType.COMMAND_RESULT.wire),
         BridgeProtocol.Key.COMMAND_ID.toUInt() to u(commandId),
         BridgeProtocol.Key.SESSION_ID.toUInt() to u(sessionId),
@@ -60,15 +63,21 @@ object PebbleMessages {
         (dictionary[key.toUInt()] as? PebbleDictionaryItem.Text)?.value
 
     fun profileListChunks(names: List<String>, transferId: Int, chunkBytes: Int = 80): List<PebbleDictionary> {
-        val payload = names.joinToString("\n") { it.replace("\n", " ").take(BridgeProtocol.MAX_PROFILE_NAME_LENGTH) }
-        val chunks = if (payload.isEmpty()) listOf("") else payload.chunked(chunkBytes)
+        require(chunkBytes > 0)
+        val payload = names.filter { BridgeProtocol.validLocusProfileName(it) }.distinct().joinToString("\n")
+        val chunks = BridgeProtocol.utf8Chunks(payload, chunkBytes)
         return chunks.mapIndexed { index, chunk -> mapOf(
             BridgeProtocol.Key.VERSION.toUInt() to i(BridgeProtocol.VERSION),
+            BridgeProtocol.Key.APP_VERSION.toUInt() to text(BuildConfig.VERSION_NAME),
             BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to i(BridgeProtocol.MessageType.PROFILE_LIST_CHUNK.wire),
+            BridgeProtocol.Key.RESULT.toUInt() to i(
+                BridgeProtocol.profileListResult(payload).wire,
+            ),
             BridgeProtocol.Key.TRANSFER_ID.toUInt() to i(transferId),
             BridgeProtocol.Key.CHUNK_INDEX.toUInt() to i(index),
             BridgeProtocol.Key.CHUNK_COUNT.toUInt() to i(chunks.size),
             BridgeProtocol.Key.CHUNK_DATA.toUInt() to text(chunk),
         ) }
     }
+
 }

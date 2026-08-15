@@ -49,9 +49,14 @@ class LocusGateway(private val context: Context) {
     }
 
     fun recordingProfiles(): List<String> {
-        val version = activeVersion() ?: return emptyList()
-        return runCatching { ActionBasics.getTrackRecordingProfiles(context, version).map { it.name } }
-            .getOrDefault(emptyList()).filter { it.isNotBlank() }.distinct()
+        val versions = listOfNotNull(activeVersion()) + LocusUtils.getAvailableVersions(context)
+        return versions.distinctBy { it.packageName }.firstNotNullOfOrNull { version ->
+            runCatching { ActionBasics.getTrackRecordingProfiles(context, version).map { it.name } }
+                .getOrDefault(emptyList())
+                .filter { BridgeProtocol.validLocusProfileName(it) }
+                .distinct()
+                .takeIf { it.isNotEmpty() }
+        }.orEmpty()
     }
 
     fun execute(command: BridgeProtocol.Command, profileName: String? = null): BridgeProtocol.Result {
@@ -61,7 +66,7 @@ class LocusGateway(private val context: Context) {
             when (command) {
                 BridgeProtocol.Command.START -> {
                     if (current.state != BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
-                    if (!BridgeProtocol.validProfileName(profileName)) return BridgeProtocol.Result.INVALID_PROFILE
+                    if (!BridgeProtocol.validLocusProfileName(profileName)) return BridgeProtocol.Result.INVALID_PROFILE
                     val installedName = BridgeProtocol.autoMatchProfile(profileName!!, recordingProfiles())
                         ?: return BridgeProtocol.Result.PROFILE_NOT_FOUND
                     ActionBasics.actionTrackRecordStart(context, version, installedName)

@@ -78,13 +78,30 @@ class MainActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text("Locus Pebble Bridge", style = MaterialTheme.typography.headlineSmall)
+                Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusLine("Pebble watchapp", if (status.watchAppOpen) "Open" else "Closed")
                         StatusLine("Pebble/Core app", status.pebbleAppPackage ?: "Not selected")
                         StatusLine("Pebble watch", if (status.watchConnected) "Connected" else "Not connected")
+                        StatusLine(
+                            "Watchapp version",
+                            status.watchVersion?.let { version ->
+                                if (version == BuildConfig.VERSION_NAME) version
+                                else "$version (expected ${BuildConfig.VERSION_NAME})"
+                            } ?: "Not reported",
+                        )
                         StatusLine("Locus Map", if (status.locusAvailable) "Available" else "Unavailable")
                         StatusLine("Recording", status.recordingState.label())
+                        StatusLine(
+                            "Locus profiles",
+                            status.locusProfiles?.let { profiles ->
+                                if (profiles.isEmpty()) "None returned" else "${profiles.size}: ${profiles.joinToString()}"
+                            } ?: "Not queried",
+                        )
+                        StatusLine("Last profile request", status.lastProfileRequestEpochMillis?.let {
+                            DateFormat.getTimeInstance().format(Date(it))
+                        } ?: "Never")
                         StatusLine("Last update", status.lastUpdateEpochMillis?.let {
                             DateFormat.getTimeInstance().format(Date(it))
                         } ?: "Never")

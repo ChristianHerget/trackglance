@@ -63,6 +63,13 @@ class BridgeRuntime private constructor(context: Context) {
 
     suspend fun sendRecordingProfiles() {
         val names = withContext(Dispatchers.IO) { locus.recordingProfiles() }
+        BridgeState.update {
+            it.copy(
+                locusProfiles = names,
+                lastProfileRequestEpochMillis = System.currentTimeMillis(),
+                lastError = if (names.isEmpty()) "Locus returned no recording profiles" else null,
+            )
+        }
         PebbleMessages.profileListChunks(names, (System.currentTimeMillis() and 0x7fffffff).toInt())
             .forEach { sender.sendDataToPebble(BridgeProtocol.APP_UUID, it) }
     }

@@ -49,6 +49,10 @@ Use JUnit 4. Name tests after observable behavior, for example
 deduplication, wire scaling, and platform packaging. Locus broadcasts do not acknowledge application;
 integration tests must poll and assert the resulting recording state.
 
+A successful Pebble build is not a runtime check. Keep large C buffers out of function-local stack
+storage, run `npm test`, and smoke-test launch plus settings opening on both Emery and Gabbro QEMU
+before declaring watch changes complete. Static stack checks complement, but do not replace, QEMU.
+
 ## Commit & Pull Request Guidelines
 
 History uses short imperative subjects such as `Route resume through Locus start action`. Keep each

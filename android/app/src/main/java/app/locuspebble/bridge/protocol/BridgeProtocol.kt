@@ -6,6 +6,7 @@ object BridgeProtocol {
     const val VERSION = 3
     const val UNAVAILABLE = Int.MIN_VALUE
     const val MAX_PROFILE_NAME_LENGTH = 20
+    const val MAX_LOCUS_PROFILE_NAME_BYTES = 255
     const val MAX_PROFILES = 8
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
@@ -45,6 +46,7 @@ object BridgeProtocol {
         const val CHUNK_DATA = 32
         const val TRANSFER_ID = 33
         const val LOCUS_MODE = 34
+        const val APP_VERSION = 35
     }
 
     enum class MessageType(val wire: Int) {
@@ -68,8 +70,33 @@ object BridgeProtocol {
         name.isNotBlank() && name.length <= MAX_PROFILE_NAME_LENGTH &&
         name.none { it.code < 0x20 || it == '|' || it == '\n' || it == '\r' }
 
+    fun validLocusProfileName(name: String?): Boolean = name != null && name.isNotBlank() &&
+        name.toByteArray(Charsets.UTF_8).size <= MAX_LOCUS_PROFILE_NAME_BYTES &&
+        name.none { it == '\n' || it == '\r' || it == '|' || it.code < 0x20 }
+
     fun autoMatchProfile(wanted: String, installed: List<String>): String? =
         installed.firstOrNull { it.equals(wanted.trim(), ignoreCase = true) }
+
+    fun profileListResult(payload: String): Result =
+        if (payload.isEmpty()) Result.FAILED else Result.OK
+
+    fun utf8Chunks(value: String, maxBytes: Int): List<String> {
+        require(maxBytes > 0)
+        if (value.isEmpty()) return listOf("")
+        val result = mutableListOf<String>()
+        val current = StringBuilder()
+        var bytes = 0
+        value.codePoints().forEach { codePoint ->
+            val character = String(Character.toChars(codePoint))
+            val size = character.toByteArray(Charsets.UTF_8).size
+            if (bytes + size > maxBytes && current.isNotEmpty()) {
+                result += current.toString(); current.clear(); bytes = 0
+            }
+            current.append(character); bytes += size
+        }
+        if (current.isNotEmpty()) result += current.toString()
+        return result
+    }
 
     data class Snapshot(
         val state: RecordingState,

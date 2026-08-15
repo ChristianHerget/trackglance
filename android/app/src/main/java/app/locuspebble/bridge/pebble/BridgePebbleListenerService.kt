@@ -1,5 +1,7 @@
 package app.locuspebble.bridge.pebble
 
+import app.locuspebble.bridge.BuildConfig
+import app.locuspebble.bridge.core.BridgeState
 import app.locuspebble.bridge.core.BridgeRuntime
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.BasePebbleListenerService
@@ -16,8 +18,17 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
     ): ReceiveResult {
         if (watchappUUID != BridgeProtocol.APP_UUID) return ReceiveResult.Nack
         val version = PebbleMessages.integer(data, BridgeProtocol.Key.VERSION)?.toInt()
+        val appVersion = PebbleMessages.string(data, BridgeProtocol.Key.APP_VERSION)
         val type = PebbleMessages.integer(data, BridgeProtocol.Key.MESSAGE_TYPE)?.toInt()
         if (version != BridgeProtocol.VERSION) return ReceiveResult.Nack
+        BridgeState.update {
+            it.copy(
+                watchVersion = appVersion,
+                lastError = if (appVersion == BuildConfig.VERSION_NAME) it.lastError
+                    else "Incompatible watchapp ${appVersion ?: "version not reported"}; expected ${BuildConfig.VERSION_NAME}",
+            )
+        }
+        if (appVersion != BuildConfig.VERSION_NAME) return ReceiveResult.Nack
         if (type == BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire) {
             BridgeRuntime.get(this).refresh()
             return ReceiveResult.Ack

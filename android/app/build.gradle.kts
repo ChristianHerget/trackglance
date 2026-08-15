@@ -12,8 +12,8 @@ android {
         applicationId = "app.locuspebble.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 5
+        versionName = "0.1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -28,7 +28,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 kotlin { jvmToolchain(17) }
