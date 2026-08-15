@@ -46,11 +46,11 @@ class BridgeRuntime private constructor(context: Context) {
         BridgeState.update { it.copy(watchAppOpen = false) }
     }
 
-    suspend fun handleCommand(sessionId: Long, commandId: Long, command: BridgeProtocol.Command) {
+    suspend fun handleCommand(sessionId: Long, commandId: Long, command: BridgeProtocol.Command, profileName: String?) {
         val result = commandMutex.withLock {
             commandResults.get(sessionId, commandId) ?: run {
                 transitioningUntil = System.currentTimeMillis() + 15_000
-                withContext(Dispatchers.IO) { locus.execute(command) }
+                withContext(Dispatchers.IO) { locus.execute(command, profileName) }
                     .also { commandResults.put(sessionId, commandId, it) }
             }
         }
@@ -59,6 +59,12 @@ class BridgeRuntime private constructor(context: Context) {
             PebbleMessages.result(sessionId, commandId, result),
         )
         refresh()
+    }
+
+    suspend fun sendRecordingProfiles() {
+        val names = withContext(Dispatchers.IO) { locus.recordingProfiles() }
+        PebbleMessages.profileListChunks(names, (System.currentTimeMillis() and 0x7fffffff).toInt())
+            .forEach { sender.sendDataToPebble(BridgeProtocol.APP_UUID, it) }
     }
 
     suspend fun refresh() {

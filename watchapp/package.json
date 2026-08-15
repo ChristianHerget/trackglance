@@ -1,16 +1,24 @@
 {
   "name": "locus-pebble-bridge",
   "author": "Christian Herget",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "keywords": ["locus", "hiking", "fitness"],
+  "scripts": {
+    "test": "node test/config.test.js"
+  },
   "dependencies": {},
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  },
   "pebble": {
     "displayName": "Locus Bridge",
     "uuid": "51c8d7cf-4cb2-4ef8-98c9-641706feb250",
     "sdkVersion": "3",
+    "enableMultiJS": true,
     "targetPlatforms": ["emery", "gabbro"],
     "watchapp": {"watchface": false},
+    "capabilities": ["configurable"],
     "resources": {"media": []},
     "messageKeys": {
       "PROTOCOL_VERSION": 0,
@@ -21,13 +29,33 @@
       "RECORDING_STATE": 5,
       "SAMPLE_EPOCH_SECONDS": 6,
       "SESSION_ID": 7,
+      "PROFILE_NAME": 8,
+      "LOCUS_PROFILE_NAME": 9,
       "ELAPSED_SECONDS": 10,
       "DISTANCE_METRES": 11,
       "CURRENT_SPEED_CMPS": 12,
       "AVERAGE_SPEED_CMPS": 13,
       "ALTITUDE_DECIMETRES": 14,
       "ASCENT_DECIMETRES": 15,
-      "UNIT_SYSTEM": 16
+      "UNIT_SYSTEM": 16,
+      "MOVING_SECONDS": 17,
+      "MOVING_DISTANCE_METRES": 18,
+      "MAX_SPEED_CMPS": 19,
+      "DESCENT_DECIMETRES": 20,
+      "VERTICAL_SPEED_CMPS": 21,
+      "SLOPE_TENTHS_PERCENT": 22,
+      "AVERAGE_HEART_RATE": 23,
+      "MAX_HEART_RATE": 24,
+      "AVERAGE_CADENCE": 25,
+      "MAX_CADENCE": 26,
+      "AVERAGE_POWER": 27,
+      "MAX_POWER": 28,
+      "ENERGY_KCAL": 29,
+      "CHUNK_INDEX": 30,
+      "CHUNK_COUNT": 31,
+      "CHUNK_DATA": 32,
+      "TRANSFER_ID": 33,
+      "LOCUS_MODE": 34
     },
     "companionApp": {
       "android": {

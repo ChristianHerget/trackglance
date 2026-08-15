@@ -22,6 +22,10 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             BridgeRuntime.get(this).refresh()
             return ReceiveResult.Ack
         }
+        if (type == BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire) {
+            BridgeRuntime.get(this).sendRecordingProfiles()
+            return ReceiveResult.Ack
+        }
         if (type != BridgeProtocol.MessageType.COMMAND.wire) return ReceiveResult.Nack
         val sessionId = PebbleMessages.integer(data, BridgeProtocol.Key.SESSION_ID) ?: return ReceiveResult.Nack
         val id = PebbleMessages.integer(data, BridgeProtocol.Key.COMMAND_ID) ?: return ReceiveResult.Nack
@@ -29,7 +33,8 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             ?: return ReceiveResult.Nack
         val command = BridgeProtocol.Command.entries.firstOrNull { it.wire == wireCommand }
             ?: return ReceiveResult.Nack
-        BridgeRuntime.get(this).handleCommand(sessionId, id, command)
+        val profileName = PebbleMessages.string(data, BridgeProtocol.Key.LOCUS_PROFILE_NAME)
+        BridgeRuntime.get(this).handleCommand(sessionId, id, command, profileName)
         return ReceiveResult.Ack
     }
 

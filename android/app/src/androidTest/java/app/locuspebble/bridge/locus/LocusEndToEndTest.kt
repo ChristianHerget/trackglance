@@ -41,9 +41,16 @@ class LocusEndToEndTest {
     }
 
     @Test fun startPauseResumeAndStopRoundTripThroughLocus() {
-        assertCommand(BridgeProtocol.Command.START)
+        val profileName = gateway.recordingProfiles().firstOrNull()
+        assumeTrue("Locus has no recording profile", profileName != null)
+        assertEquals(
+            "Locus rejected named Start",
+            BridgeProtocol.Result.OK,
+            gateway.execute(BridgeProtocol.Command.START, profileName),
+        )
         testStartedRecording = true
         assertTrue("Locus did not enter recording state", awaitState(BridgeProtocol.RecordingState.RECORDING))
+        assertEquals(profileName, gateway.readSnapshot().locusProfileName)
         pauseForObservation()
 
         assertCommand(BridgeProtocol.Command.PAUSE_RESUME)

@@ -26,22 +26,45 @@ class LocusGateway(private val context: Context) {
             state = state,
             sampledAtEpochSeconds = nowMillis / 1000,
             elapsedSeconds = (stats?.totalTime ?: 0L) / 1000,
-            distanceMetres = stats?.totalLength ?: 0f,
-            currentSpeedMps = update.locMyLocation.speed ?: 0f,
-            averageSpeedMps = stats?.getSpeedAverage(false) ?: 0f,
-            altitudeMetres = update.locMyLocation.altitude ?: 0.0,
-            ascentMetres = stats?.elePositiveHeight ?: 0f,
+            movingSeconds = stats?.totalTimeMove?.div(1000),
+            distanceMetres = stats?.totalLength,
+            movingDistanceMetres = stats?.totalLengthMove,
+            currentSpeedMps = update.locMyLocation.speed.takeIf { update.isGpsLocValid },
+            averageSpeedMps = stats?.getSpeedAverage(false),
+            maxSpeedMps = stats?.speedMax,
+            altitudeMetres = update.locMyLocation.altitude.takeIf { update.isGpsLocValid },
+            ascentMetres = stats?.elePositiveHeight,
+            descentMetres = stats?.eleNegativeHeight?.let { kotlin.math.abs(it) },
+            verticalSpeedMps = update.speedVertical.takeIf { update.isGpsLocValid },
+            slopePercent = update.slope.takeIf { update.isGpsLocValid },
+            averageHeartRate = stats?.heartRateAverage?.takeIf { it > 0 },
+            maxHeartRate = stats?.heartRateMax?.takeIf { it > 0 },
+            averageCadence = stats?.cadenceAverage?.takeIf { it > 0 },
+            maxCadence = stats?.cadenceMax?.takeIf { it > 0 },
+            averagePower = stats?.powerAverage?.takeIf { it > 0 },
+            maxPower = stats?.powerMax?.takeIf { it > 0 },
+            energyKcal = stats?.energy?.takeIf { it > 0 },
+            locusProfileName = update.trackRecProfileName.takeIf { it.isNotBlank() },
         )
     }
 
-    fun execute(command: BridgeProtocol.Command): BridgeProtocol.Result {
+    fun recordingProfiles(): List<String> {
+        val version = activeVersion() ?: return emptyList()
+        return runCatching { ActionBasics.getTrackRecordingProfiles(context, version).map { it.name } }
+            .getOrDefault(emptyList()).filter { it.isNotBlank() }.distinct()
+    }
+
+    fun execute(command: BridgeProtocol.Command, profileName: String? = null): BridgeProtocol.Result {
         val version = activeVersion() ?: return BridgeProtocol.Result.LOCUS_UNAVAILABLE
         val current = readSnapshot()
         return try {
             when (command) {
                 BridgeProtocol.Command.START -> {
                     if (current.state != BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
-                    ActionBasics.actionTrackRecordStart(context, version)
+                    if (!BridgeProtocol.validProfileName(profileName)) return BridgeProtocol.Result.INVALID_PROFILE
+                    val installedName = BridgeProtocol.autoMatchProfile(profileName!!, recordingProfiles())
+                        ?: return BridgeProtocol.Result.PROFILE_NOT_FOUND
+                    ActionBasics.actionTrackRecordStart(context, version, installedName)
                 }
                 BridgeProtocol.Command.PAUSE_RESUME -> {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING && current.state != BridgeProtocol.RecordingState.PAUSED) {

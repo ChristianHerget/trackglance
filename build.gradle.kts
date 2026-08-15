@@ -8,7 +8,9 @@ val verifyPebbleTargets by tasks.registering {
     group = "verification"
     description = "Ensures the watchapp is built only for Time 2 and Round 2."
     val packageFile = layout.projectDirectory.file("watchapp/package.json")
-    inputs.file(packageFile)
+    val pkjsFile = layout.projectDirectory.file("watchapp/src/pkjs/index.js")
+    val watchSourceFile = layout.projectDirectory.file("watchapp/src/c/main.c")
+    inputs.files(packageFile, pkjsFile, watchSourceFile)
     doLast {
         val packageText = packageFile.asFile.readText()
         val targetBlock = Regex(""""targetPlatforms"\s*:\s*\[([^]]*)]""")
@@ -19,6 +21,11 @@ val verifyPebbleTargets by tasks.registering {
         check(targets == setOf("emery", "gabbro")) {
             "Expected only emery and gabbro, found $targets"
         }
+        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.1\"").containsMatchIn(packageText))
+        check(Regex("\"capabilities\"\\s*:\\s*\\[[^]]*\"configurable\"").containsMatchIn(packageText))
+        check(Regex("\"enableMultiJS\"\\s*:\\s*true").containsMatchIn(packageText))
+        check(pkjsFile.asFile.isFile) { "Embedded PKJS is missing" }
+        check(watchSourceFile.asFile.readText().contains("#define PROTOCOL_VERSION 3"))
     }
 }
 
