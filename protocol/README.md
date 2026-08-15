@@ -2,7 +2,7 @@
 
 The Android bridge, Pebble watchapp, and embedded PebbleKit JS use AppMessage dictionaries under
 UUID `51c8d7cf-4cb2-4ef8-98c9-641706feb250`. Version 3 is intentionally incompatible with v2;
-the `0.1.3` APK and PBW must be upgraded together. Receivers reject any other version.
+the `0.1.4` APK and PBW must be upgraded together. Receivers reject any other version.
 
 All statistics use signed 32-bit integer SI wire units. `-2147483648` means unavailable; the watch
 renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units remain metric.
@@ -26,15 +26,16 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
 | 30–33 | chunk index/count/data/transfer ID | zero-based index, total, UTF-8 chunk, signed transfer ID |
 | 34 | Locus mode | reserved |
-| 35 | release version | exact APK/PBW release string, currently `0.1.3` |
+| 35 | release version | exact APK/PBW release string, currently `0.1.4` |
 
 Metric IDs are: elapsed `1`, moving time `2`, total/moving distance `3/4`, current/average/max
 speed `5/6/7`, current/average pace `8/9`, altitude/ascent/descent `10/11/12`, vertical speed
 `13`, slope `14`, average/max heart rate `15/16`, average/max cadence `17/18`, average/max power
 `19/20`, and energy `21`. Pace is derived as `min/km` on the watch.
 
-Configuration is chunked as `theme|selected-index`, followed by one newline-separated profile per
-line: `display-name|exact-locus-name|protected-flag|comma-separated-metric-ids`. A receiver applies
+Configuration is chunked as `theme|legacy-selected-index`, followed by one newline-separated profile
+per line: `display-name|exact-locus-name|protected-flag|comma-separated-metric-ids|stable-profile-id`.
+The fifth field is optional when reading older protocol-v3 data. A receiver applies
 only a complete, validated transfer. The watch persists the last complete configuration; complete
 configuration received during recording or pause is stored separately and applied after Stop.
 Installed Locus profile lists are newline-separated UTF-8 names using the same chunk envelope.
@@ -44,9 +45,9 @@ its persistent cache. Settings opens immediately with the latest complete cache 
 fresh transfer in the background. Profile-list chunks use result `0` for a non-empty query and `3`
 when Locus returns no profiles, so an empty Locus result is distinguishable from no relay response.
 
-The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.3
+The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.4
 ignores incoming values and always emits `0`; formerly protected defaults migrate to ordinary
-profiles without changing their name, mapping, metrics, order, or selected index. Display names are
+profiles without changing their name, mapping, metrics, order, or active watch selection. Display names are
 local user data and may be localized only when a fresh configuration is created. Exact Locus names
 are external identifiers and are never translated or truncated.
 

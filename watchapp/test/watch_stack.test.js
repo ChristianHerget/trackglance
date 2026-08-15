@@ -76,3 +76,16 @@ assert(
   source.includes('if(s_request_profiles_after_send){s_request_profiles_after_send=false;send_message(MSG_REQUEST_PROFILE_LIST,0);}'),
   'the outbox callback must deliver the queued profile request',
 );
+
+assert(source.includes('#define PERSIST_ACTIVE_ID 103'), 'the active profile ID must have persistent storage');
+assert(source.includes('persist_write_string(PERSIST_ACTIVE_ID,s_profiles[s_selected].id)'),
+  'choosing a profile must persist its stable ID');
+assert(source.includes('.subtitle=i==s_selected?tr("Active","Aktiv"):NULL'),
+  'the chooser must mark the active profile');
+assert(source.includes('.num_items=s_profile_count'), 'the chooser must list every configured profile');
+assert(source.includes('s.state==STATE_RECORDING||s.state==STATE_PAUSED'),
+  'profile selection must remain locked while recording or paused');
+assert(source.includes('active_index=active[0]?0:selected'),
+  'deleting the active ID must fall back to the first profile');
+assert(!source.includes('s_selected=(s_selected+1)%s_profile_count'),
+  'the profile control must open a chooser instead of cycling profiles');
