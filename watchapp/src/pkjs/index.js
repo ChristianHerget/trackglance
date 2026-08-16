@@ -1,7 +1,7 @@
 /* Offline configuration for CoreApp. This file intentionally has no network dependencies. */
 (function (root) {
   'use strict';
-  var V=3, RELEASE='0.1.4', MAX=8, MAX_NAME=20, CACHE='locusProfiles.v3', CONFIG='config';
+  var V=3, RELEASE='0.1.5', MAX=8, MAX_NAME=20, CACHE='locusProfiles.v3', CONFIG='config';
   var K={v:0,type:1,result:4,index:30,count:31,data:32,id:33,release:35};
   var strings={
     en:{title:'Locus Bridge',profiles:'Profiles',theme:'Theme',dark:'Dark',light:'Light',edit:'Edit',copy:'Copy',del:'Delete',add:'Add',save:'Save',done:'Done',cancel:'Cancel',name:'Display name',mapping:'Locus profile',metrics:'Metrics',addMetric:'Add metric',remove:'Remove',confirm:'Delete this profile?',discard:'Discard all unsaved changes?',last:'At least one profile is required.',limit:'A maximum of eight profiles is allowed.',invalid:'Resolve every Locus profile and choose 1–6 unique metrics.',duplicate:'Display names must be unique.',fresh:'Locus profiles updated.',stale:'Using the last saved Locus profile list.',empty:'The bridge responded, but Locus returned no recording profiles.',unavailable:'No profile response received from the bridge yet.',incompatible:'Incompatible bridge/watch version. Install version '+RELEASE+' on both devices.',activity:'Activity',copySuffix:' copy',select:'Select profile',drag:'Drag to reorder'},

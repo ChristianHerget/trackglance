@@ -84,6 +84,8 @@ ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
 The test waits for and asserts every observable state transition: start, pause, resume, and stop.
 The optional observation delay (capped at ten seconds) keeps each confirmed state visible in the
 Locus UI for manual inspection.
-The watch's waypoint command saves a point named `Pebble waypoint` immediately (`autoSave=true`),
-so it does not require interaction with the phone. It is excluded from the state-transition test
-because the public update container does not expose the active recording's waypoint count.
+The watch's plain waypoint command saves a point named `Pebble waypoint` immediately
+(`autoSave=true`). On microphone-capable watches, the second waypoint command uses Pebble
+dictation confirmation and saves the accepted text as the waypoint name. Dictation needs the
+phone transcription service; the plain command remains the fallback. The public update container
+does not expose the active recording's waypoint count.

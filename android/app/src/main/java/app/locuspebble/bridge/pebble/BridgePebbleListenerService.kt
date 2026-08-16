@@ -45,7 +45,8 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         val command = BridgeProtocol.Command.entries.firstOrNull { it.wire == wireCommand }
             ?: return ReceiveResult.Nack
         val profileName = PebbleMessages.string(data, BridgeProtocol.Key.LOCUS_PROFILE_NAME)
-        BridgeRuntime.get(this).handleCommand(sessionId, id, command, profileName)
+        val waypointName = PebbleMessages.string(data, BridgeProtocol.Key.WAYPOINT_NAME)
+        BridgeRuntime.get(this).handleCommand(sessionId, id, command, profileName, waypointName)
         return ReceiveResult.Ack
     }
 

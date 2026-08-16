@@ -34,7 +34,7 @@ val verifyPebbleTargets by tasks.registering {
         check(targets == setOf("emery", "gabbro")) {
             "Expected only emery and gabbro, found $targets"
         }
-        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.4\"").containsMatchIn(packageText))
+        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.5\"").containsMatchIn(packageText))
         val watchVersion = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
             .find(packageText)?.groupValues?.get(1) ?: error("Missing watch version")
         val androidVersion = Regex("versionName\\s*=\\s*\"([^\"]+)\"")
@@ -49,6 +49,7 @@ val verifyPebbleTargets by tasks.registering {
         check(Regex("\"enableMultiJS\"\\s*:\\s*true").containsMatchIn(packageText))
         check(pkjsFile.asFile.isFile) { "Embedded PKJS is missing" }
         check(watchSourceFile.asFile.readText().contains("#define PROTOCOL_VERSION 3"))
+        check(Regex("\"WAYPOINT_NAME\"\\s*:\\s*36").containsMatchIn(packageText))
     }
 }
 

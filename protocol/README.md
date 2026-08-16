@@ -2,7 +2,7 @@
 
 The Android bridge, Pebble watchapp, and embedded PebbleKit JS use AppMessage dictionaries under
 UUID `51c8d7cf-4cb2-4ef8-98c9-641706feb250`. Version 3 is intentionally incompatible with v2;
-the `0.1.4` APK and PBW must be upgraded together. Receivers reject any other version.
+the `0.1.5` APK and PBW must be upgraded together. Receivers reject any other version.
 
 All statistics use signed 32-bit integer SI wire units. `-2147483648` means unavailable; the watch
 renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units remain metric.
@@ -12,8 +12,8 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 0 | protocol version | `3` |
 | 1 | message type | snapshot `1`, command `2`, result `3`, request snapshot `4`, config chunk `5`, Locus-profile chunk `6`, request profiles `7` |
 | 2, 7 | command ID, session ID | unsigned; deduplication key is the pair |
-| 3 | command | Start `1`, Pause/Resume `2`, Stop/Save `3`, waypoint `4` |
-| 4 | result | OK `0`, invalid state `1`, unavailable `2`, failed `3`, invalid profile `4`, profile missing `5` |
+| 3 | command | Start `1`, Pause/Resume `2`, Stop/Save `3`, waypoint `4`, waypoint with dictated note `5` |
+| 4 | result | OK `0`, invalid state `1`, unavailable `2`, failed `3`, invalid profile `4`, profile missing `5`, invalid waypoint name `6` |
 | 5, 6 | recording state, sample time | stopped/recording/paused/unavailable `0..3`; Unix seconds |
 | 8, 9 | selected display name, exact Locus profile name | UTF-8; display names are limited to 20 characters, Locus names are preserved exactly |
 | 10, 17 | elapsed, moving time | seconds |
@@ -26,7 +26,8 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
 | 30–33 | chunk index/count/data/transfer ID | zero-based index, total, UTF-8 chunk, signed transfer ID |
 | 34 | Locus mode | reserved |
-| 35 | release version | exact APK/PBW release string, currently `0.1.4` |
+| 35 | release version | exact APK/PBW release string, currently `0.1.5` |
+| 36 | waypoint name | confirmed dictation for command `5`; nonblank UTF-8, at most 120 bytes |
 
 Metric IDs are: elapsed `1`, moving time `2`, total/moving distance `3/4`, current/average/max
 speed `5/6/7`, current/average pace `8/9`, altitude/ascent/descent `10/11/12`, vertical speed
@@ -45,7 +46,7 @@ its persistent cache. Settings opens immediately with the latest complete cache 
 fresh transfer in the background. Profile-list chunks use result `0` for a non-empty query and `3`
 when Locus returns no profiles, so an empty Locus result is distinguishable from no relay response.
 
-The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.4
+The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.5
 ignores incoming values and always emits `0`; formerly protected defaults migrate to ordinary
 profiles without changing their name, mapping, metrics, order, or active watch selection. Display names are
 local user data and may be localized only when a fresh configuration is created. Exact Locus names
@@ -58,3 +59,8 @@ mapping returns result `5` and does not start recording.
 Every control and profile-relay message carries key 35. Android, watch C, and PebbleKit JS require
 the exact same release version and show an explicit incompatibility error when it differs or is
 missing; protocol version 3 remains unchanged.
+
+Waypoint command `4` retains the fixed name `Pebble waypoint`. On microphone-capable watches,
+command `5` carries the exact text accepted in Pebble's confirmation UI under key 36. Android
+rejects blank, control-character, or oversized names before calling Locus. Both waypoint commands
+auto-save at the current recording position and are valid only while actively recording.

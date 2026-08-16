@@ -59,7 +59,11 @@ class LocusGateway(private val context: Context) {
         }.orEmpty()
     }
 
-    fun execute(command: BridgeProtocol.Command, profileName: String? = null): BridgeProtocol.Result {
+    fun execute(
+        command: BridgeProtocol.Command,
+        profileName: String? = null,
+        waypointName: String? = null,
+    ): BridgeProtocol.Result {
         val version = activeVersion() ?: return BridgeProtocol.Result.LOCUS_UNAVAILABLE
         val current = readSnapshot()
         return try {
@@ -85,12 +89,16 @@ class LocusGateway(private val context: Context) {
                     if (current.state == BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
                     ActionBasics.actionTrackRecordStop(context, version, true)
                 }
-                BridgeProtocol.Command.ADD_WAYPOINT -> {
+                BridgeProtocol.Command.ADD_WAYPOINT,
+                BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
+                -> {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING) return BridgeProtocol.Result.INVALID_STATE
+                    val resolvedName = LocusCommandRouting.waypointNameFor(command, waypointName)
+                        ?: return BridgeProtocol.Result.INVALID_WAYPOINT_NAME
                     ActionBasics.actionTrackRecordAddWpt(
                         context,
                         version,
-                        "Pebble waypoint",
+                        resolvedName,
                         LocusCommandRouting.WAYPOINT_AUTO_SAVE,
                     )
                 }
@@ -106,6 +114,13 @@ enum class LocusRecordingAction { START_OR_RESUME, PAUSE, STOP_SAVE, ADD_WAYPOIN
 
 object LocusCommandRouting {
     const val WAYPOINT_AUTO_SAVE = true
+    const val DEFAULT_WAYPOINT_NAME = "Pebble waypoint"
+
+    fun waypointNameFor(command: BridgeProtocol.Command, dictatedName: String?): String? = when (command) {
+        BridgeProtocol.Command.ADD_WAYPOINT -> DEFAULT_WAYPOINT_NAME
+        BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE -> dictatedName.takeIf(BridgeProtocol::validWaypointName)
+        else -> null
+    }
 
     fun actionFor(
         command: BridgeProtocol.Command,
@@ -124,7 +139,9 @@ object LocusCommandRouting {
         BridgeProtocol.Command.STOP_SAVE -> if (
             state == BridgeProtocol.RecordingState.RECORDING || state == BridgeProtocol.RecordingState.PAUSED
         ) LocusRecordingAction.STOP_SAVE else LocusRecordingAction.INVALID
-        BridgeProtocol.Command.ADD_WAYPOINT -> if (state == BridgeProtocol.RecordingState.RECORDING) {
+        BridgeProtocol.Command.ADD_WAYPOINT,
+        BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
+        -> if (state == BridgeProtocol.RecordingState.RECORDING) {
             LocusRecordingAction.ADD_WAYPOINT
         } else {
             LocusRecordingAction.INVALID

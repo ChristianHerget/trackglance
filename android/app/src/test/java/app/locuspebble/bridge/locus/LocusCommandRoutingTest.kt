@@ -3,6 +3,7 @@ package app.locuspebble.bridge.locus
 import app.locuspebble.bridge.protocol.BridgeProtocol.Command
 import app.locuspebble.bridge.protocol.BridgeProtocol.RecordingState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,5 +29,29 @@ class LocusCommandRoutingTest {
             LocusRecordingAction.INVALID,
             LocusCommandRouting.actionFor(Command.ADD_WAYPOINT, RecordingState.PAUSED),
         )
+        assertEquals(
+            LocusRecordingAction.ADD_WAYPOINT,
+            LocusCommandRouting.actionFor(Command.ADD_WAYPOINT_WITH_NOTE, RecordingState.RECORDING),
+        )
+        assertEquals(
+            LocusRecordingAction.INVALID,
+            LocusCommandRouting.actionFor(Command.ADD_WAYPOINT_WITH_NOTE, RecordingState.PAUSED),
+        )
+    }
+
+    @Test fun waypointNamesPreservePlainAndDictatedBehavior() {
+        assertEquals(
+            "Pebble waypoint",
+            LocusCommandRouting.waypointNameFor(Command.ADD_WAYPOINT, null),
+        )
+        assertEquals(
+            "Felsüberhang – später prüfen!",
+            LocusCommandRouting.waypointNameFor(
+                Command.ADD_WAYPOINT_WITH_NOTE,
+                "Felsüberhang – später prüfen!",
+            ),
+        )
+        assertNull(LocusCommandRouting.waypointNameFor(Command.ADD_WAYPOINT_WITH_NOTE, null))
+        assertNull(LocusCommandRouting.waypointNameFor(Command.ADD_WAYPOINT_WITH_NOTE, "   "))
     }
 }

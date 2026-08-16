@@ -89,3 +89,26 @@ assert(source.includes('active_index=active[0]?0:selected'),
   'deleting the active ID must fall back to the first profile');
 assert(!source.includes('s_selected=(s_selected+1)%s_profile_count'),
   'the profile control must open a chooser instead of cycling profiles');
+
+assert(source.includes('#define WAYPOINT_NAME_BYTES 120'),
+  'dictated waypoint names must retain single-message headroom');
+assert(source.includes('static char s_waypoint_name[WAYPOINT_NAME_SIZE]'),
+  'the dictated waypoint buffer must use static storage');
+assert(source.includes('PBL_IF_MICROPHONE_ELSE(true,false)'),
+  'the dictated menu entry must be gated by microphone capability');
+assert(source.includes('tr("Add waypoint + note","Wegpunkt + Notiz")'),
+  'the microphone action must be localized');
+assert(source.includes('dictation_session_enable_confirmation(s_dictation_session,true)'),
+  'dictated text must be shown for confirmation before use');
+assert(source.includes('dictation_session_enable_error_dialogs(s_dictation_session,true)'),
+  'Pebble dictation UI must retain its retry-capable error dialogs');
+assert(source.includes('dict_write_cstring(it,MESSAGE_KEY_WAYPOINT_NAME,s_waypoint_name)'),
+  'the accepted transcription must be sent in the waypoint-name field');
+assert(source.includes('app_timer_register(1,send_dictated_waypoint,NULL)'),
+  'sending must wait until Pebble has closed the system confirmation overlay');
+assert(source.includes('window_stack_remove(s_controls_window,true)'),
+  'command completion must remove the controls window even after a system overlay');
+assert(source.includes('if(s_dictation_session)dictation_session_destroy(s_dictation_session)'),
+  'the dictation session must be released during shutdown');
+assert(source.includes('status!=DictationSessionStatusFailureTranscriptionRejected'),
+  'user cancellation must return silently without creating a waypoint');

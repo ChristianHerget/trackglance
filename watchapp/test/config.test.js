@@ -101,15 +101,15 @@ handlers.showConfiguration();
 assert(global.openedSettingsURL && global.openedSettingsURL.startsWith('data:text/html'),
   'settings opens on the first click without waiting for the profile relay');
 global.openedSettingsURL = null;
-handlers.appmessage({payload:{1:6,4:3,35:'0.1.4',33:76,30:0,31:1,32:''}});
+handlers.appmessage({payload:{1:6,4:3,35:'0.1.5',33:76,30:0,31:1,32:''}});
 assert.strictEqual(global.openedSettingsURL,null,'a background response does not reopen settings');
-handlers.appmessage({payload:{1:6,4:0,35:'0.1.4',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
+handlers.appmessage({payload:{1:6,4:0,35:'0.1.5',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
 handlers.showConfiguration();
 assert(global.openedSettingsURL && global.openedSettingsURL.startsWith('data:text/html'));
 const lifecycleHtml = decodeURIComponent(global.openedSettingsURL.split(',').slice(1).join(','));
 assert(lifecycleHtml.includes('Wandern'));
 global.openedSettingsURL = null;
-handlers.appmessage({payload:{MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.4',TRANSFER_ID:79,
+handlers.appmessage({payload:{MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.5',TRANSFER_ID:79,
   CHUNK_INDEX:0,CHUNK_COUNT:1,CHUNK_DATA:'Spazieren\nMountainbike'}});
 handlers.showConfiguration();
 assert(decodeURIComponent(global.openedSettingsURL).includes('Mountainbike'),

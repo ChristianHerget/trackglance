@@ -28,6 +28,7 @@ class CommandResultCacheTest {
             BridgeProtocol.Command.PAUSE_RESUME,
             BridgeProtocol.Command.PAUSE_RESUME,
             BridgeProtocol.Command.ADD_WAYPOINT,
+            BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
             BridgeProtocol.Command.STOP_SAVE,
         )
 

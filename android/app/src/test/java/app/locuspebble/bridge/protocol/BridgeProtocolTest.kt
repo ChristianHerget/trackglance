@@ -3,6 +3,8 @@ package app.locuspebble.bridge.protocol
 import app.locuspebble.bridge.core.RefreshMode
 import app.locuspebble.bridge.core.RefreshPolicy
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeProtocolTest {
@@ -29,5 +31,14 @@ class BridgeProtocolTest {
         assertEquals(5_000, RefreshPolicy(RefreshMode.FIVE_SECONDS).nextDelayMillis(false))
         assertEquals(10_000, RefreshPolicy(RefreshMode.TEN_SECONDS).nextDelayMillis(true))
     }
-}
 
+    @Test fun waypointNamesUseTheSingleMessageUtf8Limit() {
+        assertTrue(BridgeProtocol.validWaypointName("Abzweig – links halten"))
+        assertTrue(BridgeProtocol.validWaypointName("ä".repeat(60)))
+        assertFalse(BridgeProtocol.validWaypointName("ä".repeat(61)))
+        assertFalse(BridgeProtocol.validWaypointName(""))
+        assertFalse(BridgeProtocol.validWaypointName("nur Leerraum\t"))
+        assertFalse(BridgeProtocol.validWaypointName("erste Zeile\nzweite Zeile"))
+        assertFalse(BridgeProtocol.validWaypointName("löschen\u007f"))
+    }
+}

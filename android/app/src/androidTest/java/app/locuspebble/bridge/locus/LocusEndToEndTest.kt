@@ -61,6 +61,15 @@ class LocusEndToEndTest {
         assertTrue("Locus did not resume", awaitState(BridgeProtocol.RecordingState.RECORDING))
         pauseForObservation()
 
+        assertEquals(
+            "Locus rejected the dictated waypoint",
+            BridgeProtocol.Result.OK,
+            gateway.execute(
+                BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
+                waypointName = "Pebble integration note",
+            ),
+        )
+
         assertCommand(BridgeProtocol.Command.STOP_SAVE)
         assertTrue("Locus did not stop", awaitState(BridgeProtocol.RecordingState.STOPPED))
         testStartedRecording = false

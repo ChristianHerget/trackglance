@@ -46,11 +46,17 @@ class BridgeRuntime private constructor(context: Context) {
         BridgeState.update { it.copy(watchAppOpen = false) }
     }
 
-    suspend fun handleCommand(sessionId: Long, commandId: Long, command: BridgeProtocol.Command, profileName: String?) {
+    suspend fun handleCommand(
+        sessionId: Long,
+        commandId: Long,
+        command: BridgeProtocol.Command,
+        profileName: String?,
+        waypointName: String?,
+    ) {
         val result = commandMutex.withLock {
             commandResults.get(sessionId, commandId) ?: run {
                 transitioningUntil = System.currentTimeMillis() + 15_000
-                withContext(Dispatchers.IO) { locus.execute(command, profileName) }
+                withContext(Dispatchers.IO) { locus.execute(command, profileName, waypointName) }
                     .also { commandResults.put(sessionId, commandId, it) }
             }
         }

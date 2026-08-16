@@ -7,6 +7,7 @@ object BridgeProtocol {
     const val UNAVAILABLE = Int.MIN_VALUE
     const val MAX_PROFILE_NAME_LENGTH = 20
     const val MAX_LOCUS_PROFILE_NAME_BYTES = 255
+    const val MAX_WAYPOINT_NAME_BYTES = 120
     const val MAX_PROFILES = 8
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
@@ -47,6 +48,7 @@ object BridgeProtocol {
         const val TRANSFER_ID = 33
         const val LOCUS_MODE = 34
         const val APP_VERSION = 35
+        const val WAYPOINT_NAME = 36
     }
 
     enum class MessageType(val wire: Int) {
@@ -54,9 +56,12 @@ object BridgeProtocol {
         CONFIG_CHUNK(5), PROFILE_LIST_CHUNK(6), REQUEST_PROFILE_LIST(7),
     }
     enum class RecordingState(val wire: Int) { STOPPED(0), RECORDING(1), PAUSED(2), UNAVAILABLE(3) }
-    enum class Command(val wire: Int) { START(1), PAUSE_RESUME(2), STOP_SAVE(3), ADD_WAYPOINT(4) }
+    enum class Command(val wire: Int) {
+        START(1), PAUSE_RESUME(2), STOP_SAVE(3), ADD_WAYPOINT(4), ADD_WAYPOINT_WITH_NOTE(5),
+    }
     enum class Result(val wire: Int) {
         OK(0), INVALID_STATE(1), LOCUS_UNAVAILABLE(2), FAILED(3), INVALID_PROFILE(4), PROFILE_NOT_FOUND(5),
+        INVALID_WAYPOINT_NAME(6),
     }
     enum class UnitSystem(val wire: Int) { METRIC(0), IMPERIAL(1) }
     enum class Metric(val wire: Int) {
@@ -73,6 +78,10 @@ object BridgeProtocol {
     fun validLocusProfileName(name: String?): Boolean = name != null && name.isNotBlank() &&
         name.toByteArray(Charsets.UTF_8).size <= MAX_LOCUS_PROFILE_NAME_BYTES &&
         name.none { it == '\n' || it == '\r' || it == '|' || it.code < 0x20 }
+
+    fun validWaypointName(name: String?): Boolean = name != null && name.isNotBlank() &&
+        name.toByteArray(Charsets.UTF_8).size <= MAX_WAYPOINT_NAME_BYTES &&
+        name.none { it.code < 0x20 || it.code == 0x7f }
 
     fun autoMatchProfile(wanted: String, installed: List<String>): String? =
         installed.firstOrNull { it.equals(wanted.trim(), ignoreCase = true) }
