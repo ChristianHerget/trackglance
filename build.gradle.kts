@@ -33,7 +33,7 @@ val verifyPebbleTargets = tasks.register("verifyPebbleTargets") {
         check(targets == setOf("emery", "gabbro")) {
             "Expected only emery and gabbro, found $targets"
         }
-        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.5\"").containsMatchIn(packageText))
+        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.6\"").containsMatchIn(packageText))
         val watchVersion = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
             .find(packageText)?.groupValues?.get(1) ?: error("Missing watch version")
         val androidVersion = Regex("versionName\\s*=\\s*\"([^\"]+)\"")

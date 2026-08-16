@@ -1,7 +1,7 @@
 #include <pebble.h>
 
 #define PROTOCOL_VERSION 3
-#define RELEASE_VERSION "0.1.5"
+#define RELEASE_VERSION "0.1.6"
 #define MAX_SLOTS 6
 #define MAX_PROFILES 8
 #define NAME_SIZE 21

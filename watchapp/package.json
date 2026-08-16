@@ -1,7 +1,7 @@
 {
   "name": "locus-pebble-bridge",
   "author": "Christian Herget",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "keywords": ["locus", "hiking", "fitness"],
   "scripts": {
