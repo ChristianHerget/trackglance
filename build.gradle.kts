@@ -1,10 +1,9 @@
 plugins {
-    id("com.android.application") version "8.13.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
+    id("com.android.application") version "9.3.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.10" apply false
 }
 
-val verifyWatchStack by tasks.registering(Exec::class) {
+val verifyWatchStack = tasks.register<Exec>("verifyWatchStack") {
     group = "verification"
     description = "Rejects local C buffers that exceed the Pebble stack budget."
     workingDir(layout.projectDirectory.dir("watchapp"))
@@ -15,7 +14,7 @@ val verifyWatchStack by tasks.registering(Exec::class) {
     )
 }
 
-val verifyPebbleTargets by tasks.registering {
+val verifyPebbleTargets = tasks.register("verifyPebbleTargets") {
     group = "verification"
     description = "Ensures the watchapp is built only for Time 2 and Round 2."
     val packageFile = layout.projectDirectory.file("watchapp/package.json")
