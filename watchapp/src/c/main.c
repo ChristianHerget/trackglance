@@ -93,15 +93,14 @@ static char *next_token(char **cursor, char delimiter) {
 }
 
 static void defaults(void) {
-  s_dark=true; s_selected=0; s_profile_count=3;
-  copy_name(s_profiles[0].name,tr("Hiking","Wandern")); copy_locus_name(s_profiles[0].locus,tr("Hiking","Wandern"));
+  memset(s_profiles,0,sizeof(s_profiles));
+  s_dark=true; s_selected=0; s_profile_count=2;
+  copy_name(s_profiles[0].name,tr("Walking","Gehen")); copy_locus_name(s_profiles[0].locus,tr("Walking","Gehen"));
   uint8_t h[]={1,3,5,6,10,11}; memcpy(s_profiles[0].metrics,h,6); s_profiles[0].count=6;
   copy_name(s_profiles[1].name,tr("Cycling","Radfahren")); copy_locus_name(s_profiles[1].locus,tr("Cycling","Radfahren"));
   uint8_t c[]={1,3,5,6,7,11}; memcpy(s_profiles[1].metrics,c,6); s_profiles[1].count=6;
-  copy_name(s_profiles[2].name,tr("Running","Laufen")); copy_locus_name(s_profiles[2].locus,tr("Running","Laufen"));
-  uint8_t r[]={1,3,8,9,15,17}; memcpy(s_profiles[2].metrics,r,6); s_profiles[2].count=6;
-  for(int i=0;i<3;i++)s_profiles[i].protected_profile=false;
-  copy_id(s_profiles[0].id,"default-hiking");copy_id(s_profiles[1].id,"default-cycling");copy_id(s_profiles[2].id,"default-running");
+  for(int i=0;i<s_profile_count;i++)s_profiles[i].protected_profile=false;
+  copy_id(s_profiles[0].id,"default-walking");copy_id(s_profiles[1].id,"default-cycling");
   char active[ID_SIZE]="";if(persist_exists(PERSIST_ACTIVE_ID))persist_read_string(PERSIST_ACTIVE_ID,active,sizeof(active));
   for(int i=0;i<s_profile_count;i++)if(!strcmp(active,s_profiles[i].id))s_selected=i;
 }

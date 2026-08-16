@@ -89,6 +89,12 @@ assert(source.includes('active_index=active[0]?0:selected'),
   'deleting the active ID must fall back to the first profile');
 assert(!source.includes('s_selected=(s_selected+1)%s_profile_count'),
   'the profile control must open a chooser instead of cycling profiles');
+assert(source.includes('s_profile_count=2'),
+  'fresh watch defaults must contain only walking and cycling in every language');
+assert(source.includes('tr("Walking","Gehen")'),
+  'the walking default must match the localized Locus default profile name');
+assert(source.includes('tr("Cycling","Radfahren")'),
+  'the German cycling default must match the Locus default profile name');
 
 assert(source.includes('#define WAYPOINT_NAME_BYTES 120'),
   'dictated waypoint names must retain single-message headroom');

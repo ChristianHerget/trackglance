@@ -11,7 +11,7 @@
   function locale(value){return String(value||'en').toLowerCase().replace('-','_').split('_')[0]==='de'?'de':'en';}
   var nextId=0;
   function newId(){nextId++;return 'p'+Date.now().toString(36)+nextId.toString(36)+Math.floor(Math.random()*0x100000).toString(36);}
-  function defaultsFor(lang){var de=locale(lang)==='de';return migrate({theme:'dark',selected:0,profiles:[{name:de?'Wandern':'Hiking',locus:de?'Wandern':'Hiking',protected:false,metrics:[1,3,5,6,10,11]},{name:de?'Radfahren':'Cycling',locus:de?'Radfahren':'Cycling',protected:false,metrics:[1,3,5,6,7,11]},{name:de?'Laufen':'Running',locus:de?'Laufen':'Running',protected:false,metrics:[1,3,8,9,15,17]}]});}
+  function defaultsFor(lang){var de=locale(lang)==='de';return migrate({theme:'dark',selected:0,profiles:[{name:de?'Gehen':'Walking',locus:de?'Gehen':'Walking',protected:false,metrics:[1,3,5,6,10,11]},{name:de?'Radfahren':'Cycling',locus:de?'Radfahren':'Cycling',protected:false,metrics:[1,3,5,6,7,11]}]});}
   var defaults=defaultsFor('en');
   function clone(x){return JSON.parse(JSON.stringify(x));}
   function validName(x){return typeof x==='string'&&x.trim().length>0&&x.length<=MAX_NAME&&!/[|\r\n]/.test(x);}

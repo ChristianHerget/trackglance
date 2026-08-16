@@ -1,5 +1,8 @@
 # Development setup
 
+For the complete installation, QEMU/CoreApp setup, end-to-end acceptance procedure, troubleshooting,
+and containerization roadmap, see [End-to-end development and testing](end-to-end-testing.md).
+
 ## Chromebook Linux and ARCVM
 
 Enable ChromeOS **Develop Android apps / ADB debugging**, then connect from the normal Linux
@@ -14,8 +17,9 @@ adb -s arc:5555 install -r android/app/build/outputs/apk/debug/app-debug.apk
 If both `arc:5555` and `emulator-5554` appear, use an explicit `-s` selector. ADB daemon socket
 errors inside a managed coding sandbox do not imply an ARCVM configuration problem.
 
-Install Locus Map 4 from Google Play. Install a Pebble/Core app version compatible with
-PebbleKit Android 2 (Core 1.0.7.7 or newer), then install `watchapp/build/watchapp.pbw` through it.
+Install Locus Map 4 from Google Play. Install a current CoreApp build compatible with PebbleKit
+Android 2, then install `watchapp/build/watchapp.pbw` through it. QEMU testing requires CoreApp's
+direct transport from `coredevices/mobileapp` commit `38fd4c6` or later.
 The Android diagnostics screen reports Locus, Pebble/Core selection, watch connection, recording
 state, refresh mode, and the last bridge error.
 
@@ -42,12 +46,10 @@ from the Android diagnostics screen.
 
 ## QEMU/Core integration
 
-After Core and its QEMU transport are installed, launch the Basalt emulator and install the app:
-
-```sh
-cd watchapp
-pebble install --emulator basalt
-```
+CoreApp must be the sole client of a directly launched Emery or Gabbro QEMU. Do not use an
+SDK-managed Basalt emulator; Basalt is not a supported target, and the standard Pebble phone
+simulator would compete with CoreApp for the QEMU protocol connection. Follow the direct launch and
+CoreApp attachment procedure in [End-to-end development and testing](end-to-end-testing.md).
 
 If Core expects its watch transport through ARCVM, expose the QEMU/Core TCP port with `adb
 reverse`. Confirm the port used by the installed Core build before creating the tunnel; `12344`
@@ -57,7 +59,7 @@ is common in current development setups:
 adb -s arc:5555 reverse tcp:12344 tcp:12344
 ```
 
-End-to-end acceptance requires snapshots and all four controls to round-trip through QEMU, Core,
+End-to-end acceptance requires snapshots and all controls to round-trip through QEMU, Core,
 the Android bridge, and Locus. Physical Bluetooth, GPS, battery, and background-restriction tests
 remain a later hardware smoke test.
 
