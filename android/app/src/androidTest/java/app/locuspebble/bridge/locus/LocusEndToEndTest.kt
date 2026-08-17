@@ -1,5 +1,6 @@
 package app.locuspebble.bridge.locus
 
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -34,10 +35,9 @@ class LocusEndToEndTest {
     }
 
     @After fun stopRecordingIfTestFailedMidSequence() {
-        if (testStartedRecording && gateway.readSnapshot().state != BridgeProtocol.RecordingState.STOPPED) {
-            gateway.execute(BridgeProtocol.Command.STOP_SAVE)
-            awaitState(BridgeProtocol.RecordingState.STOPPED)
-        }
+        if (!testStartedRecording) return
+        runCatching { gateway.execute(BridgeProtocol.Command.STOP_SAVE) }
+        assertTrue("Cleanup could not stop the test recording", awaitState(BridgeProtocol.RecordingState.STOPPED))
     }
 
     @Test fun startPauseResumeAndStopRoundTripThroughLocus() {
@@ -88,8 +88,8 @@ class LocusEndToEndTest {
     }
 
     private fun awaitState(expected: BridgeProtocol.RecordingState, timeoutMillis: Long = 15_000): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (SystemClock.elapsedRealtime() < deadline) {
             if (gateway.readSnapshot().state == expected) return true
             Thread.sleep(250)
         }
@@ -97,8 +97,8 @@ class LocusEndToEndTest {
     }
 
     private fun awaitHeartRate(expected: Int, timeoutMillis: Long = 5_000): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (SystemClock.elapsedRealtime() < deadline) {
             if (gateway.readSnapshot().currentHeartRate == expected) return true
             Thread.sleep(100)
         }

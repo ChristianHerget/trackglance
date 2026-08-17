@@ -6,9 +6,13 @@ object BridgeProtocol {
     const val VERSION = 3
     const val UNAVAILABLE = Int.MIN_VALUE
     const val MAX_PROFILE_NAME_LENGTH = 20
+    const val MAX_PROFILE_NAME_BYTES = 80
     const val MAX_LOCUS_PROFILE_NAME_BYTES = 255
     const val MAX_WAYPOINT_NAME_BYTES = 120
     const val MAX_PROFILES = 8
+    const val MAX_PROFILE_LIST_BYTES = 8191
+    const val MAX_PROFILE_LIST_CHUNKS = 103
+    const val MAX_CHUNK_BYTES = 80
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
     object Key {
@@ -56,6 +60,7 @@ object BridgeProtocol {
     enum class MessageType(val wire: Int) {
         SNAPSHOT(1), COMMAND(2), COMMAND_RESULT(3), REQUEST_SNAPSHOT(4),
         CONFIG_CHUNK(5), PROFILE_LIST_CHUNK(6), REQUEST_PROFILE_LIST(7), HEART_RATE_SAMPLE(8),
+        CONFIG_RESULT(9),
     }
     enum class RecordingState(val wire: Int) { STOPPED(0), RECORDING(1), PAUSED(2), UNAVAILABLE(3) }
     enum class Command(val wire: Int) {
@@ -63,7 +68,7 @@ object BridgeProtocol {
     }
     enum class Result(val wire: Int) {
         OK(0), INVALID_STATE(1), LOCUS_UNAVAILABLE(2), FAILED(3), INVALID_PROFILE(4), PROFILE_NOT_FOUND(5),
-        INVALID_WAYPOINT_NAME(6),
+        INVALID_WAYPOINT_NAME(6), CONFIG_QUEUED(7), INVALID_CONFIG(8), STORAGE_FAILED(9),
     }
     enum class UnitSystem(val wire: Int) { METRIC(0), IMPERIAL(1) }
     enum class Metric(val wire: Int) {
@@ -74,20 +79,94 @@ object BridgeProtocol {
         CURRENT_HEART_RATE(22),
     }
 
-    fun validProfileName(name: String?): Boolean = name != null &&
-        name.isNotBlank() && name.length <= MAX_PROFILE_NAME_LENGTH &&
-        name.none { it.code < 0x20 || it == '|' || it == '\n' || it == '\r' }
+    fun validProfileName(name: String?): Boolean = validText(
+        name,
+        maxBytes = MAX_PROFILE_NAME_BYTES,
+        maxCodePoints = MAX_PROFILE_NAME_LENGTH,
+        rejectPipe = true,
+    )
 
-    fun validLocusProfileName(name: String?): Boolean = name != null && name.isNotBlank() &&
-        name.toByteArray(Charsets.UTF_8).size <= MAX_LOCUS_PROFILE_NAME_BYTES &&
-        name.none { it == '\n' || it == '\r' || it == '|' || it.code < 0x20 }
+    fun validLocusProfileName(name: String?): Boolean = validText(
+        name,
+        maxBytes = MAX_LOCUS_PROFILE_NAME_BYTES,
+        rejectPipe = true,
+    )
 
-    fun validWaypointName(name: String?): Boolean = name != null && name.isNotBlank() &&
-        name.toByteArray(Charsets.UTF_8).size <= MAX_WAYPOINT_NAME_BYTES &&
-        name.none { it.code < 0x20 || it.code == 0x7f }
+    fun validWaypointName(name: String?): Boolean = validText(
+        name,
+        maxBytes = MAX_WAYPOINT_NAME_BYTES,
+        rejectPipe = false,
+    )
 
-    fun autoMatchProfile(wanted: String, installed: List<String>): String? =
-        installed.firstOrNull { it.equals(wanted.trim(), ignoreCase = true) }
+    private fun validText(
+        value: String?,
+        maxBytes: Int,
+        maxCodePoints: Int? = null,
+        rejectPipe: Boolean,
+    ): Boolean {
+        if (value.isNullOrEmpty()) return false
+        var index = 0
+        var count = 0
+        var nonWhitespace = false
+        while (index < value.length) {
+            val first = value[index]
+            val codePoint = when {
+                first.isHighSurrogate() -> {
+                    if (index + 1 >= value.length || !value[index + 1].isLowSurrogate()) return false
+                    Character.toCodePoint(first, value[index + 1]).also { index++ }
+                }
+                first.isLowSurrogate() -> return false
+                else -> first.code
+            }
+            if (codePoint < 0x20 || codePoint == 0x7f || (rejectPipe && codePoint == '|'.code)) return false
+            if (!unicodeWhitespace(codePoint)) nonWhitespace = true
+            count++
+            if (maxCodePoints != null && count > maxCodePoints) return false
+            index++
+        }
+        return nonWhitespace && value.toByteArray(Charsets.UTF_8).size <= maxBytes
+    }
+
+    private fun unicodeWhitespace(codePoint: Int): Boolean = codePoint == 0x20 ||
+        codePoint == 0x85 || codePoint == 0xa0 || codePoint == 0x1680 ||
+        codePoint in 0x2000..0x200a || codePoint == 0x2028 || codePoint == 0x2029 ||
+        codePoint == 0x202f || codePoint == 0x205f || codePoint == 0x3000 || codePoint == 0xfeff
+
+    fun autoMatchProfile(wanted: String, installed: List<String>): String? {
+        installed.firstOrNull { it == wanted }?.let { return it }
+        return installed.filter { it.equals(wanted, ignoreCase = true) }.singleOrNull()
+    }
+
+    fun profileListPayload(names: List<String>): String? {
+        if (names.any { !validLocusProfileName(it) } || names.distinct().size != names.size) {
+            return null
+        }
+        val payload = names.joinToString("\n")
+        return payload.takeIf { it.toByteArray(Charsets.UTF_8).size <= MAX_PROFILE_LIST_BYTES }
+    }
+
+    data class ProfileTransfer(val result: Result, val chunks: List<String>)
+
+    fun profileTransfer(names: List<String>, chunkBytes: Int = MAX_CHUNK_BYTES): ProfileTransfer {
+        require(chunkBytes in 1..MAX_CHUNK_BYTES)
+        val payload = profileListPayload(names)
+        val candidateChunks = payload?.let {
+            try {
+                utf8Chunks(it, chunkBytes)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
+        if (candidateChunks == null || candidateChunks.size > MAX_PROFILE_LIST_CHUNKS) {
+            return ProfileTransfer(Result.FAILED, listOf(""))
+        }
+        return ProfileTransfer(profileListResult(payload), candidateChunks)
+    }
+
+    fun requireUnsigned32(value: Long): UInt {
+        require(value in 0..UInt.MAX_VALUE.toLong())
+        return value.toUInt()
+    }
 
     fun profileListResult(payload: String): Result =
         if (payload.isEmpty()) Result.FAILED else Result.OK
@@ -99,12 +178,17 @@ object BridgeProtocol {
         val current = StringBuilder()
         var bytes = 0
         value.codePoints().forEach { codePoint ->
+            require(codePoint !in 0xd800..0xdfff) { "Invalid UTF-16 surrogate" }
             val character = String(Character.toChars(codePoint))
             val size = character.toByteArray(Charsets.UTF_8).size
+            require(size <= maxBytes) { "A UTF-8 code point exceeds the chunk byte limit" }
             if (bytes + size > maxBytes && current.isNotEmpty()) {
-                result += current.toString(); current.clear(); bytes = 0
+                result += current.toString()
+                current.clear()
+                bytes = 0
             }
-            current.append(character); bytes += size
+            current.append(character)
+            bytes += size
         }
         if (current.isNotEmpty()) result += current.toString()
         return result
@@ -136,38 +220,35 @@ object BridgeProtocol {
         val locusProfileName: String? = null,
         val unitSystem: UnitSystem = UnitSystem.METRIC,
     ) {
-        private fun nonNegative(value: Float?, scale: Int = 1) = value?.takeIf { it.isFinite() && it >= 0 }
-            ?.let { (it * scale).roundToInt() } ?: UNAVAILABLE
+        private fun scaled(value: Double?, scale: Int, allowNegative: Boolean): Int {
+            if (value == null || !value.isFinite() || (!allowNegative && value < 0.0)) return UNAVAILABLE
+            val scaled = value * scale
+            return when {
+                scaled >= Int.MAX_VALUE.toDouble() -> Int.MAX_VALUE
+                scaled <= MIN_AVAILABLE.toDouble() -> MIN_AVAILABLE
+                else -> scaled.roundToInt().coerceAtLeast(MIN_AVAILABLE)
+            }
+        }
+
+        private fun nonNegative(value: Float?, scale: Int = 1) =
+            scaled(value?.toDouble(), scale, allowNegative = false)
+
         fun distanceWire() = nonNegative(distanceMetres)
         fun movingDistanceWire() = nonNegative(movingDistanceMetres)
         fun currentSpeedWire() = nonNegative(currentSpeedMps, 100)
         fun averageSpeedWire() = nonNegative(averageSpeedMps, 100)
         fun maxSpeedWire() = nonNegative(maxSpeedMps, 100)
-        fun altitudeWire() = altitudeMetres?.takeIf { it.isFinite() }?.let { (it * 10).roundToInt() } ?: UNAVAILABLE
+        fun altitudeWire() = scaled(altitudeMetres, 10, allowNegative = true)
         fun ascentWire() = nonNegative(ascentMetres, 10)
         fun descentWire() = nonNegative(descentMetres, 10)
-        fun verticalSpeedWire() = verticalSpeedMps?.takeIf { it.isFinite() }?.let { (it * 100).roundToInt() } ?: UNAVAILABLE
-        fun slopeWire() = slopePercent?.takeIf { it.isFinite() }?.let { (it * 10).roundToInt() } ?: UNAVAILABLE
+        fun verticalSpeedWire() = scaled(verticalSpeedMps?.toDouble(), 100, allowNegative = true)
+        fun slopeWire() = scaled(slopePercent?.toDouble(), 10, allowNegative = true)
+        fun movingSecondsWire() = movingSeconds?.takeIf { it >= 0 }
+            ?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: UNAVAILABLE
         fun integerWire(value: Int?) = value?.takeIf { it >= 0 } ?: UNAVAILABLE
-    }
-}
 
-/** Reassembles one transfer at a time and never exposes a partial payload. */
-class ChunkAssembler(private val maxChunks: Int = 64, private val maxBytes: Int = 8192) {
-    private var transferId = -1
-    private var chunks: Array<String?> = emptyArray()
-
-    fun accept(id: Int, index: Int, count: Int, data: String): String? {
-        if (count !in 1..maxChunks || index !in 0 until count || data.length > maxBytes) return null
-        if (id != transferId || chunks.size != count || index == 0) {
-            transferId = id
-            chunks = arrayOfNulls(count)
+        private companion object {
+            const val MIN_AVAILABLE = Int.MIN_VALUE + 1
         }
-        chunks[index] = data
-        if (chunks.any { it == null }) return null
-        val value = chunks.joinToString("") { it!! }
-        chunks = emptyArray()
-        transferId = -1
-        return value.takeIf { it.toByteArray(Charsets.UTF_8).size <= maxBytes }
     }
 }

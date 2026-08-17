@@ -4,10 +4,18 @@ import app.locuspebble.bridge.core.RefreshMode
 import app.locuspebble.bridge.core.RefreshPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeProtocolTest {
+    @Test fun configResultExtensionKeepsCrossLanguageWireValuesStable() {
+        assertEquals(9, BridgeProtocol.MessageType.CONFIG_RESULT.wire)
+        assertEquals(7, BridgeProtocol.Result.CONFIG_QUEUED.wire)
+        assertEquals(8, BridgeProtocol.Result.INVALID_CONFIG.wire)
+        assertEquals(9, BridgeProtocol.Result.STORAGE_FAILED.wire)
+    }
+
     @Test fun snapshotScalesValuesForAppMessage() {
         val snapshot = BridgeProtocol.Snapshot(
             state = BridgeProtocol.RecordingState.RECORDING,
@@ -42,5 +50,42 @@ class BridgeProtocolTest {
         assertFalse(BridgeProtocol.validWaypointName("nur Leerraum\t"))
         assertFalse(BridgeProtocol.validWaypointName("erste Zeile\nzweite Zeile"))
         assertFalse(BridgeProtocol.validWaypointName("löschen\u007f"))
+        assertTrue(BridgeProtocol.validWaypointName("steuern\u0085"))
+        assertFalse(BridgeProtocol.validWaypointName("\u0085"))
+        assertFalse(BridgeProtocol.validWaypointName("\ufeff\ufeff"))
+        assertFalse(BridgeProtocol.validWaypointName("broken\ud800"))
+        assertFalse(BridgeProtocol.validWaypointName("\udc00broken"))
+    }
+
+    @Test fun numericConversionsSaturateWithoutEmittingTheUnavailableSentinel() {
+        val snapshot = BridgeProtocol.Snapshot(
+            state = BridgeProtocol.RecordingState.RECORDING,
+            sampledAtEpochSeconds = 1,
+            movingSeconds = -1,
+            distanceMetres = Float.MAX_VALUE,
+            currentSpeedMps = -0.1f,
+            altitudeMetres = -Double.MAX_VALUE,
+            verticalSpeedMps = Float.POSITIVE_INFINITY,
+            slopePercent = Float.MAX_VALUE,
+        )
+
+        assertEquals(Int.MAX_VALUE, snapshot.distanceWire())
+        assertEquals(BridgeProtocol.UNAVAILABLE, snapshot.currentSpeedWire())
+        assertEquals(Int.MIN_VALUE + 1, snapshot.altitudeWire())
+        assertEquals(BridgeProtocol.UNAVAILABLE, snapshot.verticalSpeedWire())
+        assertEquals(Int.MAX_VALUE, snapshot.slopeWire())
+        assertEquals(BridgeProtocol.UNAVAILABLE, snapshot.movingSecondsWire())
+        assertEquals(
+            Int.MAX_VALUE,
+            snapshot.copy(movingSeconds = Long.MAX_VALUE).movingSecondsWire(),
+        )
+    }
+
+    @Test fun unsignedIdentifiersAreRejectedRatherThanClamped() {
+        assertEquals(UInt.MAX_VALUE, BridgeProtocol.requireUnsigned32(UInt.MAX_VALUE.toLong()))
+        assertThrows(IllegalArgumentException::class.java) { BridgeProtocol.requireUnsigned32(-1) }
+        assertThrows(IllegalArgumentException::class.java) {
+            BridgeProtocol.requireUnsigned32(UInt.MAX_VALUE.toLong() + 1)
+        }
     }
 }

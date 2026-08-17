@@ -3,6 +3,7 @@ package app.locuspebble.bridge.core
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 data class BridgeStatus(
     val watchAppOpen: Boolean = false,
@@ -23,5 +24,5 @@ data class BridgeStatus(
 object BridgeState {
     private val mutable = MutableStateFlow(BridgeStatus())
     val status = mutable.asStateFlow()
-    fun update(transform: (BridgeStatus) -> BridgeStatus) { mutable.value = transform(mutable.value) }
+    fun update(transform: (BridgeStatus) -> BridgeStatus) { mutable.update(transform) }
 }

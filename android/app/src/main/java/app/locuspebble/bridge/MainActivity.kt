@@ -3,13 +3,14 @@ package app.locuspebble.bridge
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -24,6 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import app.locuspebble.bridge.core.BridgeState
 import app.locuspebble.bridge.core.Preferences
 import app.locuspebble.bridge.core.RefreshMode
@@ -31,6 +35,7 @@ import app.locuspebble.bridge.locus.LocusGateway
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.DefaultPebbleAndroidAppPicker
 import io.rebble.pebblekit2.client.DefaultPebbleInfoRetriever
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
@@ -42,28 +47,48 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { MaterialTheme { DiagnosticsScreen() } }
-        refreshDiagnostics()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { refreshDiagnostics() }
+        }
     }
 
-    private fun refreshDiagnostics() {
-        lifecycleScope.launch {
-            val selected = DefaultPebbleAndroidAppPicker.getInstance(this@MainActivity)
-                .getCurrentlySelectedApp()
-            BridgeState.update { it.copy(pebbleAppPackage = selected) }
-            val snapshot = withContext(Dispatchers.IO) { LocusGateway(this@MainActivity).readSnapshot() }
-            BridgeState.update {
-                it.copy(
-                    locusAvailable = snapshot.state != BridgeProtocol.RecordingState.UNAVAILABLE,
-                    recordingState = snapshot.state,
-                    lastUpdateEpochMillis = System.currentTimeMillis(),
-                )
-            }
-            if (selected != null) {
-                runCatching {
-                    DefaultPebbleInfoRetriever(this@MainActivity).getConnectedWatches()
-                        .flowOn(Dispatchers.IO)
-                        .collect { watches -> BridgeState.update { it.copy(watchConnected = watches.isNotEmpty()) } }
-                }.onFailure { error -> BridgeState.update { it.copy(lastError = error.message) } }
+    private suspend fun refreshDiagnostics() {
+        var pebbleError: String? = null
+        val selected = try {
+            DefaultPebbleAndroidAppPicker.getInstance(this@MainActivity).getCurrentlySelectedApp()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            pebbleError = error.message ?: error.javaClass.simpleName
+            null
+        }
+        BridgeState.update {
+            it.copy(
+                pebbleAppPackage = selected,
+                watchConnected = if (selected == null) false else it.watchConnected,
+            )
+        }
+        val snapshot = withContext(Dispatchers.IO) { LocusGateway(this@MainActivity).readSnapshot() }
+        BridgeState.update {
+            it.copy(
+                locusAvailable = snapshot.state != BridgeProtocol.RecordingState.UNAVAILABLE,
+                recordingState = snapshot.state,
+                lastUpdateEpochMillis = System.currentTimeMillis(),
+                currentLocusHeartRate = snapshot.currentHeartRate,
+                lastError = pebbleError ?: if (
+                    snapshot.state == BridgeProtocol.RecordingState.UNAVAILABLE
+                ) "Locus is unavailable" else null,
+            )
+        }
+        if (selected != null) {
+            try {
+                DefaultPebbleInfoRetriever(this@MainActivity).getConnectedWatches()
+                    .flowOn(Dispatchers.IO)
+                    .collect { watches -> BridgeState.update { it.copy(watchConnected = watches.isNotEmpty()) } }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
             }
         }
     }
@@ -74,7 +99,7 @@ class MainActivity : ComponentActivity() {
         var refreshMode by remember { mutableStateOf(Preferences.refreshMode(this)) }
         Scaffold { padding ->
             Column(
-                Modifier.fillMaxSize().padding(padding).padding(20.dp),
+                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text("Locus Pebble Bridge", style = MaterialTheme.typography.headlineSmall)

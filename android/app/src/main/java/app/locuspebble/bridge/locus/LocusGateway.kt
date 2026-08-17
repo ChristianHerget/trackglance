@@ -1,22 +1,38 @@
 package app.locuspebble.bridge.locus
 
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import locus.api.android.ActionBasics
 import locus.api.android.objects.LocusVersion
+import locus.api.android.objects.VersionCode
 import locus.api.android.utils.LocusUtils
 
-class LocusGateway(private val context: Context) {
-    private fun activeVersion(): LocusVersion? = LocusUtils.getActiveVersion(context)
+interface LocusBridgeGateway {
+    fun readSnapshot(nowMillis: Long = System.currentTimeMillis()): BridgeProtocol.Snapshot
+    fun sendHeartRate(bpm: Int): Boolean
+    fun recordingProfiles(): List<String>
+    fun execute(
+        command: BridgeProtocol.Command,
+        profileName: String? = null,
+        waypointName: String? = null,
+    ): BridgeProtocol.Result
+}
 
-    fun readSnapshot(nowMillis: Long = System.currentTimeMillis()): BridgeProtocol.Snapshot {
-        val version = activeVersion() ?: return BridgeProtocol.Snapshot(
-            state = BridgeProtocol.RecordingState.UNAVAILABLE,
-            sampledAtEpochSeconds = nowMillis / 1000,
-        )
+class LocusGateway(private val context: Context) : LocusBridgeGateway {
+    private fun activeVersion(): LocusVersion? =
+        LocusUtils.getActiveVersion(context, VersionCode.UPDATE_13)
+
+    override fun readSnapshot(nowMillis: Long): BridgeProtocol.Snapshot = try {
+        val version = activeVersion() ?: return unavailableSnapshot(nowMillis)
+        readSnapshot(version, nowMillis)
+    } catch (_: Exception) {
+        unavailableSnapshot(nowMillis)
+    }
+
+    private fun readSnapshot(version: LocusVersion, nowMillis: Long): BridgeProtocol.Snapshot {
         val update = ActionBasics.getUpdateContainer(context, version)
-            ?: return BridgeProtocol.Snapshot(BridgeProtocol.RecordingState.UNAVAILABLE, nowMillis / 1000)
+            ?: return unavailableSnapshot(nowMillis)
         val state = when {
             !update.isTrackRecRecording -> BridgeProtocol.RecordingState.STOPPED
             update.isTrackRecPaused -> BridgeProtocol.RecordingState.PAUSED
@@ -51,39 +67,44 @@ class LocusGateway(private val context: Context) {
     }
 
     /** Sends one live sensor value. Locus provides no acknowledgement for this broadcast. */
-    fun sendHeartRate(bpm: Int): Boolean {
+    override fun sendHeartRate(bpm: Int): Boolean {
         if (bpm !in 25..250) return false
-        val version = activeVersion() ?: return false
-        val intent = Intent(LocusHeartRateTask.ACTION)
-            .putExtra(LocusHeartRateTask.EXTRA_TASKS, LocusHeartRateTask.payload(bpm))
-        LocusUtils.sendBroadcast(context, intent, version)
-        return true
-    }
-
-    fun recordingProfiles(): List<String> {
-        val versions = listOfNotNull(activeVersion()) + LocusUtils.getAvailableVersions(context)
-        return versions.distinctBy { it.packageName }.firstNotNullOfOrNull { version ->
-            runCatching { ActionBasics.getTrackRecordingProfiles(context, version).map { it.name } }
-                .getOrDefault(emptyList())
-                .filter { BridgeProtocol.validLocusProfileName(it) }
-                .distinct()
-                .takeIf { it.isNotEmpty() }
-        }.orEmpty()
-    }
-
-    fun execute(
-        command: BridgeProtocol.Command,
-        profileName: String? = null,
-        waypointName: String? = null,
-    ): BridgeProtocol.Result {
-        val version = activeVersion() ?: return BridgeProtocol.Result.LOCUS_UNAVAILABLE
-        val current = readSnapshot()
         return try {
+            val version = activeVersion() ?: return false
+            val intent = Intent(LocusHeartRateTask.ACTION)
+                .putExtra(LocusHeartRateTask.EXTRA_TASKS, LocusHeartRateTask.payload(bpm))
+            LocusUtils.sendBroadcast(context, intent, version)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override fun recordingProfiles(): List<String> = try {
+        activeVersion()?.let(::recordingProfiles).orEmpty()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    private fun recordingProfiles(version: LocusVersion): List<String> =
+        ActionBasics.getTrackRecordingProfiles(context, version).map { it.name }
+
+    override fun execute(
+        command: BridgeProtocol.Command,
+        profileName: String?,
+        waypointName: String?,
+    ): BridgeProtocol.Result {
+        return try {
+            val version = activeVersion() ?: return BridgeProtocol.Result.LOCUS_UNAVAILABLE
+            val current = readSnapshot(version, System.currentTimeMillis())
+            if (current.state == BridgeProtocol.RecordingState.UNAVAILABLE) {
+                return BridgeProtocol.Result.LOCUS_UNAVAILABLE
+            }
             when (command) {
                 BridgeProtocol.Command.START -> {
                     if (current.state != BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
                     if (!BridgeProtocol.validLocusProfileName(profileName)) return BridgeProtocol.Result.INVALID_PROFILE
-                    val installedName = BridgeProtocol.autoMatchProfile(profileName!!, recordingProfiles())
+                    val installedName = BridgeProtocol.autoMatchProfile(profileName!!, recordingProfiles(version))
                         ?: return BridgeProtocol.Result.PROFILE_NOT_FOUND
                     ActionBasics.actionTrackRecordStart(context, version, installedName)
                 }
@@ -98,7 +119,9 @@ class LocusGateway(private val context: Context) {
                     }
                 }
                 BridgeProtocol.Command.STOP_SAVE -> {
-                    if (current.state == BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
+                    if (LocusCommandRouting.actionFor(command, current.state) != LocusRecordingAction.STOP_SAVE) {
+                        return BridgeProtocol.Result.INVALID_STATE
+                    }
                     ActionBasics.actionTrackRecordStop(context, version, true)
                 }
                 BridgeProtocol.Command.ADD_WAYPOINT,
@@ -120,6 +143,11 @@ class LocusGateway(private val context: Context) {
             BridgeProtocol.Result.FAILED
         }
     }
+
+    private fun unavailableSnapshot(nowMillis: Long) = BridgeProtocol.Snapshot(
+        state = BridgeProtocol.RecordingState.UNAVAILABLE,
+        sampledAtEpochSeconds = nowMillis / 1000,
+    )
 }
 
 object LocusHeartRateTask {

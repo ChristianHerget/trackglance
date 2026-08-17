@@ -19,6 +19,25 @@ class LocusCommandRoutingTest {
         )
     }
 
+    @Test fun stopAndSaveAcceptsBothActiveRecordingStatesOnly() {
+        assertEquals(
+            LocusRecordingAction.STOP_SAVE,
+            LocusCommandRouting.actionFor(Command.STOP_SAVE, RecordingState.RECORDING),
+        )
+        assertEquals(
+            LocusRecordingAction.STOP_SAVE,
+            LocusCommandRouting.actionFor(Command.STOP_SAVE, RecordingState.PAUSED),
+        )
+        assertEquals(
+            LocusRecordingAction.INVALID,
+            LocusCommandRouting.actionFor(Command.STOP_SAVE, RecordingState.STOPPED),
+        )
+        assertEquals(
+            LocusRecordingAction.INVALID,
+            LocusCommandRouting.actionFor(Command.STOP_SAVE, RecordingState.UNAVAILABLE),
+        )
+    }
+
     @Test fun waypointRequiresAnActivelyRecordingTrack() {
         assertTrue("Watch waypoints must not require the phone", LocusCommandRouting.WAYPOINT_AUTO_SAVE)
         assertEquals(
