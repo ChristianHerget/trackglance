@@ -49,6 +49,11 @@ class CommandJournal(
         val ordinal: Long,
     )
 
+    sealed interface Health {
+        data object Healthy : Health
+        data class Blocked(val message: String) : Health
+    }
+
     interface Storage {
         fun load(): List<Record>
         fun save(records: List<Record>): Boolean
@@ -65,15 +70,23 @@ class CommandJournal(
     private val records = LinkedHashMap<Key, Record>()
     private var nextOrdinal = 1L
     private var storageReadable = true
+    private var blocksNewCommands = false
+    private var storageHealth: Health = Health.Healthy
 
     init {
         val loadedResult = runCatching { storage.load() }
         storageReadable = loadedResult.isSuccess
+        if (loadedResult.isFailure) {
+            storageHealth = Health.Blocked(UNREADABLE_STORAGE_MESSAGE)
+        }
         val decoded = loadedResult.getOrDefault(emptyList())
         val invalid = decoded.any {
             !validKey(it.key) || !validFingerprint(it.fingerprint) || it.ordinal <= 0
         } || decoded.groupingBy(Record::key).eachCount().any { it.value > 1 }
-        if (invalid) storageReadable = false
+        if (invalid) {
+            storageReadable = false
+            storageHealth = Health.Blocked(UNREADABLE_STORAGE_MESSAGE)
+        }
         val allValid = if (invalid) emptyList() else decoded
             .sortedBy { it.ordinal }
         val pending = allValid.filter { it.result == null }
@@ -81,6 +94,10 @@ class CommandJournal(
             .takeLast((capacity - pending.size).coerceAtLeast(0))
         val loaded = (pending + retainedCompleted).sortedBy { it.ordinal }
         loaded.forEach { records[it.key] = it }
+        blocksNewCommands = pending.isNotEmpty()
+        if (blocksNewCommands && storageReadable) {
+            storageHealth = Health.Blocked(UNRESOLVED_PENDING_MESSAGE)
+        }
         nextOrdinal = loaded.maxOfOrNull { it.ordinal }?.let { value ->
             if (value == Long.MAX_VALUE) 1L else value + 1L
         } ?: 1L
@@ -97,12 +114,16 @@ class CommandJournal(
             if (existing.fingerprint != fingerprint) return BeginResult.Collision
             return existing.result?.let(BeginResult::Completed) ?: BeginResult.Pending
         }
+        if (blocksNewCommands) return BeginResult.StorageFailure
 
         val previous = records.toMap()
         val previousOrdinal = nextOrdinal
         while (records.size >= capacity) {
             val removable = records.values.firstOrNull { it.result != null }
-                ?: return BeginResult.StorageFailure
+                ?: run {
+                    storageHealth = Health.Blocked(FULL_STORAGE_MESSAGE)
+                    return BeginResult.StorageFailure
+                }
             records.remove(removable.key)
         }
         if (nextOrdinal == Long.MAX_VALUE) renumber()
@@ -112,22 +133,38 @@ class CommandJournal(
             records.clear()
             records.putAll(previous)
             nextOrdinal = previousOrdinal
+            storageHealth = Health.Blocked(WRITE_STORAGE_MESSAGE)
             return BeginResult.StorageFailure
         }
+        storageHealth = Health.Healthy
         return BeginResult.Execute(key)
     }
 
     @Synchronized
     fun complete(key: Key, result: BridgeProtocol.Result): Boolean {
-        val existing = records[key] ?: return false
+        val existing = records[key] ?: run {
+            storageReadable = false
+            storageHealth = Health.Blocked(MISSING_PENDING_MESSAGE)
+            return false
+        }
         records[key] = existing.copy(result = result)
-        if (persist()) return true
+        if (persist()) {
+            storageHealth = Health.Healthy
+            return true
+        }
         records[key] = existing
+        // Locus may already have applied the action. Keep this process and a later process (which
+        // will reload the pending record) from accepting any new mutation until explicit recovery.
+        storageReadable = false
+        storageHealth = Health.Blocked(UNRESOLVED_PENDING_MESSAGE)
         return false
     }
 
     @Synchronized
     internal fun snapshot(): List<Record> = records.values.toList()
+
+    @Synchronized
+    fun health(): Health = storageHealth
 
     private fun persist(): Boolean = runCatching { storage.save(records.values.toList()) }
         .getOrDefault(false)
@@ -180,6 +217,21 @@ class CommandJournal(
 
         private fun validUnsigned(value: Long): Boolean = value in 0..UInt.MAX_VALUE.toLong()
         private const val SHA_256_HEX_LENGTH = 64
+        private const val UNREADABLE_STORAGE_MESSAGE =
+            "Command safety history is unreadable. Commands are blocked to prevent duplicate Locus actions; " +
+                "close the watchapp and, after confirming no command is pending, clear this app's storage to recover."
+        private const val FULL_STORAGE_MESSAGE =
+            "Command safety history is full of unresolved actions. New commands are blocked; " +
+                "close the watchapp and, after confirming no command is pending, clear this app's storage to recover."
+        private const val WRITE_STORAGE_MESSAGE =
+            "Command safety history could not be saved. Commands remain fail-closed; check free storage and retry. " +
+                "If this persists, close the watchapp before clearing this app's storage."
+        private const val UNRESOLVED_PENDING_MESSAGE =
+            "Command safety history contains an unresolved action. New commands are blocked to prevent a duplicate; " +
+                "close the watchapp and, after confirming the resulting Locus state, clear this app's storage to recover."
+        private const val MISSING_PENDING_MESSAGE =
+            "Command safety history lost an in-progress action. Commands remain fail-closed to prevent a duplicate; " +
+                "close the watchapp and, after confirming no command is pending, clear this app's storage to recover."
     }
 }
 

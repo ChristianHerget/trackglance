@@ -68,7 +68,8 @@
       "APP_VERSION": 35,
       "WAYPOINT_NAME": 36,
       "CURRENT_HEART_RATE": 37,
-      "HEART_RATE_SEQUENCE": 38
+      "HEART_RATE_SEQUENCE": 38,
+      "TRANSFER_GENERATION": 39
     },
     "companionApp": {
       "android": {

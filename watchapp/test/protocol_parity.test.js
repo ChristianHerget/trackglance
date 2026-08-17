@@ -14,6 +14,12 @@ const androidBuild = read('android/app/build.gradle.kts');
 const watch = read('watchapp/src/c/main.c');
 const watchConfigSource = read('watchapp/src/c/watch_config.c');
 const watchConfig = read('watchapp/src/c/watch_config.h');
+const watchState = read('watchapp/src/c/watch_state.h');
+const androidTransport = read('android/app/src/main/java/app/locuspebble/bridge/pebble/PebbleTransport.kt');
+const androidRuntime = read('android/app/src/main/java/app/locuspebble/bridge/core/BridgeRuntime.kt');
+const androidMessages = read('android/app/src/main/java/app/locuspebble/bridge/pebble/PebbleMessages.kt');
+const androidProfileSerial = read(
+  'android/app/src/main/java/app/locuspebble/bridge/core/ProfileTransferSerialStore.kt');
 const protocol = read('protocol/README.md');
 const development = read('docs/development.md');
 const endToEnd = read('docs/end-to-end-testing.md');
@@ -38,8 +44,8 @@ function numericDefines(text) {
 }
 
 const keys = packageJson.pebble.messageKeys;
-assert.deepStrictEqual(Object.values(keys).sort((a,b) => a-b),Array.from({length:39},(_,i) => i),
-  'AppMessage keys must be unique and contiguous from 0 through 38');
+assert.deepStrictEqual(Object.values(keys).sort((a,b) => a-b),Array.from({length:40},(_,i) => i),
+  'AppMessage keys must be unique and contiguous from 0 through 39');
 
 const keyBlock = capture(kotlin,/object Key \{([\s\S]*?)\n    \}/,'Kotlin key block');
 const kotlinKeys = {};
@@ -83,6 +89,7 @@ const keyAliases = {
   v:'PROTOCOL_VERSION', type:'MESSAGE_TYPE', result:'RESULT', time:'SAMPLE_EPOCH_SECONDS',
   session:'SESSION_ID', index:'CHUNK_INDEX', count:'CHUNK_COUNT', data:'CHUNK_DATA',
   id:'TRANSFER_ID', release:'APP_VERSION', hr:'CURRENT_HEART_RATE', sequence:'HEART_RATE_SEQUENCE',
+  generation:'TRANSFER_GENERATION',
 };
 for (const [pkjsName,packageName] of Object.entries(keyAliases)) {
   assert.strictEqual(pkjs.KEYS[pkjsName],keys[packageName],`PKJS key ${pkjsName} drifted`);
@@ -104,6 +111,7 @@ for (const declaration of ['CONFIG_QUEUED(7)', 'INVALID_CONFIG(8)', 'STORAGE_FAI
 }
 
 const defines = numericDefines(watchConfig);
+const stateDefines = numericDefines(watchState);
 assert.strictEqual(pkjs.LIMIT.profiles,defines.WATCH_MAX_PROFILES);
 assert.strictEqual(pkjs.LIMIT.metrics,defines.WATCH_MAX_SLOTS);
 assert.strictEqual(pkjs.LIMIT.displayNameCodePoints,defines.WATCH_PROFILE_NAME_CODEPOINTS);
@@ -112,6 +120,16 @@ assert.strictEqual(pkjs.LIMIT.locusNameBytes,defines.WATCH_LOCUS_NAME_SIZE-1);
 assert.strictEqual(pkjs.LIMIT.idBytes,defines.WATCH_PROFILE_ID_SIZE-1);
 
 const mainDefines = numericDefines(watch);
+const hexadecimalConstant = (text,name,suffix,description) => Number.parseInt(capture(
+  text,
+  new RegExp(`${name}\\s+(?:=\\s+)?0x([0-9a-f_]+)${suffix}`,'i'),
+  description,
+).replace(/_/g,''),16);
+const kotlinNumericConstant = name => Number(capture(
+  kotlin,
+  new RegExp(`const val ${name} = ([\\d_]+)L?`),
+  `Android ${name}`,
+).replace(/_/g,''));
 const androidLimit = name => Number(capture(
   kotlin,
   new RegExp(`const val ${name} = (\\d+)`),
@@ -130,11 +148,63 @@ assert.strictEqual(defines.WATCH_CONFIG_MAX_CHUNKS,Math.ceil(pkjs.LIMIT.configBy
 assert.strictEqual(pkjs.LIMIT.profileListBytes,mainDefines.PROFILE_LIST_SIZE-1);
 assert.strictEqual(pkjs.LIMIT.profileListBytes,androidLimit('MAX_PROFILE_LIST_BYTES'));
 assert.strictEqual(pkjs.LIMIT.chunkBytes,defines.WATCH_CONFIG_CHUNK_BYTES);
-assert.strictEqual(pkjs.LIMIT.chunkBytes,mainDefines.PROFILE_CHUNK_BYTES);
+assert.strictEqual(pkjs.LIMIT.chunkBytes,stateDefines.WATCH_PROFILE_CHUNK_BYTES);
+assert(watch.includes('#define PROFILE_CHUNK_BYTES WATCH_PROFILE_CHUNK_BYTES'));
 assert.strictEqual(pkjs.LIMIT.chunkBytes,androidLimit('MAX_CHUNK_BYTES'));
-assert.strictEqual(pkjs.LIMIT.profileChunks,mainDefines.PROFILE_MAX_CHUNKS);
+assert.strictEqual(pkjs.LIMIT.profileChunks,stateDefines.WATCH_PROFILE_MAX_CHUNKS);
+assert(watch.includes('#define PROFILE_MAX_CHUNKS WATCH_PROFILE_MAX_CHUNKS'));
 assert.strictEqual(pkjs.LIMIT.profileChunks,Math.ceil(pkjs.LIMIT.profileListBytes/pkjs.LIMIT.chunkBytes));
 assert.strictEqual(pkjs.LIMIT.profileChunks,androidLimit('MAX_PROFILE_LIST_CHUNKS'));
+const cTransferSerialMask = hexadecimalConstant(
+  watchState,'WATCH_TRANSFER_SERIAL_MASK','u','C transfer serial mask');
+const cTransferSerialHalfRange = hexadecimalConstant(
+  watchState,'WATCH_TRANSFER_SERIAL_HALF_RANGE','u','C transfer serial half range');
+const androidTransferSerialMask = hexadecimalConstant(
+  kotlin,'TRANSFER_SERIAL_MASK','L','Android transfer serial mask');
+const androidTransferSerialHalfRange = hexadecimalConstant(
+  kotlin,'TRANSFER_SERIAL_HALF_RANGE','L','Android transfer serial half range');
+assert.strictEqual(pkjs.LIMIT.transferSerialMask,cTransferSerialMask);
+assert.strictEqual(pkjs.LIMIT.transferSerialMask,androidTransferSerialMask);
+assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,cTransferSerialHalfRange);
+assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,androidTransferSerialHalfRange);
+assert.strictEqual(pkjs.LIMIT.transferSerialMask,0x7fffffff);
+assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,0x40000000);
+assert(androidRuntime.includes('profileTransferSerialStore.reserve()') &&
+    androidProfileSerial.includes('if (previous == null)') &&
+    androidProfileSerial.includes('0L') &&
+    androidProfileSerial.includes('(previous + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK'),
+  'Android profile transfers must reserve a dedicated zero-seeded durable +1 serial under the shared mask');
+assert.strictEqual(mainDefines.DURABLE_TRANSFER_GENERATION,androidLimit('DURABLE_TRANSFER_GENERATION'));
+assert.strictEqual(mainDefines.DURABLE_TRANSFER_GENERATION,1);
+assert(androidMessages.includes('BridgeProtocol.Key.TRANSFER_GENERATION') &&
+    androidMessages.includes('BridgeProtocol.DURABLE_TRANSFER_GENERATION') &&
+    watch.includes('MESSAGE_KEY_TRANSFER_GENERATION') &&
+    watch.includes('DURABLE_TRANSFER_GENERATION'),
+  'Android and watch profile chunks must carry the durable transfer-generation marker');
+
+const deliveryAttempts = kotlinNumericConstant('DELIVERY_MAX_ATTEMPTS');
+const deliveryAttemptMillis = kotlinNumericConstant('DELIVERY_ATTEMPT_TIMEOUT_MILLIS');
+const retryBaseMillis = kotlinNumericConstant('DELIVERY_RETRY_BASE_MILLIS');
+const confirmationMillis = kotlinNumericConstant('COMMAND_CONFIRMATION_MILLIS');
+const transferTimeoutSeconds = kotlinNumericConstant('RECEIVER_TRANSFER_TIMEOUT_SECONDS');
+const commandTimeoutSeconds = kotlinNumericConstant('RECEIVER_COMMAND_RESULT_TIMEOUT_SECONDS');
+const maxDeliveryMillis = deliveryAttempts * deliveryAttemptMillis +
+  retryBaseMillis * deliveryAttempts * (deliveryAttempts - 1) / 2;
+assert.strictEqual(deliveryAttempts,pkjs.LIMIT.sendAttempts);
+assert.strictEqual(deliveryAttemptMillis,pkjs.LIMIT.ackTimeoutMillis);
+assert.strictEqual(mainDefines.CONFIG_TRANSFER_TIMEOUT_SECONDS,transferTimeoutSeconds);
+assert.strictEqual(mainDefines.PROFILE_TRANSFER_TIMEOUT_SECONDS,transferTimeoutSeconds);
+assert(transferTimeoutSeconds * 1000 > maxDeliveryMillis,
+  'receiver transfer lifetime must exceed a full reliable frame-delivery window');
+assert.strictEqual(mainDefines.COMMAND_RESULT_TIMEOUT_SECONDS,commandTimeoutSeconds);
+assert(commandTimeoutSeconds * 1000 > maxDeliveryMillis * 3 + confirmationMillis,
+  'command correlation must outlive an older snapshot, confirmation, barrier, and result delivery');
+assert(androidTransport.includes('BridgeProtocol.DELIVERY_MAX_ATTEMPTS') &&
+    androidTransport.includes('BridgeProtocol.DELIVERY_ATTEMPT_TIMEOUT_MILLIS') &&
+    androidTransport.includes('BridgeProtocol.DELIVERY_RETRY_BASE_MILLIS'),
+  'production Android transport must use the timing constants checked above');
+assert(androidRuntime.includes('BridgeProtocol.COMMAND_CONFIRMATION_MILLIS'),
+  'production command confirmation must use the timing constant checked above');
 
 const displayLimits = /display names: at most (\d+) Unicode scalar values and (\d+) bytes; Locus names: at most (\d+) bytes/.exec(protocol);
 assert(displayLimits,'protocol must document the three profile-name limits in the key table');
@@ -170,6 +240,31 @@ assert(protocol.includes('only when that query succeeds and authoritatively retu
   'protocol must reserve FAILED + empty for a successful authoritative empty query');
 assert(protocol.includes('produce no completed profile-list transfer, preserving the watch and PKJS stale caches'),
   'protocol must document no-transfer cache preservation for profile source/validation failure');
+assert(protocol.includes('rejects every later snapshot with a lower delivery epoch even after') &&
+    protocol.includes('equal delivery epochs remain valid') &&
+    protocol.includes('durable floor') &&
+    protocol.includes('Close the watchapp before such a reset') &&
+    protocol.includes('Ordinary process\nrestart or phone-clock correction needs no watchapp reopen'),
+  'protocol must document the lifetime floor, durable sender ordering, and coordinated reset');
+assert(protocol.includes('orders deliveries rather than dating the underlying Locus observation') &&
+    protocol.includes('can be ahead of phone wall time') &&
+    protocol.includes('actual Unix timestamp and is never a delivery-order stamp'),
+  'protocol must distinguish snapshot delivery ordering from HR sample time');
+assert(protocol.includes(`${commandTimeoutSeconds} seconds`) &&
+    protocol.includes(`${transferTimeoutSeconds} seconds`),
+  'protocol must document receiver command and transfer retention budgets');
+assert(protocol.includes('an identical chunk 0 with the same count and result is a harmless') &&
+    /conflicts\s+in\s+data,\s+count,\s+or\s+result\s+invalidates the entire partial transfer/.test(protocol),
+  'protocol must document duplicate and conflicting active chunk-zero behavior');
+assert(protocol.includes('Transfer IDs form a serial space modulo `2^31`') &&
+    protocol.includes('fully envelope-valid marked chunk 0') &&
+    protocol.includes('ignores every unmarked or unknown-generation frame') &&
+    protocol.includes('`0 < distance < 2^30`') &&
+    protocol.includes('exactly-half-range ambiguous value') &&
+    protocol.includes('equal-ID chunk 0 may begin the documented whole-transfer retry') &&
+    protocol.includes('dual whole-payload checksums') &&
+    protocol.includes('completed profile-list floor'),
+  'protocol must document transfer serial wrap, ambiguity, and equal-ID completion behavior');
 assert(protocol.includes('Transport failure is always ambiguous'),
   'protocol must not claim that a missing final-frame acknowledgement proves non-application');
 

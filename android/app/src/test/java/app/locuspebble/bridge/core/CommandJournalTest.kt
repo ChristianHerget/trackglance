@@ -29,7 +29,13 @@ class CommandJournalTest {
         val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
         assertTrue(CommandJournal(storage).begin(key, fingerprint) is CommandJournal.BeginResult.Execute)
 
-        assertEquals(CommandJournal.BeginResult.Pending, CommandJournal(storage).begin(key, fingerprint))
+        val recreated = CommandJournal(storage)
+        assertEquals(CommandJournal.BeginResult.Pending, recreated.begin(key, fingerprint))
+        assertEquals(
+            CommandJournal.BeginResult.StorageFailure,
+            recreated.begin(CommandJournal.Key("watch-a", 10, 3), fingerprint),
+        )
+        assertTrue(recreated.health() is CommandJournal.Health.Blocked)
     }
 
     @Test fun identityIncludesWatchAndFingerprint() {
@@ -91,6 +97,7 @@ class CommandJournalTest {
 
         storage.saveSucceeds = false
         assertEquals(CommandJournal.BeginResult.StorageFailure, journal.begin(next, fingerprint))
+        assertTrue(journal.health() is CommandJournal.Health.Blocked)
         assertEquals(
             CommandJournal.BeginResult.Completed(BridgeProtocol.Result.OK),
             journal.begin(old, fingerprint),
@@ -108,6 +115,55 @@ class CommandJournalTest {
         val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
 
         assertEquals(CommandJournal.BeginResult.StorageFailure, journal.begin(key, fingerprint))
+        val health = journal.health() as CommandJournal.Health.Blocked
+        assertTrue(health.message.contains("clear this app's storage"))
+    }
+
+    @Test fun aLaterSuccessfulWriteClearsATransientStorageDiagnostic() {
+        val storage = MemoryStorage()
+        val journal = CommandJournal(storage)
+        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.STOP_SAVE, null, null)
+        storage.saveSucceeds = false
+        assertEquals(
+            CommandJournal.BeginResult.StorageFailure,
+            journal.begin(CommandJournal.Key("watch", 1, 1), fingerprint),
+        )
+        assertTrue(journal.health() is CommandJournal.Health.Blocked)
+
+        storage.saveSucceeds = true
+        assertTrue(journal.begin(CommandJournal.Key("watch", 1, 2), fingerprint) is CommandJournal.BeginResult.Execute)
+        assertEquals(CommandJournal.Health.Healthy, journal.health())
+    }
+
+    @Test fun completingAnUnknownCommandPermanentlyFailsClosed() {
+        val journal = CommandJournal(MemoryStorage())
+        val missing = CommandJournal.Key("watch", 1, 1)
+        val next = CommandJournal.Key("watch", 1, 2)
+        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.STOP_SAVE, null, null)
+
+        assertFalse(journal.complete(missing, BridgeProtocol.Result.OK))
+        assertTrue(journal.health() is CommandJournal.Health.Blocked)
+        assertEquals(CommandJournal.BeginResult.StorageFailure, journal.begin(next, fingerprint))
+    }
+
+    @Test fun failedCompletionBlocksEveryNewMutationInThisAndTheNextProcess() {
+        val storage = MemoryStorage()
+        val key = CommandJournal.Key("watch", 1, 1)
+        val next = CommandJournal.Key("watch", 1, 2)
+        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
+        val journal = CommandJournal(storage)
+
+        assertTrue(journal.begin(key, fingerprint) is CommandJournal.BeginResult.Execute)
+        storage.saveSucceeds = false
+        assertFalse(journal.complete(key, BridgeProtocol.Result.OK))
+        storage.saveSucceeds = true
+        assertEquals(CommandJournal.BeginResult.StorageFailure, journal.begin(next, fingerprint))
+        assertTrue(journal.health() is CommandJournal.Health.Blocked)
+
+        val recreated = CommandJournal(storage)
+        assertEquals(CommandJournal.BeginResult.Pending, recreated.begin(key, fingerprint))
+        assertEquals(CommandJournal.BeginResult.StorageFailure, recreated.begin(next, fingerprint))
+        assertTrue(recreated.health() is CommandJournal.Health.Blocked)
     }
 
     @Test fun malformedDurableRecordAlsoFailsClosed() {

@@ -3,6 +3,7 @@
 #include "persistent_blob.h"
 #include "watch_build_hash.auto.h"
 #include "watch_config.h"
+#include "watch_state.h"
 
 #define PROTOCOL_VERSION 3
 #define RELEASE_VERSION "0.1.7"
@@ -16,15 +17,16 @@
 #define CONFIG_SIZE WATCH_CONFIG_BUFFER_SIZE
 #define PROFILE_LIST_SIZE 8192
 #define CONFIG_CHUNK_BYTES WATCH_CONFIG_CHUNK_BYTES
-#define PROFILE_CHUNK_BYTES 80
+#define PROFILE_CHUNK_BYTES WATCH_PROFILE_CHUNK_BYTES
 #define CONFIG_MAX_CHUNKS WATCH_CONFIG_MAX_CHUNKS
-#define PROFILE_MAX_CHUNKS 103
+#define PROFILE_MAX_CHUNKS WATCH_PROFILE_MAX_CHUNKS
+#define DURABLE_TRANSFER_GENERATION 1
 #define CONTROL_QUEUE_SIZE 9
 #define COMMAND_RECORD_COUNT 6
 #define MAX_SEND_ATTEMPTS 4
-#define CONFIG_TRANSFER_TIMEOUT_SECONDS 30
-#define PROFILE_TRANSFER_TIMEOUT_SECONDS 30
-#define COMMAND_RESULT_TIMEOUT_SECONDS 60
+#define CONFIG_TRANSFER_TIMEOUT_SECONDS 45
+#define PROFILE_TRANSFER_TIMEOUT_SECONDS 45
+#define COMMAND_RESULT_TIMEOUT_SECONDS 120
 #define SNAPSHOT_STALE_SECONDS 30
 #define UNAVAILABLE INT32_MIN
 
@@ -33,6 +35,7 @@
 #define PERSIST_PROFILE_LIST_LEGACY 102
 #define PERSIST_ACTIVE_ID 103
 #define PERSIST_SESSION_COUNTER 104
+#define PERSIST_RELAY_TRANSFER_COUNTER 105
 #define PERSIST_CONFIG_META 200
 #define PERSIST_PENDING_CONFIG_META 201
 #define PERSIST_PROFILE_LIST_META 202
@@ -235,19 +238,14 @@ static char s_chunks[CONFIG_SIZE];
 static char s_pending_chunks[CONFIG_SIZE];
 static char s_config_work[CONFIG_SIZE];
 static WatchConfigTransfer s_config_transfer = {.id = -1};
+static bool s_config_durable_generation_seen;
 static uint32_t s_transfer_last_activity;
 static bool s_config_result_slot_reserved;
 static bool s_pending_cleanup_required;
 
-static char s_profile_chunks[PROFILE_LIST_SIZE];
-static int32_t s_profile_transfer_id = -1;
-static int s_profile_chunk_count;
-static int s_profile_received_count;
-static int s_profile_transfer_result = RESULT_FAILED;
-static uint32_t s_profile_transfer_last_activity;
-static char s_profile_parts[PROFILE_MAX_CHUNKS][PROFILE_CHUNK_BYTES + 1];
-static uint8_t s_profile_part_lengths[PROFILE_MAX_CHUNKS];
-static bool s_profile_received[PROFILE_MAX_CHUNKS];
+static char s_profile_chunks[WATCH_PROFILE_TRANSFER_BUFFER_SIZE];
+static WatchProfileTransfer s_profile_transfer;
+static bool s_profile_durable_generation_seen;
 static bool s_profile_pending_ready;
 static int s_profile_pending_result = RESULT_FAILED;
 
@@ -257,7 +255,6 @@ static uint8_t s_control_count;
 static CommandRecord s_command_records[COMMAND_RECORD_COUNT];
 static uint32_t s_next_command_id;
 static uint32_t s_session_id;
-static uint32_t s_next_transfer_id;
 
 static bool s_outbox_busy;
 static OutboundKind s_inflight_kind;
@@ -363,6 +360,14 @@ static bool dictionary_int32(DictionaryIterator *iterator, uint32_t key, int32_t
   if (!tuple_unsigned_value(tuple, &value) || value > INT32_MAX) return false;
   *output = (int32_t)value;
   return true;
+}
+
+// 0 is an absent legacy marker, 1 is the current durable generation, and -1 is malformed.
+static int transfer_generation(DictionaryIterator *iterator) {
+  if (!iterator || !dict_find(iterator, MESSAGE_KEY_TRANSFER_GENERATION)) return 0;
+  int32_t generation = 0;
+  return dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_GENERATION, &generation) &&
+      generation == DURABLE_TRANSFER_GENERATION ? 1 : -1;
 }
 
 static bool dictionary_uint32(DictionaryIterator *iterator, uint32_t key, uint32_t *output) {
@@ -981,6 +986,10 @@ static AppMessageResult send_relay_packet(void) {
   const bool valid = write_common(iterator, MSG_PROFILE_LIST_CHUNK) &&
       dict_write_int32(iterator, MESSAGE_KEY_RESULT, s_relay_result) == DICT_OK &&
       dict_write_int32(iterator, MESSAGE_KEY_TRANSFER_ID, s_relay_id) == DICT_OK &&
+      dict_write_int32(
+          iterator,
+          MESSAGE_KEY_TRANSFER_GENERATION,
+          DURABLE_TRANSFER_GENERATION) == DICT_OK &&
       dict_write_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, s_relay_index) == DICT_OK &&
       dict_write_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, s_relay_count) == DICT_OK &&
       dict_write_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, part) == DICT_OK;
@@ -1093,13 +1102,19 @@ static void send_next(void) {
 static void relay_pending_profile_list(void);
 
 static void reset_profile_transfer(void) {
-  s_profile_transfer_id = -1;
-  s_profile_chunk_count = 0;
-  s_profile_received_count = 0;
-  s_profile_transfer_result = RESULT_FAILED;
-  s_profile_transfer_last_activity = 0;
-  memset(s_profile_received, 0, sizeof(s_profile_received));
-  memset(s_profile_part_lengths, 0, sizeof(s_profile_part_lengths));
+  watch_profile_transfer_reset(&s_profile_transfer);
+}
+
+static void enqueue_deferred_profile_request(void) {
+  if (!s_request_profiles_after_relay || s_relay_count ||
+      s_profile_transfer.id >= 0 || s_profile_pending_ready) {
+    return;
+  }
+  if (control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL)) {
+    s_request_profiles_after_relay = false;
+  } else {
+    show_notice(tr("Message queue full", "Nachrichtenwarteschl. voll"), 4);
+  }
 }
 
 static void finish_relay(void) {
@@ -1108,11 +1123,10 @@ static void finish_relay(void) {
   s_relay_index = 0;
   s_relay_count = 0;
   if (s_profile_pending_ready) relay_pending_profile_list();
-  if (s_request_profiles_after_relay) {
+  if (s_relay_count) {
     s_request_profiles_after_relay = false;
-    if (!control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL)) {
-      show_notice(tr("Message queue full", "Nachrichtenwarteschl. voll"), 4);
-    }
+  } else {
+    enqueue_deferred_profile_request();
   }
 }
 
@@ -1170,33 +1184,37 @@ static void relay_profile_list(void) {
     offset = end;
     count++;
   } while (offset < length);
+  int32_t transfer_id = -1;
+  if (!watch_transfer_serial_reserve_persistent(
+          PERSIST_RELAY_TRANSFER_COUNTER,
+          0,
+          &transfer_id)) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Failed to reserve profile relay transfer ID");
+    show_notice(tr("Profile relay unavailable", "Profilübertr. nicht verfügbar"), 5);
+    return;
+  }
   s_relay_offset = 0;
   s_relay_send_end = 0;
   s_relay_index = 0;
   s_relay_count = count;
-  s_relay_id = (int32_t)(s_next_transfer_id++ & 0x7fffffffu);
-  if (s_relay_id == 0) s_relay_id = (int32_t)(s_next_transfer_id++ & 0x7fffffffu);
+  s_relay_id = transfer_id;
 }
 
 static void relay_pending_profile_list(void) {
   if (!s_profile_pending_ready || s_relay_count) return;
   size_t length = 0;
-  for (int i = 0; i < s_profile_chunk_count; i++) {
-    if (!s_profile_received[i] ||
-        length + s_profile_part_lengths[i] >= sizeof(s_profile_chunks)) {
-      s_profile_pending_ready = false;
-      reset_profile_transfer();
-      return;
-    }
-    memcpy(s_profile_chunks + length, s_profile_parts[i], s_profile_part_lengths[i]);
-    length += s_profile_part_lengths[i];
-  }
-  s_profile_chunks[length] = '\0';
-  if ((s_profile_pending_result == RESULT_OK) != (length > 0) ||
+  if (!watch_profile_transfer_join(
+          &s_profile_transfer,
+          s_profile_chunks,
+          sizeof(s_profile_chunks),
+          PROFILE_LIST_SIZE - 1,
+          &length) ||
+      (s_profile_pending_result == RESULT_OK) != (length > 0) ||
       !watch_profile_list_valid(s_profile_chunks, length)) {
     s_profile_pending_ready = false;
     reset_profile_transfer();
     show_notice(tr("Invalid profile list", "Ungültige Profilliste"), 4);
+    enqueue_deferred_profile_request();
     return;
   }
 
@@ -1207,12 +1225,17 @@ static void relay_pending_profile_list(void) {
   s_profile_pending_ready = false;
   reset_profile_transfer();
   relay_profile_list();
+  if (s_relay_count) {
+    s_request_profiles_after_relay = false;
+  } else {
+    enqueue_deferred_profile_request();
+  }
 }
 
 static void complete_profile_transfer(void) {
-  s_profile_pending_result = s_profile_transfer_result;
+  s_profile_pending_result = s_profile_transfer.result;
   s_profile_pending_ready = true;
-  s_profile_transfer_id = -1;
+  s_profile_transfer.id = -1;
   relay_pending_profile_list();
 }
 
@@ -1223,7 +1246,12 @@ static void accept_profile_chunk(DictionaryIterator *iterator) {
   int32_t result;
   const char *data;
   size_t length;
-  if (s_profile_pending_ready) return;
+  const int generation = transfer_generation(iterator);
+  if (generation < 0 || (s_profile_durable_generation_seen && generation != 1)) return;
+  if (s_relay_count || s_profile_pending_ready) {
+    s_request_profiles_after_relay = true;
+    return;
+  }
   if (!dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
   if (!dictionary_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
       !dictionary_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
@@ -1231,37 +1259,34 @@ static void accept_profile_chunk(DictionaryIterator *iterator) {
       count < 1 || count > PROFILE_MAX_CHUNKS || index < 0 || index >= count ||
       (result != RESULT_OK && result != RESULT_FAILED) ||
       !dictionary_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, PROFILE_CHUNK_BYTES, &data, &length)) {
-    if (id == s_profile_transfer_id) reset_profile_transfer();
-    return;
-  }
-
-  if (index == 0) {
-    reset_profile_transfer();
-    s_profile_transfer_id = id;
-    s_profile_chunk_count = count;
-    s_profile_transfer_result = result;
-    s_profile_transfer_last_activity = s_uptime_seconds;
-  } else if (id != s_profile_transfer_id) {
-    return;
-  } else if (count != s_profile_chunk_count || result != s_profile_transfer_result) {
-    reset_profile_transfer();
-    return;
-  }
-  s_profile_transfer_last_activity = s_uptime_seconds;
-  if (s_profile_received[index]) {
-    if (s_profile_part_lengths[index] != length ||
-        memcmp(s_profile_parts[index], data, length) != 0) {
+    if (id == s_profile_transfer.id) {
       reset_profile_transfer();
+      enqueue_deferred_profile_request();
+      send_next();
     }
     return;
   }
-  memcpy(s_profile_parts[index], data, length);
-  s_profile_parts[index][length] = '\0';
-  s_profile_part_lengths[index] = (uint8_t)length;
-  s_profile_received[index] = true;
-  s_profile_received_count++;
-  if (s_profile_received_count == s_profile_chunk_count) {
+  if (generation == 1 && !s_profile_durable_generation_seen) {
+    if (index != 0) return;
+    watch_profile_transfer_initialize(&s_profile_transfer);
+    s_profile_durable_generation_seen = true;
+  }
+  const WatchProfileTransferOutcome outcome = watch_profile_transfer_accept(
+      &s_profile_transfer,
+      s_profile_chunks,
+      sizeof(s_profile_chunks),
+      id,
+      index,
+      count,
+      result,
+      data,
+      length,
+      s_uptime_seconds);
+  if (outcome == WATCH_PROFILE_TRANSFER_COMPLETE) {
     complete_profile_transfer();
+    send_next();
+  } else if (outcome == WATCH_PROFILE_TRANSFER_INVALID) {
+    enqueue_deferred_profile_request();
     send_next();
   }
 }
@@ -1274,8 +1299,8 @@ static void reset_config_transfer(void) {
 }
 
 static bool begin_config_transfer(void) {
-  reset_config_transfer();
   if (s_control_count >= CONTROL_QUEUE_SIZE) return false;
+  reset_config_transfer();
   s_config_result_slot_reserved = true;
   s_transfer_last_activity = s_uptime_seconds;
   return true;
@@ -1287,16 +1312,24 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   int32_t count;
   const char *data;
   size_t length;
+  const int generation = transfer_generation(iterator);
+  if (generation < 0 || (s_config_durable_generation_seen && generation != 1)) return;
   if (!dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
   if (!dictionary_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
       !dictionary_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
       count < 1 || count > CONFIG_MAX_CHUNKS || index < 0 || index >= count ||
       !dictionary_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, CONFIG_CHUNK_BYTES, &data, &length)) {
+    if (generation == 1 && !s_config_durable_generation_seen) return;
     if (id == s_config_transfer.id) reset_config_transfer();
     return;
   }
 
-  if (index == 0 && (s_config_transfer.id < 0 || id != s_config_transfer.id)) {
+  if (generation == 1 && !s_config_durable_generation_seen) {
+    if (index != 0 || !begin_config_transfer()) return;
+    watch_config_transfer_initialize(&s_config_transfer);
+    s_config_durable_generation_seen = true;
+  } else if (index == 0 && (s_config_transfer.id < 0 || id != s_config_transfer.id)) {
+    if (!watch_config_transfer_may_start(&s_config_transfer, id)) return;
     if (!begin_config_transfer()) return;
   }
   const WatchTransferOutcome outcome = watch_config_transfer_accept(
@@ -1811,8 +1844,8 @@ static void accept_snapshot(DictionaryIterator *iterator) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Rejected incomplete or invalid snapshot");
     return;
   }
-  if (s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS &&
-      candidate.sample_epoch < s_snapshot.sample_epoch) {
+  if (!watch_snapshot_epoch_allowed(
+          s_snapshot_received, s_snapshot.sample_epoch, candidate.sample_epoch)) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Rejected older snapshot");
     return;
   }
@@ -1891,12 +1924,15 @@ static void inbox(DictionaryIterator *iterator, void *context) {
   } else if (type == MSG_REQUEST_PROFILE_LIST) {
     if (s_relay_count) {
       s_request_profiles_after_relay = true;
+    } else if (s_profile_transfer.id >= 0 || s_profile_pending_ready) {
+      s_request_profiles_after_relay = true;
     } else if (persistent_blob_read(
             &s_profile_list_blob, s_profile_chunks, sizeof(s_profile_chunks)) &&
         watch_profile_list_valid(s_profile_chunks, strlen(s_profile_chunks))) {
       s_relay_result = s_profile_chunks[0] ? RESULT_OK : RESULT_FAILED;
       s_request_profiles_after_relay = true;
       relay_profile_list();
+      if (!s_relay_count) enqueue_deferred_profile_request();
       send_next();
     } else {
       if (persistent_blob_exists(&s_profile_list_blob) &&
@@ -1920,8 +1956,8 @@ static void tick(struct tm *time, TimeUnits units) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Discarding expired configuration transfer");
     reset_config_transfer();
   }
-  if (s_profile_transfer_id >= 0 &&
-      s_uptime_seconds - s_profile_transfer_last_activity >= PROFILE_TRANSFER_TIMEOUT_SECONDS) {
+  if (s_profile_transfer.id >= 0 &&
+      s_uptime_seconds - s_profile_transfer.last_activity >= PROFILE_TRANSFER_TIMEOUT_SECONDS) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Discarding expired profile-list transfer");
     reset_profile_transfer();
   }
@@ -1932,6 +1968,7 @@ static void tick(struct tm *time, TimeUnits units) {
     s_snapshot_age++;
     if (s_snapshot_age == SNAPSHOT_STALE_SECONDS + 1) update_health_subscription();
   }
+  enqueue_deferred_profile_request();
   render();
   send_next();
 }
@@ -1981,6 +2018,8 @@ static uint32_t create_session_id(void) {
 
 static bool init(void) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", LOCUS_WATCH_BUILD_SHA256_MARKER);
+  watch_config_transfer_initialize(&s_config_transfer);
+  watch_profile_transfer_initialize(&s_profile_transfer);
   const char *locale = i18n_get_system_locale();
   s_german = locale && strncmp(locale, "de", 2) == 0;
   default_profiles();
@@ -1993,8 +2032,6 @@ static bool init(void) {
   }
   s_session_id = create_session_id();
   s_next_command_id = 1;
-  s_next_transfer_id = s_session_id & 0x7fffffffu;
-  if (!s_next_transfer_id) s_next_transfer_id = 1;
   APP_LOG(APP_LOG_LEVEL_INFO, "Persistent capacity: %lu", (unsigned long)persist_get_max_size());
 
   if (!create_windows()) return false;

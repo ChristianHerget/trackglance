@@ -14,7 +14,8 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 2, 7 | command ID, session ID | unsigned; receiver deduplication includes the source watch, this pair, and the command payload |
 | 3 | command | Start `1`, Pause/Resume `2`, Stop/Save `3`, waypoint `4`, waypoint with dictated note `5` |
 | 4 | result | command/profile: OK `0`, invalid state `1`, unavailable `2`, failed `3`, invalid profile `4`, profile missing `5`, invalid waypoint name `6`; config result: applied `0`, queued `7`, invalid config `8`, storage failed `9` |
-| 5, 6 | recording state, sample time | stopped/recording/paused/unavailable `0..3`; Unix seconds |
+| 5 | recording state | stopped/recording/paused/unavailable `0..3` |
+| 6 | snapshot delivery epoch / HR sample time | snapshot: durable delivery-order stamp seeded by Unix seconds; type `8` HR: actual Unix sample seconds |
 | 8, 9 | selected display name, exact Locus profile name | UTF-8; display names: at most 20 Unicode scalar values and 80 bytes; Locus names: at most 255 bytes |
 | 10, 17 | elapsed, moving time | seconds |
 | 11, 18 | total, moving distance | metres |
@@ -24,12 +25,13 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 21 | vertical speed | centimetres/second |
 | 22 | slope | tenths of a percent |
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
-| 30–33 | chunk index/count/data/transfer ID | zero-based index, total, at most 80 UTF-8 bytes, nonnegative signed 32-bit transfer ID |
+| 30–33 | chunk index/count/data/transfer ID | zero-based index, total, at most 80 UTF-8 bytes, 31-bit serial ID `0..2147483647` |
 | 34 | Locus mode | reserved |
 | 35 | release version | exact APK/PBW release string, currently `0.1.7` |
 | 36 | waypoint name | confirmed dictation for command `5`; nonblank UTF-8, at most 120 bytes |
 | 37 | current heart rate | BPM; Locus-derived in snapshots, watch-derived only in type `8` |
 | 38 | heart-rate sequence | unsigned, increasing within the watch session |
+| 39 | transfer generation | integer `1` on every chunk emitted by a durable serial sender |
 
 Metric IDs are: elapsed `1`, moving time `2`, total/moving distance `3/4`, current/average/max
 speed `5/6/7`, current/average pace `8/9`, altitude/ascent/descent `10/11/12`, vertical speed
@@ -37,6 +39,42 @@ speed `5/6/7`, current/average pace `8/9`, altitude/ascent/descent `10/11/12`, v
 `19/20`, energy `21`, and current heart rate `22`. Current heart rate is always encoded from
 `UpdateContainer.locMyLocation.sensorHeartRate`; the bridge never echoes an originating watch value
 when Locus has not reported it. Pace is derived as `min/km` on the watch.
+
+Within one watchapp lifetime, the delivery epoch of an accepted snapshot establishes a
+nondecreasing floor. The watch rejects every later snapshot with a lower delivery epoch even after
+the installed snapshot becomes stale; equal delivery epochs remain valid for an identical retry.
+This snapshot field orders deliveries rather than dating the underlying Locus observation. Because
+it advances synthetically, it can be ahead of phone wall time. In a type `8` heart-rate message,
+key `6` instead remains the watch sample's actual Unix timestamp and is never a delivery-order stamp.
+
+Before issuing any snapshot request, the bridge durably reserves a delivery epoch equal to the
+greater of the observed phone time and one more than the last reserved epoch. The durable floor
+survives bridge process restarts and makes separate deliveries strictly increasing even within one
+second or after a backward phone-clock correction. A failed or ambiguous durable commit authorizes
+no request; the next attempt reloads the store and reserves again.
+
+After a state-changing command, the bridge reserves the command's barrier epoch before journaling or
+mutating Locus. Because Locus command broadcasts do not acknowledge application, a newly executed OK
+Start, Pause/Resume, or Stop command is polled to its expected recording state for a bounded interval.
+For Pause/Resume, that expected state comes from the same Locus state read that selected Pause versus
+Resume, rather than a separate pre-command sample.
+The bridge then must successfully deliver the latest authoritative snapshot with the barrier epoch
+before it sends `COMMAND_RESULT`. If the expected transition is not observed, it journals and returns
+`FAILED` with the latest snapshot; a retry replays that result without waiting for the now-obsolete
+target. A reservation failure executes no command. A pre-command request that completes remotely
+after its local timeout has a lower epoch than the barrier snapshot and cannot roll back the displayed
+state.
+
+The watch retains each command correlation for 120 seconds. This exceeds the bridge's bounded
+worst case of one older serialized snapshot delivery, state confirmation, the barrier snapshot,
+and the command-result delivery, including all three ten-second attempts and retry delays for each
+delivery. A result that follows any permitted retry schedule therefore arrives before correlation
+expiry.
+
+Deleting bridge storage or uninstalling/reinstalling the bridge also deletes this durable sender
+floor. Close the watchapp before such a reset, keep it closed through bridge restart and signer
+reenrollment, then reopen it so both sides establish a coordinated new baseline. Ordinary process
+restart or phone-clock correction needs no watchapp reopen while the durable store survives.
 
 Configuration is chunked as
 `theme|legacy-selected-index|watch-HR-to-Locus (0/1)|heart-rate-interval-seconds`, followed by one newline-separated profile
@@ -59,8 +97,16 @@ PKJS sends one AppMessage at a time. A configuration transaction registers its c
 before enqueueing, sends chunks in index order, retries the identical frame after a NACK or timeout
 up to three total frame attempts, and aborts the unsent remainder if that limit is exhausted. The
 startup profile request is queued after the initial configuration transport completes or aborts;
-it does not wait for the application-level result. Transfer IDs are nonzero and advance between
-transactions within a PKJS process.
+it does not wait for the application-level result. Before chunk 0 can be enqueued, PKJS durably
+reserves the transaction's next 31-bit serial. The counter survives process restart, starts at zero,
+includes zero at wrap, and is read back after writing; missing, corrupt, failed, or unconfirmed
+storage authorizes no configuration frames. An abandoned reservation remains a harmless gap. Every
+whole-transfer application-result retry reuses the already reserved ID, and every frame carries
+transfer-generation marker `1`.
+
+The watch retains an incomplete configuration or profile-list transfer for 45 seconds after its
+last accepted chunk. This exceeds a frame's full three-attempt, ten-second-per-attempt sender budget
+plus Android retry delays, so a valid final retry cannot expire the receiver between chunks.
 
 After every complete, well-formed configuration transfer, the watch emits type `9` with the same
 transfer ID and exactly one context-specific result: applied `0`, queued-until-a-fresh-stopped-state
@@ -112,10 +158,54 @@ and exact duplicates are invalid. Profile-list chunks use result `0` for a non-e
 for an authoritative empty list, so an empty Locus result is distinguishable from no relay response.
 
 All envelope fields use their documented integer or string tuple types; decimal strings are not
-accepted as integers. Chunk 0 starts or restarts a profile-list transfer even when an ID is reused.
-Later chunks must keep the same ID, count, and result. An identical duplicate is harmless, while a
-conflicting duplicate invalidates the partial transfer. A payload becomes visible only after every
-chunk is present and the joined byte and field limits pass validation.
+accepted as integers. A durable sender places transfer-generation marker `1` on every chunk. Before
+a receiver has seen that generation, only a fully envelope-valid marked chunk 0 may atomically clear
+its legacy in-memory serial floor and establish the new generation; a marked nonzero chunk cannot
+trigger the transition. Afterward, the receiver ignores every unmarked or unknown-generation frame,
+including delayed legacy traffic. PKJS persists the generation with its profile-list floor across JS
+recreation.
+
+Transfer IDs form a serial space modulo `2^31`. Relative to a receiver's floor,
+`distance = (candidate - floor) mod 2^31`; a candidate is newer only when
+`0 < distance < 2^30`. Older IDs and the exactly-half-range ambiguous value are ignored. A valid
+newer chunk 0 advances the floor before reassembly, and active reset, conflict, timeout, or
+completion never lowers it within the live receiver instance. Thus a delayed older chunk 0 cannot
+replace either an active or a completed newer transfer. Sender storage must not be reset
+independently while an old receiver or its durable floor can still observe delayed frames; such
+maintenance is a coordinated reset boundary. Close the watchapp before clearing transfer sender or
+receiver storage, keep it closed throughout that reset, and reopen it only after both sides are ready
+to establish a fresh marked generation.
+
+For the active ID, an identical chunk 0 with the same count and result is a harmless duplicate that
+preserves every later chunk already received. A same-ID chunk 0 that conflicts in data, count, or
+result invalidates the entire partial transfer and is itself discarded; another valid chunk 0 is
+then required to begin again. Later chunks must keep the same ID, count, and result. Any other
+identical duplicate is harmless, while a conflicting duplicate invalidates the partial transfer.
+After a profile-list transfer completes, an equal-ID replay is ignored. Configuration is the one
+exception: after completion, an equal-ID chunk 0 may begin the documented whole-transfer retry for
+a lost type-`9` result. The watch retains the completed chunk count, first-chunk fingerprint, total
+length, and dual whole-payload checksums; a same-ID retry whose bytes differ is rejected without
+changing the completed floor. A payload becomes visible only after every chunk is present and the
+joined byte and field limits pass validation.
+
+Android durably reserves a profile-list serial from a dedicated, wall-clock-independent counter
+before it emits chunk 0, and the watch durably reserves a new relay serial before making the
+validated list sendable to PKJS. Both counters advance modulo `2^31`, keep abandoned reservations as
+gaps, start at zero when absent, and fail closed on an ambiguous durable write. Their marker-driven
+generation transition makes that initial zero safe even when a still-open receiver retains an
+arbitrary legacy floor; later phone-clock corrections do not affect either counter.
+The watch uses a dedicated relay counter rather than deriving IDs from its session counter, because
+one watch session can relay more than one list. PKJS also persists its completed profile-list floor,
+so a JS restart cannot make a delayed older watch relay replace its cache. A failed or unconfirmed
+PKJS floor write blocks that live receiver; process recreation reloads whatever storage actually
+committed before accepting another transfer.
+
+The watch shares one fixed-slot buffer between Android reassembly and PKJS relay to stay below
+Pebble's virtual-size ceiling. That buffer has one owner at a time: Android profile chunks received
+while a relay is active are ignored, and the watch coalesces them into one fresh profile request
+after the relay. A PKJS request received during Android reassembly likewise waits instead of
+overwriting the partial transfer; successful completion satisfies it with the fresh relay, while a
+failed or expired transfer triggers a new request once the buffer is idle.
 
 JS atomically replaces its persistent cache after a complete compatible transfer, including a
 complete empty result. Cache entries carry protocol and release metadata; missing or mismatched

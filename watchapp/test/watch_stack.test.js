@@ -6,8 +6,12 @@ const path = require('path');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/c/main.c'), 'utf8');
 const configHeader = fs.readFileSync(path.join(__dirname, '../src/c/watch_config.h'), 'utf8');
+const watchConfigSource = configHeader +
+  fs.readFileSync(path.join(__dirname, '../src/c/watch_config.c'), 'utf8');
+const stateHeader = fs.readFileSync(path.join(__dirname, '../src/c/watch_state.h'), 'utf8');
+const stateSource = fs.readFileSync(path.join(__dirname, '../src/c/watch_state.c'), 'utf8');
 const constantExpressions = {};
-for (const match of `${configHeader}\n${source}`.matchAll(/^#define\s+([A-Z][A-Z0-9_]*)\s+([^\r\n/]+?)\s*$/gm)) {
+for (const match of `${configHeader}\n${stateHeader}\n${source}`.matchAll(/^#define\s+([A-Z][A-Z0-9_]*)\s+([^\r\n/]+?)\s*$/gm)) {
   constantExpressions[match[1]] = match[2];
 }
 
@@ -35,7 +39,7 @@ function constantValue(expression, resolving = new Set()) {
 
 function functionBodies(text) {
   const bodies = [];
-  const declaration = /^static\s+[\w *]+\s+(\w+)\s*\([^;{}]*\)\s*\{/gm;
+  const declaration = /^(?:static\s+)?[\w *]+\s+(\w+)\s*\([^;{}]*\)\s*\{/gm;
   let match;
   while ((match = declaration.exec(text))) {
     let depth = 1;
@@ -97,7 +101,7 @@ function stackViolations(text) {
   return oversized;
 }
 
-const oversized = stackViolations(source);
+const oversized = stackViolations(`${source}\n${stateSource}`);
 assert.deepStrictEqual(
   oversized,
   [],
@@ -120,13 +124,33 @@ for (const name of ['s_chunks', 's_pending_chunks', 's_config_work']) {
     `${name} must remain in static storage, not on Pebble's call stack`,
   );
 }
-assert(/^static char s_profile_chunks\[PROFILE_LIST_SIZE\]/m.test(source),
-  'the complete profile-list relay must remain in static storage');
-assert(/^static char s_profile_parts\[PROFILE_MAX_CHUNKS\]\[PROFILE_CHUNK_BYTES \+ 1\]/m.test(source),
-  'the profile-list reassembly parts must remain in static storage');
+assert(/^static char s_profile_chunks\[WATCH_PROFILE_TRANSFER_BUFFER_SIZE\]/m.test(source),
+  'the profile-list receive and relay buffer must remain in static storage');
+assert.strictEqual(
+  constantValue('WATCH_PROFILE_TRANSFER_BUFFER_SIZE'),
+  constantValue('WATCH_PROFILE_MAX_CHUNKS') * constantValue('WATCH_PROFILE_CHUNK_BYTES') + 1,
+  'the shared profile buffer must provide one fixed slot per possible chunk plus a terminator');
+assert(/^static WatchProfileTransfer s_profile_transfer;$/m.test(source) &&
+    !/char parts\[/.test(stateHeader) &&
+    stateHeader.includes('#define WATCH_PROFILE_TRANSFER_BUFFER_SIZE'),
+  'profile reassembly metadata must share the one static relay buffer instead of duplicating 8 KiB');
 
 const bodies = Object.fromEntries(functionBodies(source).map(fn => [fn.name, fn.body.replace(/\s+/g, '')]));
+const configBodies = Object.fromEntries(
+  functionBodies(watchConfigSource).map(fn => [fn.name, fn.body.replace(/\s+/g, '')]),
+);
+const stateBodies = Object.fromEntries(
+  functionBodies(stateSource).map(fn => [fn.name, fn.body.replace(/\s+/g, '')]),
+);
 assert(bodies.init, 'init must remain statically inspectable');
+const configTransferInitPosition = bodies.init.indexOf(
+  'watch_config_transfer_initialize(&s_config_transfer);');
+const profileResetPosition = bodies.init.indexOf(
+  'watch_profile_transfer_initialize(&s_profile_transfer);');
+const inboxRegistrationPosition = bodies.init.indexOf('app_message_register_inbox_received(inbox);');
+assert(configTransferInitPosition >= 0 && profileResetPosition > configTransferInitPosition &&
+    inboxRegistrationPosition > profileResetPosition,
+  'both transfer states must establish their sentinels and empty serial floors before inbound messages');
 const snapshotPosition = bodies.init.indexOf('control_enqueue(MSG_REQUEST_SNAPSHOT');
 const profilesPosition = bodies.init.indexOf('control_enqueue(MSG_REQUEST_PROFILE_LIST');
 const startupPumpPosition = bodies.init.indexOf('send_next()');
@@ -153,6 +177,8 @@ assert(maxSendAttempts >= 2 && maxSendAttempts <= 5,
 
 assert.strictEqual(constantValue('PERSIST_ACTIVE_ID'), 103,
   'the active profile ID must have persistent storage');
+assert.strictEqual(constantValue('PERSIST_RELAY_TRANSFER_COUNTER'), 105,
+  'profile relays must have a dedicated durable transfer serial');
 assert(bodies.write_active_id.includes('constchar*id=s_profiles[s_selected].id;') &&
     bodies.write_active_id.includes('persist_write_string(PERSIST_ACTIVE_ID,id)'),
   'choosing a profile must persist its stable ID');
@@ -163,7 +189,6 @@ assert(bodies.profile_load.includes('.num_items=s_profile_count'),
 assert(bodies.profile_choice_selected.includes(
   's_snapshot.state==STATE_RECORDING||s_snapshot.state==STATE_PAUSED'),
   'profile selection must remain locked while recording or paused');
-const watchConfigSource = configHeader + fs.readFileSync(path.join(__dirname, '../src/c/watch_config.c'), 'utf8');
 assert(watchConfigSource.replace(/\s+/g, '').includes(
   'output->selected=active_index>=0?active_index:((active_id&&*active_id)?0:(int)selected)'),
   'deleting the active ID must fall back to the first profile');
@@ -288,21 +313,79 @@ assert(bodies.accept_config_chunk.includes(
     bodies.accept_config_chunk.includes(
       'if(index==0&&(s_config_transfer.id<0||id!=s_config_transfer.id))'),
   'malformed unrelated config frames must not cancel the active transfer');
-assert(bodies.accept_profile_chunk.includes('result!=s_profile_transfer_result') &&
+const configSerialPreflight = bodies.accept_config_chunk.indexOf(
+  'watch_config_transfer_may_start(&s_config_transfer,id)');
+const configSlotReservation = bodies.accept_config_chunk.indexOf(
+  'begin_config_transfer()', configSerialPreflight);
+assert(configSerialPreflight >= 0 && configSlotReservation > configSerialPreflight,
+  'an older config chunk zero must be rejected before it resets state or reserves a result slot');
+assert(bodies.accept_config_chunk.includes(
+  'if(generation==1&&!s_config_durable_generation_seen){if(index!=0||!begin_config_transfer())return;watch_config_transfer_initialize(&s_config_transfer);s_config_durable_generation_seen=true;}'),
+  'the first fully valid marked config chunk zero must atomically replace the legacy floor');
+assert(bodies.begin_config_transfer.indexOf('s_control_count>=CONTROL_QUEUE_SIZE') <
+    bodies.begin_config_transfer.indexOf('reset_config_transfer();'),
+  'result-slot exhaustion must not erase an otherwise viable active transfer');
+assert(configBodies.watch_config_transfer_accept.includes(
+  'completed_first_chunk_matches(&transfer->completed_identity,count,data,length)') &&
+    configBodies.watch_config_transfer_accept.includes(
+      'completed_payload_matches(&transfer->completed_identity,buffer,transfer->length)') &&
+    configBodies.watch_config_transfer_accept.includes(
+      'remember_completed_payload(transfer,buffer);'),
+  'same-ID completed config retries must match the retained wire identity before reapplication');
+assert(bodies.accept_profile_chunk.includes('if(id==s_profile_transfer.id){') &&
     bodies.accept_profile_chunk.includes('reset_profile_transfer();'),
-  'every profile chunk must retain one immutable result and conflicts must reset reassembly');
-assert(bodies.accept_profile_chunk.includes(
-  'if(id==s_profile_transfer_id)reset_profile_transfer();return;'),
   'malformed unrelated profile frames must not cancel the active transfer');
-const profileChunkZero = bodies.accept_profile_chunk.indexOf('if(index==0){');
-const profileChunkZeroReset = bodies.accept_profile_chunk.indexOf('reset_profile_transfer();', profileChunkZero);
-const profileChunkZeroId = bodies.accept_profile_chunk.indexOf('s_profile_transfer_id=id;', profileChunkZero);
-assert(profileChunkZero >= 0 && profileChunkZeroReset > profileChunkZero &&
-    profileChunkZeroReset < profileChunkZeroId,
-  'profile chunk zero must unconditionally restart a reused transfer ID before accepting its new prefix');
+const profileGenerationGate = bodies.accept_profile_chunk.indexOf(
+  'if(generation<0||(s_profile_durable_generation_seen&&generation!=1))return;');
+const profileOwnershipGuard = bodies.accept_profile_chunk.indexOf(
+  'if(s_relay_count||s_profile_pending_ready){s_request_profiles_after_relay=true;return;}');
+assert(profileGenerationGate >= 0 && profileOwnershipGuard > profileGenerationGate,
+  'inbound profile chunks must never write the shared buffer while a relay owns it');
+assert(bodies.accept_profile_chunk.includes(
+  'if(generation==1&&!s_profile_durable_generation_seen){if(index!=0)return;watch_profile_transfer_initialize(&s_profile_transfer);s_profile_durable_generation_seen=true;}'),
+  'the first fully valid marked profile chunk zero must atomically replace the legacy floor');
+const profileRequestBusyGuard = bodies.inbox.indexOf(
+  'elseif(s_profile_transfer.id>=0||s_profile_pending_ready)');
+const profileCacheRead = bodies.inbox.indexOf(
+  'persistent_blob_read(&s_profile_list_blob,s_profile_chunks,sizeof(s_profile_chunks))');
+assert(profileRequestBusyGuard >= 0 && profileCacheRead > profileRequestBusyGuard &&
+    bodies.finish_relay.includes('enqueue_deferred_profile_request();'),
+  'PKJS profile requests must defer cache reads and coalesce one refresh while the shared buffer is busy');
+assert(bodies.accept_profile_chunk.includes('watch_profile_transfer_accept(') &&
+    bodies.accept_profile_chunk.includes('outcome==WATCH_PROFILE_TRANSFER_COMPLETE'),
+  'profile reassembly must use the unit-tested state machine and publish only complete transfers');
+assert(stateBodies.watch_profile_transfer_accept.includes('if(index==0){if(id==transfer->id){') &&
+    stateBodies.watch_profile_transfer_accept.includes(
+      'if(count!=transfer->chunk_count||result!=transfer->result||!chunk_matches(') &&
+    stateBodies.watch_profile_transfer_accept.includes(
+      'chunk_matches(transfer,buffer,0,data,length)') &&
+    stateBodies.watch_profile_transfer_accept.includes('returnWATCH_PROFILE_TRANSFER_DUPLICATE;'),
+  'an identical same-ID chunk zero must preserve the active transfer');
+assert(stateBodies.watch_profile_transfer_accept.includes(
+  'watch_profile_transfer_reset(transfer);returnWATCH_PROFILE_TRANSFER_INVALID;'),
+  'a conflicting same-ID chunk must invalidate the partial transfer');
+assert(stateBodies.watch_profile_transfer_accept.includes(
+  'if(!watch_transfer_serial_may_start(&transfer->serial,id,false))') &&
+    stateBodies.watch_profile_transfer_accept.includes(
+      'watch_transfer_serial_completed(&transfer->serial,id);'),
+  'profile reassembly must preserve a completed serial floor and reject older chunk-zero restarts');
+assert(stateBodies.watch_transfer_serial_is_newer.includes(
+  'distance>0&&distance<WATCH_TRANSFER_SERIAL_HALF_RANGE'),
+  '31-bit serial ordering must reject equality and the ambiguous half range');
+const relayReservation = bodies.relay_profile_list.indexOf(
+  'watch_transfer_serial_reserve_persistent(');
+const relayPublish = bodies.relay_profile_list.indexOf('s_relay_count=count;');
+assert(relayReservation >= 0 && relayPublish > relayReservation &&
+    bodies.relay_profile_list.includes('PERSIST_RELAY_TRANSFER_COUNTER,0,&transfer_id'),
+  'a profile relay must durably reserve its serial before making any chunk sendable');
+assert(bodies.send_relay_packet.includes(
+  'MESSAGE_KEY_TRANSFER_GENERATION,DURABLE_TRANSFER_GENERATION'),
+  'every durable watch relay frame must carry its transfer-generation marker');
 assert(bodies.relay_pending_profile_list.includes(
   'persistent_blob_write(&s_profile_list_blob,s_profile_chunks,length)'),
   'a complete empty profile list must atomically replace persisted stale data');
+assert(bodies.relay_pending_profile_list.includes('watch_profile_transfer_join('),
+  'profile relay must compact the shared fixed-slot receive buffer before validation and sending');
 assert(bodies.relay_pending_profile_list.includes('s_relay_result=s_profile_pending_result;') &&
     bodies.send_relay_packet.includes('MESSAGE_KEY_RESULT,s_relay_result'),
   'a relay must keep the completed result immutable across all outgoing chunks');
@@ -339,6 +422,13 @@ assert(bodies.accept_snapshot.includes('Snapshotcandidate;') &&
     bodies.accept_snapshot.includes('if(!parse_snapshot(iterator,&candidate))') &&
     bodies.accept_snapshot.includes('s_snapshot=candidate;'),
   'snapshot reception must parse into a temporary and replace state atomically');
-assert(bodies.accept_snapshot.includes('s_snapshot_age<=SNAPSHOT_STALE_SECONDS&&') &&
-    bodies.accept_snapshot.includes('candidate.sample_epoch<s_snapshot.sample_epoch'),
-  'an older epoch must be rejected while the installed snapshot remains fresh');
+assert(stateBodies.watch_snapshot_epoch_allowed.includes(
+  'return!current_received||candidate_epoch>=current_epoch;'),
+  'snapshot epochs must be nondecreasing for the complete watchapp lifetime');
+const epochGuard = bodies.accept_snapshot.indexOf('if(!watch_snapshot_epoch_allowed(');
+const snapshotInstall = bodies.accept_snapshot.indexOf('s_snapshot=candidate;');
+const healthUpdate = bodies.accept_snapshot.indexOf('update_health_subscription();');
+const pendingApply = bodies.accept_snapshot.indexOf('apply_pending_config_if_stopped();');
+assert(epochGuard >= 0 && snapshotInstall > epochGuard && healthUpdate > snapshotInstall &&
+    pendingApply > healthUpdate && !bodies.accept_snapshot.includes('s_snapshot_age<=SNAPSHOT_STALE_SECONDS'),
+  'fresh and stale lower epochs must return before snapshot, HR, or pending-config side effects');

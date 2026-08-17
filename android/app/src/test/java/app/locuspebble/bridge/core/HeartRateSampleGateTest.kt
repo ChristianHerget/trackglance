@@ -28,4 +28,11 @@ class HeartRateSampleGateTest {
         assertFalse(gate.accept("watch", 100, 7, 120, 1_000, 1_000))
         assertTrue(gate.accept("watch", 100, 8, 122, 1_000, 1_000))
     }
+
+    @Test fun oldSignerSequenceCannotPoisonTheReapprovedSignersStream() {
+        val gate = HeartRateSampleGate()
+        assertTrue(gate.accept("watch", 100, 99, 120, 1_000, 1_000, trustGeneration = 1))
+        assertTrue(gate.accept("watch", 100, 1, 121, 1_000, 1_000, trustGeneration = 2))
+        assertFalse(gate.accept("watch", 100, 99, 120, 1_000, 1_000, trustGeneration = 1))
+    }
 }

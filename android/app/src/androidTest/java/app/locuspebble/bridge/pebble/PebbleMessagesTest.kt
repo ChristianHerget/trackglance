@@ -81,6 +81,10 @@ class PebbleMessagesTest {
         }
         assertEquals("Wandern ÄÖÜ 🥾\nRunning", payload)
         messages.forEach { message ->
+            assertEquals(
+                BridgeProtocol.DURABLE_TRANSFER_GENERATION,
+                PebbleMessages.signed32(message, BridgeProtocol.Key.TRANSFER_GENERATION),
+            )
             assertTrue(
                 PebbleMessages.string(message, BridgeProtocol.Key.CHUNK_DATA)
                     .orEmpty().toByteArray(Charsets.UTF_8).size <= 12,

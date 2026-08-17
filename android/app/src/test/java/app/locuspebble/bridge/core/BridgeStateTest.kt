@@ -1,5 +1,6 @@
 package app.locuspebble.bridge.core
 
+import app.locuspebble.bridge.protocol.BridgeProtocol
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,6 +47,18 @@ class BridgeStateTest {
         ).withPebbleConnectionFailure("Core info unavailable")
 
         assertFalse(failed.watchConnected)
-        assertEquals("Core info unavailable", failed.lastError)
+        assertEquals("Core info unavailable", failed.diagnosticsError)
+    }
+
+    @Test fun healthyDiagnosticsDoNotEraseAnUnrelatedRuntimeFailure() {
+        val refreshed = BridgeStatus(lastError = "Command result delivery failed").withDiagnosticsSnapshot(
+            recordingState = BridgeProtocol.RecordingState.RECORDING,
+            sampledAtMillis = 1_000L,
+            currentHeartRate = 120,
+            error = null,
+        )
+
+        assertEquals("Command result delivery failed", refreshed.lastError)
+        assertNull(refreshed.diagnosticsError)
     }
 }

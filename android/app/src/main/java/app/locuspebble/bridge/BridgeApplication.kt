@@ -3,10 +3,11 @@ package app.locuspebble.bridge
 import android.app.Application
 import app.locuspebble.bridge.pebble.TrustedPebbleCompanionProvider
 
-/** Establishes the CoreApp-only PebbleKit selection before any app component can bind. */
+/** Disables picker auto-selection synchronously, then establishes trusted Core selection asynchronously. */
 class BridgeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        TrustedPebbleCompanionProvider.get(this).initializeBlocking()
+        TrustedPebbleCompanionProvider.disableAutoSelection(this)
+        TrustedPebbleCompanionProvider.initializeAsync(this)
     }
 }

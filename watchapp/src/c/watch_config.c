@@ -320,10 +320,86 @@ bool watch_waypoint_name_valid(const char *value) {
       false);
 }
 
-void watch_config_transfer_reset(WatchConfigTransfer *transfer) {
+void watch_config_transfer_initialize(WatchConfigTransfer *transfer) {
   if (!transfer) return;
   memset(transfer, 0, sizeof(*transfer));
   transfer->id = -1;
+}
+
+void watch_config_transfer_reset(WatchConfigTransfer *transfer) {
+  if (!transfer) return;
+  const WatchTransferSerialFloor serial = transfer->serial;
+  const WatchConfigTransferIdentity completed_identity = transfer->completed_identity;
+  memset(transfer, 0, sizeof(*transfer));
+  transfer->id = -1;
+  transfer->serial = serial;
+  transfer->completed_identity = completed_identity;
+}
+
+bool watch_config_transfer_may_start(const WatchConfigTransfer *transfer, int32_t id) {
+  return transfer && watch_transfer_serial_may_start(&transfer->serial, id, true);
+}
+
+static void transfer_checksums(
+    const char *data,
+    size_t length,
+    uint32_t *checksum_a,
+    uint32_t *checksum_b) {
+  uint32_t fnv = 2166136261u;
+  uint32_t crc = UINT32_MAX;
+  for (size_t i = 0; i < length; i++) {
+    const uint8_t byte = (uint8_t)data[i];
+    fnv ^= byte;
+    fnv *= 16777619u;
+    crc ^= byte;
+    for (int bit = 0; bit < 8; bit++) {
+      crc = (crc >> 1) ^ (0xedb88320u & (uint32_t)-(int32_t)(crc & 1u));
+    }
+  }
+  *checksum_a = fnv;
+  *checksum_b = ~crc;
+}
+
+static bool completed_first_chunk_matches(
+    const WatchConfigTransferIdentity *identity,
+    int count,
+    const char *data,
+    size_t length) {
+  if (!identity || !identity->valid || identity->chunk_count != count ||
+      identity->first_length != length) {
+    return false;
+  }
+  uint32_t checksum_a = 0;
+  uint32_t checksum_b = 0;
+  transfer_checksums(data, length, &checksum_a, &checksum_b);
+  return checksum_a == identity->first_checksum_a &&
+      checksum_b == identity->first_checksum_b;
+}
+
+static bool completed_payload_matches(
+    const WatchConfigTransferIdentity *identity,
+    const char *data,
+    size_t length) {
+  if (!identity || !identity->valid || identity->length != length) return false;
+  uint32_t checksum_a = 0;
+  uint32_t checksum_b = 0;
+  transfer_checksums(data, length, &checksum_a, &checksum_b);
+  return checksum_a == identity->checksum_a && checksum_b == identity->checksum_b;
+}
+
+static void remember_completed_payload(WatchConfigTransfer *transfer, const char *buffer) {
+  WatchConfigTransferIdentity *identity = &transfer->completed_identity;
+  memset(identity, 0, sizeof(*identity));
+  identity->valid = true;
+  identity->chunk_count = transfer->chunk_count;
+  identity->length = transfer->length;
+  identity->first_length = transfer->lengths[0];
+  transfer_checksums(buffer, transfer->length, &identity->checksum_a, &identity->checksum_b);
+  transfer_checksums(
+      buffer + transfer->offsets[0],
+      transfer->lengths[0],
+      &identity->first_checksum_a,
+      &identity->first_checksum_b);
 }
 
 WatchTransferOutcome watch_config_transfer_accept(
@@ -359,9 +435,21 @@ WatchTransferOutcome watch_config_transfer_accept(
       watch_config_transfer_reset(transfer);
       return WATCH_TRANSFER_INVALID;
     }
+    if (!watch_config_transfer_may_start(transfer, id)) return WATCH_TRANSFER_IGNORED;
+    const bool completed_retry =
+        transfer->serial.valid && transfer->serial.completed && transfer->serial.id == id;
+    if (completed_retry && !completed_first_chunk_matches(
+            &transfer->completed_identity, count, data, length)) {
+      return WATCH_TRANSFER_INVALID;
+    }
     watch_config_transfer_reset(transfer);
     transfer->id = id;
     transfer->chunk_count = count;
+    transfer->verifying_completed_retry = completed_retry;
+    if (!completed_retry) {
+      watch_transfer_serial_started(&transfer->serial, id);
+      transfer->completed_identity.valid = false;
+    }
     buffer[0] = '\0';
   } else if (id != transfer->id) {
     return WATCH_TRANSFER_IGNORED;
@@ -390,6 +478,18 @@ WatchTransferOutcome watch_config_transfer_accept(
   transfer->length += length;
   buffer[transfer->length] = '\0';
   transfer->next_chunk++;
-  return transfer->next_chunk == transfer->chunk_count ?
-      WATCH_TRANSFER_COMPLETE : WATCH_TRANSFER_ACCEPTED;
+  if (transfer->next_chunk == transfer->chunk_count) {
+    if (transfer->verifying_completed_retry) {
+      if (!completed_payload_matches(
+              &transfer->completed_identity, buffer, transfer->length)) {
+        watch_config_transfer_reset(transfer);
+        return WATCH_TRANSFER_INVALID;
+      }
+    } else {
+      remember_completed_payload(transfer, buffer);
+      watch_transfer_serial_completed(&transfer->serial, id);
+    }
+    return WATCH_TRANSFER_COMPLETE;
+  }
+  return WATCH_TRANSFER_ACCEPTED;
 }

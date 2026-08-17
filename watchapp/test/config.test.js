@@ -54,11 +54,63 @@ const packet = (id,index,count,data,result=0) => ({33:id,30:index,31:count,32:da
 assert.strictEqual(transfer.accept(packet(1,1,2,'ing')), null);
 assert.strictEqual(transfer.accept(packet(1,0,2,'Hik')), null);
 assert.deepStrictEqual(transfer.accept(packet(1,1,2,'ing')), {payload:'Hiking',result:0});
-assert.strictEqual(transfer.accept(packet(2,0,3,'old-')), null);
-assert.strictEqual(transfer.accept(packet(2,2,3,'tail')), null);
-assert.strictEqual(transfer.accept(packet(2,0,3,'new-')), null,'chunk zero restarts a colliding transfer');
-assert.strictEqual(transfer.accept(packet(2,1,3,'middle-')), null);
-assert.deepStrictEqual(transfer.accept(packet(2,2,3,'tail')), {payload:'new-middle-tail',result:0});
+const reorderedTransfer = new config.Transfer();
+assert.strictEqual(reorderedTransfer.accept(packet(2,0,3,'A')), null);
+assert.strictEqual(reorderedTransfer.accept(packet(2,1,3,'B')), null);
+assert.strictEqual(reorderedTransfer.accept(packet(2,0,3,'A')), null,
+  'an identical late chunk zero must preserve later chunks');
+assert.deepStrictEqual(reorderedTransfer.accept(packet(2,2,3,'C')), {payload:'ABC',result:0});
+const conflictingTransfer = new config.Transfer();
+assert.strictEqual(conflictingTransfer.accept(packet(3,0,3,'old-')), null);
+assert.strictEqual(conflictingTransfer.accept(packet(3,2,3,'tail')), null);
+assert.strictEqual(conflictingTransfer.accept(packet(3,0,3,'new-')), null,
+  'a conflicting same-ID chunk zero invalidates the partial transfer');
+assert.strictEqual(conflictingTransfer.accept(packet(3,1,3,'middle-')), null,
+  'later chunks cannot revive an invalidated transfer');
+assert.strictEqual(conflictingTransfer.accept(packet(3,0,3,'new-')), null);
+assert.strictEqual(conflictingTransfer.accept(packet(3,1,3,'middle-')), null);
+assert.deepStrictEqual(conflictingTransfer.accept(packet(3,2,3,'tail')),
+  {payload:'new-middle-tail',result:0});
+const metadataConflictTransfer = new config.Transfer();
+assert.strictEqual(metadataConflictTransfer.accept(packet(6,0,3,'same')), null);
+assert.strictEqual(metadataConflictTransfer.accept(packet(6,0,2,'same')), null,
+  'a same-ID chunk-zero count conflict invalidates the partial transfer');
+assert.strictEqual(metadataConflictTransfer.accept(packet(6,1,3,'middle')), null);
+assert.strictEqual(metadataConflictTransfer.accept(packet(6,2,3,'tail')), null,
+  'later chunks cannot complete after a chunk-zero count conflict');
+assert.strictEqual(metadataConflictTransfer.accept(packet(7,0,3,'same')), null);
+assert.strictEqual(metadataConflictTransfer.accept(packet(7,0,3,'same',3)), null,
+  'a same-ID chunk-zero result conflict invalidates the partial transfer');
+assert.strictEqual(metadataConflictTransfer.accept(packet(7,1,3,'middle')), null);
+assert.strictEqual(metadataConflictTransfer.accept(packet(7,2,3,'tail')), null,
+  'later chunks cannot complete after a chunk-zero result conflict');
+const newIdTransfer = new config.Transfer();
+assert.strictEqual(newIdTransfer.accept(packet(4,0,2,'old-')), null);
+assert.strictEqual(newIdTransfer.accept(packet(5,0,2,'new-')), null,
+  'chunk zero with a new ID restarts the active transfer');
+assert.deepStrictEqual(newIdTransfer.accept(packet(5,1,2,'tail')),
+  {payload:'new-tail',result:0});
+assert.strictEqual(newIdTransfer.accept(packet(4,0,1,'delayed-old')),null,
+  'a delayed older chunk zero cannot replace a completed newer profile transfer');
+assert.strictEqual(newIdTransfer.accept(packet(4,0,2,'delayed-')),null);
+assert.strictEqual(newIdTransfer.accept(packet(4,1,2,'old')),null,
+  'a delayed older multipart transfer cannot replace a completed newer profile transfer');
+assert.strictEqual(newIdTransfer.accept(packet(5,0,1,'same-id')),null,
+  'a completed profile transfer ignores a same-ID replay');
+const activeSerialTransfer = new config.Transfer();
+assert.strictEqual(activeSerialTransfer.accept(packet(101,0,2,'new-')),null);
+assert.strictEqual(activeSerialTransfer.accept(packet(100,0,1,'old')),null,
+  'an older chunk zero cannot clobber an active newer transfer');
+assert.deepStrictEqual(activeSerialTransfer.accept(packet(101,1,2,'tail')),
+  {payload:'new-tail',result:0});
+const wrappedTransfer = new config.Transfer();
+assert.deepStrictEqual(wrappedTransfer.accept(packet(0x7fffffff,0,1,'edge')),
+  {payload:'edge',result:0});
+assert.deepStrictEqual(wrappedTransfer.accept(packet(0,0,1,'wrapped')),
+  {payload:'wrapped',result:0},'serial zero follows 0x7fffffff at the 31-bit wrap');
+assert.strictEqual(wrappedTransfer.accept(packet(0x7fffffff,0,1,'stale')),null);
+assert.strictEqual(wrappedTransfer.accept(packet(0x40000000,0,1,'ambiguous')),null,
+  'the exact half-range serial distance is rejected as ambiguous');
 assert.deepStrictEqual(transfer.accept(packet(3,0,1,'Neu\nLaufen')), {payload:'Neu\nLaufen',result:0});
 assert.strictEqual(transfer.accept(packet(4,0,1,'',3)).payload, '');
 assert.strictEqual(transfer.accept({33:5,30:'0',31:1,32:'Hiking',4:0}), null,'numeric strings are rejected');
@@ -73,6 +125,88 @@ assert.deepStrictEqual(config.profilePayload('__proto__\nconstructor'),['__proto
   'valid profile names must not collide with Object prototype properties');
 assert(config.chunks('Ä'.repeat(60), 80).every(x => Buffer.byteLength(x) <= 80));
 assert.strictEqual(config.chunks('🥾'.repeat(30), 80).join(''), '🥾'.repeat(30));
+
+assert(config.serialNewer(0,0x7fffffff));
+assert(!config.serialNewer(0x7fffffff,0));
+assert(!config.serialNewer(0x40000000,0));
+const serialStorage = Object.create(null);
+const serialAdapter = {
+  getItem:key => Object.prototype.hasOwnProperty.call(serialStorage,key)?serialStorage[key]:null,
+  setItem:(key,value) => { serialStorage[key]=value; },
+};
+const firstCounter = new config.DurableSerialCounter(serialAdapter,'serial');
+assert.strictEqual(firstCounter.reserve(),0);
+assert.strictEqual(firstCounter.reserve(),1);
+const restartedCounter = new config.DurableSerialCounter(serialAdapter,'serial');
+assert.strictEqual(restartedCounter.reserve(),2,
+  'a recreated sender advances the durable reservation instead of reseeding');
+serialStorage.serial=String(config.LIMIT.transferSerialMask);
+assert.strictEqual(restartedCounter.reserve(),0,'the durable serial wraps from the maximum to zero');
+const failingCounter = new config.DurableSerialCounter({
+  getItem:()=>null,
+  setItem:()=>{throw new Error('full');},
+},'serial',()=>7);
+assert.strictEqual(failingCounter.reserve(),null,'storage failure authorizes no transfer ID');
+const ignoredWriteCounter = new config.DurableSerialCounter({
+  getItem:()=>null,
+  setItem:()=>{},
+},'serial',()=>7);
+assert.strictEqual(ignoredWriteCounter.reserve(),null,'an unconfirmed serial write fails closed');
+const durableFloorStorage = Object.create(null);
+const floorAdapter = {
+  getItem:key => Object.prototype.hasOwnProperty.call(durableFloorStorage,key)?durableFloorStorage[key]:null,
+  setItem:(key,value) => { durableFloorStorage[key]=value; },
+};
+const firstReceiver = new config.Transfer(floorAdapter,'profile-floor');
+assert.deepStrictEqual(firstReceiver.accept(packet(77,0,1,'new')),{payload:'new',result:0});
+const restartedReceiver = new config.Transfer(floorAdapter,'profile-floor');
+assert.strictEqual(restartedReceiver.accept(packet(76,0,1,'old')),null,
+  'a recreated receiver retains its completed serial floor');
+assert.strictEqual(restartedReceiver.accept(packet(77,0,1,'same')),null);
+assert.deepStrictEqual(restartedReceiver.accept(packet(78,0,1,'newer')),
+  {payload:'newer',result:0});
+const ambiguousFloorStorage = Object.create(null);
+let confirmFloorWrites = false;
+const ambiguousFloorAdapter = {
+  getItem:key => confirmFloorWrites && Object.prototype.hasOwnProperty.call(ambiguousFloorStorage,key) ?
+    ambiguousFloorStorage[key] : null,
+  setItem:(key,value) => { ambiguousFloorStorage[key]=value; },
+};
+const ambiguousReceiver = new config.Transfer(ambiguousFloorAdapter,'profile-floor');
+assert.strictEqual(ambiguousReceiver.accept(packet(90,0,1,'unconfirmed')),null);
+confirmFloorWrites = true;
+assert.strictEqual(ambiguousReceiver.accept(packet(89,0,1,'older')),null,
+  'an ambiguous durable floor write blocks the live receiver instead of permitting rollback');
+assert.strictEqual(JSON.parse(ambiguousFloorStorage['profile-floor']).id,90,
+  'a delayed older transfer cannot overwrite an ambiguously committed receiver floor');
+const recoveredReceiver = new config.Transfer(ambiguousFloorAdapter,'profile-floor');
+assert.deepStrictEqual(recoveredReceiver.accept(packet(91,0,1,'recovered')),
+  {payload:'recovered',result:0},'process recreation reloads and advances the confirmed floor');
+const generationStorage = Object.create(null);
+const generationAdapter = {
+  getItem:key => Object.prototype.hasOwnProperty.call(generationStorage,key) ?
+    generationStorage[key] : null,
+  setItem:(key,value) => { generationStorage[key]=value; },
+};
+const generationTransfer = new config.Transfer(generationAdapter,'profile-floor');
+assert.deepStrictEqual(generationTransfer.accept(packet(100,0,1,'legacy')),
+  {payload:'legacy',result:0});
+assert.strictEqual(generationTransfer.accept({...packet(0,1,2,'late'),39:1}),null,
+  'a marked nonzero chunk cannot trigger the generation transition');
+assert.deepStrictEqual(generationTransfer.accept(packet(101,0,1,'legacy-newer')),
+  {payload:'legacy-newer',result:0},'legacy traffic remains usable before marked chunk zero');
+assert.deepStrictEqual(generationTransfer.accept({...packet(0,0,1,'durable-zero'),39:1}),
+  {payload:'durable-zero',result:0},'the first valid marked chunk zero resets the legacy floor');
+assert.strictEqual(generationTransfer.accept(packet(102,0,1,'delayed-legacy')),null,
+  'legacy frames are rejected after the durable generation transition');
+assert.deepStrictEqual(generationTransfer.accept({...packet(1,0,1,'durable-one'),39:1}),
+  {payload:'durable-one',result:0});
+assert.strictEqual(JSON.parse(generationStorage['profile-floor']).generation,1,
+  'the durable generation marker survives receiver recreation');
+const restartedGenerationTransfer = new config.Transfer(generationAdapter,'profile-floor');
+assert.strictEqual(restartedGenerationTransfer.accept(packet(2,0,1,'legacy')),null);
+assert.deepStrictEqual(restartedGenerationTransfer.accept({...packet(2,0,1,'durable-two'),39:1}),
+  {payload:'durable-two',result:0});
 
 const successfulFrames = [], first = {name:'first'}, second = {name:'second'}, request = {name:'request'};
 const serializedOutbox = new config.Outbox((frame,ok,fail) => successfulFrames.push({frame,ok,fail}),3,0);
@@ -253,6 +387,8 @@ const startupTransferId=sent[0].message[33];
 for(let i=0;i<startupChunkCount;i++){
   assert.strictEqual(sent[i].message[1],5);
   assert.strictEqual(sent[i].message[30],i);
+  assert.strictEqual(sent[i].message[39],1,
+    'every durable configuration frame carries the generation marker');
   sent[i].ok();
 }
 assert.strictEqual(sent[startupChunkCount].message[1],7,

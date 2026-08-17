@@ -1,11 +1,14 @@
 package app.locuspebble.bridge.pebble
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import android.os.RemoteException
 import androidx.core.os.bundleOf
+import app.locuspebble.bridge.core.BoundedAbandonableCallExecutor
 import app.locuspebble.bridge.core.BoundedTargetDelivery
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.common.SendDataCallback
@@ -15,56 +18,120 @@ import io.rebble.pebblekit2.common.model.TransmissionResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
 import io.rebble.pebblekit2.common.model.fromBundle
 import io.rebble.pebblekit2.common.model.toBundle
-import io.rebble.pebblekit2.common.util.SuspendingBindingConnection
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 interface PebbleDictionarySender : AutoCloseable {
     suspend fun send(
         dictionary: PebbleDictionary,
         watches: List<WatchIdentifier>,
     ): Map<WatchIdentifier, TransmissionResult>?
+
+    suspend fun send(
+        dictionary: PebbleDictionary,
+        watches: List<WatchIdentifier>,
+        admission: TrustAdmission,
+    ): Map<WatchIdentifier, TransmissionResult>? = send(dictionary, watches)
 }
+
+// Process-wide ceiling: sender recreation cannot accumulate abandoned Core Binder workers.
+private val CORE_APP_CALL_EXECUTOR = BoundedAbandonableCallExecutor(
+    maxWorkers = 2,
+    threadNamePrefix = "core-app-call",
+)
 
 class DefaultPebbleDictionarySender internal constructor(
     private val delegate: PebbleDictionarySender,
+    private val onTrustLost: () -> Unit = {},
+    private val admissionGate: (suspend (
+        TrustAdmission,
+        suspend () -> Map<WatchIdentifier, TransmissionResult>?,
+    ) -> TrustLeaseResult<Map<WatchIdentifier, TransmissionResult>?>)? = null,
     private val isTrusted: suspend () -> Boolean,
 ) : PebbleDictionarySender {
     constructor(context: Context) : this(
-        delegate = CoreAppPebbleDictionarySender(context),
+        delegate = CoreAppPebbleDictionarySender(
+            context,
+            onTrustLost = app.locuspebble.bridge.core.BridgeRuntime::resetForCompanionTrustLoss,
+        ),
+        onTrustLost = app.locuspebble.bridge.core.BridgeRuntime::resetForCompanionTrustLoss,
+        admissionGate = { admission, block ->
+            TrustedPebbleCompanionProvider.withOutboundAdmission(context, admission, block)
+        },
         isTrusted = TrustedPebbleCompanionProvider.get(context).guard::isTrusted,
     )
 
     override suspend fun send(
         dictionary: PebbleDictionary,
         watches: List<WatchIdentifier>,
-    ): Map<WatchIdentifier, TransmissionResult>? = if (isTrusted()) {
-        delegate.send(dictionary, watches)
-    } else {
-        null
+    ): Map<WatchIdentifier, TransmissionResult>? = send(
+        dictionary,
+        watches,
+        TrustAdmission.INITIAL,
+    )
+
+    override suspend fun send(
+        dictionary: PebbleDictionary,
+        watches: List<WatchIdentifier>,
+        admission: TrustAdmission,
+    ): Map<WatchIdentifier, TransmissionResult>? {
+        val gate = admissionGate
+        if (gate != null) {
+            return when (val result = gate(admission) { delegate.send(dictionary, watches, admission) }) {
+                is TrustLeaseResult.Admitted -> result.value
+                TrustLeaseResult.Stale,
+                TrustLeaseResult.Untrusted,
+                -> null
+            }
+        }
+        if (isTrusted()) return delegate.send(dictionary, watches, admission)
+        onTrustLost()
+        return null
     }
 
     override fun close() = delegate.close()
 }
 
 /** Cancellable, explicitly packaged equivalent of PebbleKit's default data sender. */
-private class CoreAppPebbleDictionarySender(context: Context) : PebbleDictionarySender {
-    private val connector = SuspendingBindingConnection(
-        context,
-        intentFactory = {
-            Intent(SEND_DATA_ACTION).setPackage(TRUSTED_CORE_APP_PACKAGE)
-        },
-        bind = UniversalRequestResponse.Stub::asInterface,
+private class CoreAppPebbleDictionarySender(
+    context: Context,
+    private val onTrustLost: () -> Unit,
+) : PebbleDictionarySender {
+    private val isTrusted = TrustedPebbleCompanionProvider.get(context).guard::isTrusted
+    private val connector = ResettableServiceConnector(
+        bindingFactory = AndroidCoreServiceBindingFactory(
+            context.applicationContext,
+            Intent(SEND_DATA_ACTION).setPackage(TRUSTED_CORE_APP_PACKAGE),
+        ),
+        isAlive = { it.asBinder().isBinderAlive },
+        callExecutor = CORE_APP_CALL_EXECUTOR,
+        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
     )
     private val closeGuard = IdempotentClose { connector.close() }
 
     override suspend fun send(
         dictionary: PebbleDictionary,
         watches: List<WatchIdentifier>,
+    ): Map<WatchIdentifier, TransmissionResult>? = send(
+        dictionary,
+        watches,
+        TrustAdmission.INITIAL,
+    )
+
+    override suspend fun send(
+        dictionary: PebbleDictionary,
+        watches: List<WatchIdentifier>,
+        admission: TrustAdmission,
     ): Map<WatchIdentifier, TransmissionResult>? {
         if (closeGuard.isClosed) return null
+        if (!isTrusted()) {
+            connector.reset()
+            onTrustLost()
+            return null
+        }
         val payload = bundleOf(
             KEY_ACTION to REQUEST_SEND_DATA,
             KEY_WATCHAPP_UUID to BridgeProtocol.APP_UUID.toString(),
@@ -84,7 +151,27 @@ private class CoreAppPebbleDictionarySender(context: Context) : PebbleDictionary
 
     private suspend fun request(request: Bundle): Bundle? {
         val service = connector.getOrConnect() ?: return null
-        return cancellablePebbleRequest(BinderPebbleRequestEndpoint(service), request)
+        if (!isTrusted()) {
+            connector.reset()
+            onTrustLost()
+            return null
+        }
+        val response = withTimeoutOrNull(REQUEST_TIMEOUT_MILLIS) {
+            cancellablePebbleRequest(
+                BinderPebbleRequestEndpoint(service),
+                request,
+                CORE_APP_CALL_EXECUTOR,
+            )
+        } ?: run {
+            connector.reset()
+            return null
+        }
+        if (!isTrusted()) {
+            connector.reset()
+            onTrustLost()
+            return null
+        }
+        return response
     }
 
     override fun close() = closeGuard.close()
@@ -97,7 +184,86 @@ private class CoreAppPebbleDictionarySender(context: Context) : PebbleDictionary
         const val KEY_DATA_DICTIONARY = "DATA_DICTIONARY"
         const val KEY_WATCHES_ID = "WATCHES_ID"
         const val KEY_TRANSMISSION_RESULTS = "TRANSMISSION_RESULTS"
+        const val CONNECT_TIMEOUT_MILLIS = 5_000L
+        const val REQUEST_TIMEOUT_MILLIS = 10_000L
     }
+}
+
+private class AndroidCoreServiceBindingFactory(
+    private val context: Context,
+    private val intent: Intent,
+) : ServiceBindingFactory<UniversalRequestResponse> {
+    override fun create(): ServiceBindingAttempt<UniversalRequestResponse> =
+        AndroidCoreServiceBindingAttempt(context, intent)
+}
+
+/** Keeps unbind correct even when a ServiceConnection callback runs before bindService returns. */
+private class AndroidCoreServiceBindingAttempt(
+    private val context: Context,
+    private val intent: Intent,
+) : ServiceBindingAttempt<UniversalRequestResponse> {
+    private val lock = Any()
+    private var callbacks: ServiceBindingCallbacks<UniversalRequestResponse>? = null
+    private var startReturned = false
+    private var bound = false
+    private var closeRequested = false
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val service = binder?.let(UniversalRequestResponse.Stub::asInterface)
+            if (service == null) callbacksSnapshot()?.disconnected()
+            else callbacksSnapshot()?.connected(service)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            callbacksSnapshot()?.disconnected()
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            callbacksSnapshot()?.disconnected()
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            callbacksSnapshot()?.disconnected()
+        }
+    }
+
+    override fun start(callbacks: ServiceBindingCallbacks<UniversalRequestResponse>): Boolean {
+        synchronized(lock) {
+            check(this.callbacks == null) { "A binding attempt may only be started once" }
+            this.callbacks = callbacks
+        }
+        val didBind = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        val unbindAfterReturn = synchronized(lock) {
+            startReturned = true
+            bound = didBind
+            if (closeRequested && bound) {
+                bound = false
+                true
+            } else {
+                false
+            }
+        }
+        if (unbindAfterReturn) runCatching { context.unbindService(connection) }
+        return didBind
+    }
+
+    override fun close() {
+        val shouldUnbind = synchronized(lock) {
+            closeRequested = true
+            callbacks = null
+            if (startReturned && bound) {
+                bound = false
+                true
+            } else {
+                false
+            }
+        }
+        if (shouldUnbind) runCatching { context.unbindService(connection) }
+    }
+
+    private fun callbacksSnapshot(): ServiceBindingCallbacks<UniversalRequestResponse>? =
+        synchronized(lock) { callbacks.takeUnless { closeRequested } }
 }
 
 internal class IdempotentClose(
@@ -149,6 +315,7 @@ private class BinderPebbleRequestEndpoint(
 internal suspend fun cancellablePebbleRequest(
     endpoint: PebbleRequestEndpoint,
     payload: Bundle,
+    callExecutor: BoundedAbandonableCallExecutor = CORE_APP_CALL_EXECUTOR,
 ): Bundle? = suspendCancellableCoroutine { continuation ->
     val cleanupLock = Any()
     var registration: AutoCloseable? = null
@@ -177,35 +344,41 @@ internal suspend fun cancellablePebbleRequest(
     continuation.invokeOnCancellation {
         cleanup()
     }
-    try {
-        val newRegistration = endpoint.registerDeathRecipient { complete(null) }
-        if (newRegistration == null) {
-            complete(null)
-            return@suspendCancellableCoroutine
-        }
-        val requestAuthorized = synchronized(cleanupLock) {
-            if (cleaned || !continuation.isActive) {
-                runCatching { newRegistration.close() }
-                false
-            } else {
-                registration = newRegistration
-                true
+    val submitted = callExecutor.execute {
+        if (!continuation.isActive) return@execute
+        try {
+            val newRegistration = endpoint.registerDeathRecipient { complete(null) }
+            if (newRegistration == null) {
+                complete(null)
+                return@execute
             }
+            val requestAuthorized = synchronized(cleanupLock) {
+                if (cleaned || !continuation.isActive) {
+                    runCatching { newRegistration.close() }
+                    false
+                } else {
+                    registration = newRegistration
+                    true
+                }
+            }
+            if (!requestAuthorized) return@execute
+            val requestAccepted = endpoint.request(payload, ::complete)
+            if (!requestAccepted) complete(null)
+        } catch (error: Exception) {
+            fail(error)
         }
-        if (!requestAuthorized) return@suspendCancellableCoroutine
-        val requestAccepted = endpoint.request(payload, ::complete)
-        if (requestAccepted == false) complete(null)
-    } catch (error: Exception) {
-        fail(error)
     }
+    if (!submitted) complete(null)
 }
 
 /** Performs a small bounded retry and verifies every requested watch result. */
 class ReliablePebbleTransport(
     private val sender: PebbleDictionarySender,
-    private val maxAttempts: Int = 3,
-    private val attemptTimeoutMillis: Long = 10_000L,
-    private val retryDelay: suspend (attempt: Int) -> Unit = { attempt -> delay(100L * attempt) },
+    private val maxAttempts: Int = BridgeProtocol.DELIVERY_MAX_ATTEMPTS,
+    private val attemptTimeoutMillis: Long = BridgeProtocol.DELIVERY_ATTEMPT_TIMEOUT_MILLIS,
+    private val retryDelay: suspend (attempt: Int) -> Unit = { attempt ->
+        delay(BridgeProtocol.DELIVERY_RETRY_BASE_MILLIS * attempt)
+    },
 ) : AutoCloseable {
     private val delivery = BoundedTargetDelivery<WatchIdentifier>(
         maxAttempts = maxAttempts,
@@ -213,9 +386,13 @@ class ReliablePebbleTransport(
         retryDelay = retryDelay,
     )
 
-    suspend fun send(dictionary: PebbleDictionary, watches: Collection<WatchIdentifier>): Boolean {
+    suspend fun send(
+        dictionary: PebbleDictionary,
+        watches: Collection<WatchIdentifier>,
+        admission: TrustAdmission = TrustAdmission.INITIAL,
+    ): Boolean {
         return delivery.deliver(watches) { targets ->
-            sender.send(dictionary, targets).orEmpty()
+            sender.send(dictionary, targets, admission).orEmpty()
                 .filterValues { it == TransmissionResult.Success }
                 .keys
         }
@@ -232,4 +409,5 @@ class ActiveWatchRegistry<T> {
     @Synchronized fun closed(value: T): Boolean = values.remove(value)
     @Synchronized fun snapshot(): Set<T> = values.toSet()
     @Synchronized fun isEmpty(): Boolean = values.isEmpty()
+    @Synchronized fun clear(): Boolean = values.isNotEmpty().also { values.clear() }
 }

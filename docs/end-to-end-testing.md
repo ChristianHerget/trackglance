@@ -228,6 +228,24 @@ adb -s "$ANDROID_SERIAL" install -r \
 cd ..
 ```
 
+Open **Locus Pebble Bridge** after installing CoreApp. In **CoreApp identity**, compare the package
+and full SHA-256 signer digest with the APK you intended to install, tap **Trust this exact signer**,
+and confirm the same package and digest in the dialog. For a local build, verify it independently
+before approving it:
+
+```sh
+"$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs \
+  coreapp/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+```
+
+There is no silent trust-on-first-use and no certificate-subject shortcut. The persisted approval
+survives bridge restarts, but an uninstall/reinstall under a different signing key is blocked until
+that new exact digest is deliberately approved. A legitimate Android signing-key rotation remains
+trusted only when the platform reports the approved key in the package signing history.
+If Core attempted its first delivery while trust enrollment or picker initialization was still in
+progress, wait for diagnostics to show the approved CoreApp, then close and reopen the watchapp to
+replay the lifecycle open and start polling.
+
 CoreApp's basic watch, QEMU, locker, and PebbleKit functionality does not require production API
 tokens. Some account, bug-reporting, transcription, and online services do. Keep any such tokens,
 Firebase configuration, and signing keys outside this repository and outside public container
@@ -460,9 +478,14 @@ test recording should be left running or stopped and saved.
    ```
 
 The command dictionary must contain protocol v3, message type 2, command 1, a command ID, a session
-ID, the matching release version, and the exact Locus profile name. The result dictionary must use
-message type 3 with result 0. Finally, the bridge diagnostics must report **Recording: Recording**.
-An OK command result without the later recording state is not a complete pass.
+ID, the matching release version, and the exact Locus profile name. Before the result dictionary, the
+bridge must successfully deliver a message-type-1 snapshot whose state is **Recording** and whose
+snapshot delivery epoch is strictly newer than every snapshot delivery issued before the command.
+This value is a durable ordering stamp and may be ahead of wall time; it is not the Locus observation
+timestamp. Only then may
+it send message type 3 with result 0. Confirm that no older snapshot is accepted afterward and that
+the bridge diagnostics and watch remain **Recording**. An OK result without that prior authoritative
+state snapshot is not a complete pass.
 
 Large snapshot dictionaries can exceed Android logcat's per-line display limit. When the recording
 state tuple is truncated, use the bridge diagnostics or watch dashboard as the authoritative
@@ -566,6 +589,18 @@ translation, an ARM target, or a CoreApp source build containing the target ABI.
 - Verify the bridge diagnostics show the exact Locus profiles.
 - Distinguish a fresh response from a stale cached response.
 - Look for a complete, single-transfer profile chunk sequence.
+
+### Command safety or snapshot-ordering storage is blocked
+
+Close the watchapp first and keep it closed. Confirm in Locus that no command is still pending or
+transitioning. Only then clear the bridge application's storage or reinstall the bridge. Clearing
+storage removes the command journal, the approved CoreApp signer, the durable snapshot-epoch floor,
+and the profile-transfer serial floor. Relaunch the bridge, deliberately reenroll the exact CoreApp
+signer, and then reopen the watchapp to establish new receiver floors. Never reset bridge storage
+while the watchapp remains open: a delayed pre-reset snapshot or profile chunk can otherwise
+outrank the restarted bridge's new baseline. Those four safety stores are excluded from Android
+cloud backup and device transfer and therefore are not restored after uninstall/reinstall; ordinary
+refresh preferences may still be restored.
 
 ### ARCVM shows `PlaceholderActivity`
 

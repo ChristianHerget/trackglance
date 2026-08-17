@@ -66,6 +66,36 @@ class PebbleTransportTest {
         assertEquals(listOf(listOf(watch)), delegate.targets)
     }
 
+    @Test fun staleAdmissionQuietlyDropsWithoutResettingTheNewSignerGeneration() = runBlocking {
+        val watch = WatchIdentifier("watch")
+        val old = TrustAdmission(1)
+        val current = TrustAdmission(2)
+        val delegate = FakeSender { _, watches ->
+            watches.associateWith { TransmissionResult.Success }
+        }
+        var resets = 0
+        val sender = DefaultPebbleDictionarySender(
+            delegate = delegate,
+            onTrustLost = { resets++ },
+            admissionGate = { admission, block ->
+                if (admission == current) {
+                    TrustLeaseResult.Admitted(block())
+                } else {
+                    TrustLeaseResult.Stale
+                }
+            },
+            isTrusted = { true },
+        )
+
+        assertNull(sender.send(emptyMap(), listOf(watch), old))
+        assertEquals(0, resets)
+        assertTrue(delegate.targets.isEmpty())
+        assertEquals(
+            mapOf(watch to TransmissionResult.Success),
+            sender.send(emptyMap(), listOf(watch), current),
+        )
+    }
+
     @Test fun timedOutSenderDoesNotBlockALaterDelivery() = runBlocking {
         val watch = WatchIdentifier("watch")
         val sender = FakeSender { attempt, watches ->

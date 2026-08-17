@@ -17,7 +17,19 @@ interface LocusBridgeGateway {
         profileName: String? = null,
         waypointName: String? = null,
     ): BridgeProtocol.Result
+
+    /** Returns the target chosen by the same state read that routed a state-changing broadcast. */
+    fun executeWithExpectedState(
+        command: BridgeProtocol.Command,
+        profileName: String? = null,
+        waypointName: String? = null,
+    ): CommandExecution = CommandExecution(execute(command, profileName, waypointName))
 }
+
+data class CommandExecution(
+    val result: BridgeProtocol.Result,
+    val expectedState: BridgeProtocol.RecordingState? = null,
+)
 
 sealed interface RecordingProfilesResult {
     data class Success(val names: List<String>) : RecordingProfilesResult
@@ -102,54 +114,75 @@ class LocusGateway(private val context: Context) : LocusBridgeGateway {
         command: BridgeProtocol.Command,
         profileName: String?,
         waypointName: String?,
-    ): BridgeProtocol.Result {
+    ): BridgeProtocol.Result = executeWithExpectedState(command, profileName, waypointName).result
+
+    override fun executeWithExpectedState(
+        command: BridgeProtocol.Command,
+        profileName: String?,
+        waypointName: String?,
+    ): CommandExecution {
         return try {
-            val version = activeVersion() ?: return BridgeProtocol.Result.LOCUS_UNAVAILABLE
+            val version = activeVersion() ?: return CommandExecution(BridgeProtocol.Result.LOCUS_UNAVAILABLE)
             val current = readSnapshot(version, System.currentTimeMillis())
             if (current.state == BridgeProtocol.RecordingState.UNAVAILABLE) {
-                return BridgeProtocol.Result.LOCUS_UNAVAILABLE
+                return CommandExecution(BridgeProtocol.Result.LOCUS_UNAVAILABLE)
             }
-            when (command) {
+            val expectedState = when (command) {
                 BridgeProtocol.Command.START -> {
-                    if (current.state != BridgeProtocol.RecordingState.STOPPED) return BridgeProtocol.Result.INVALID_STATE
-                    if (!BridgeProtocol.validLocusProfileName(profileName)) return BridgeProtocol.Result.INVALID_PROFILE
+                    if (current.state != BridgeProtocol.RecordingState.STOPPED) {
+                        return CommandExecution(BridgeProtocol.Result.INVALID_STATE)
+                    }
+                    if (!BridgeProtocol.validLocusProfileName(profileName)) {
+                        return CommandExecution(BridgeProtocol.Result.INVALID_PROFILE)
+                    }
                     val installedName = BridgeProtocol.autoMatchProfile(profileName!!, recordingProfiles(version))
-                        ?: return BridgeProtocol.Result.PROFILE_NOT_FOUND
+                        ?: return CommandExecution(BridgeProtocol.Result.PROFILE_NOT_FOUND)
                     ActionBasics.actionTrackRecordStart(context, version, installedName)
+                    BridgeProtocol.RecordingState.RECORDING
                 }
                 BridgeProtocol.Command.PAUSE_RESUME -> {
                     if (current.state != BridgeProtocol.RecordingState.RECORDING && current.state != BridgeProtocol.RecordingState.PAUSED) {
-                        return BridgeProtocol.Result.INVALID_STATE
+                        return CommandExecution(BridgeProtocol.Result.INVALID_STATE)
                     }
                     when (LocusCommandRouting.actionFor(command, current.state)) {
-                        LocusRecordingAction.PAUSE -> ActionBasics.actionTrackRecordPause(context, version)
-                        LocusRecordingAction.START_OR_RESUME -> ActionBasics.actionTrackRecordStart(context, version)
+                        LocusRecordingAction.PAUSE -> {
+                            ActionBasics.actionTrackRecordPause(context, version)
+                            BridgeProtocol.RecordingState.PAUSED
+                        }
+                        LocusRecordingAction.START_OR_RESUME -> {
+                            ActionBasics.actionTrackRecordStart(context, version)
+                            BridgeProtocol.RecordingState.RECORDING
+                        }
                         else -> error("Unexpected pause/resume routing")
                     }
                 }
                 BridgeProtocol.Command.STOP_SAVE -> {
                     if (LocusCommandRouting.actionFor(command, current.state) != LocusRecordingAction.STOP_SAVE) {
-                        return BridgeProtocol.Result.INVALID_STATE
+                        return CommandExecution(BridgeProtocol.Result.INVALID_STATE)
                     }
                     ActionBasics.actionTrackRecordStop(context, version, true)
+                    BridgeProtocol.RecordingState.STOPPED
                 }
                 BridgeProtocol.Command.ADD_WAYPOINT,
                 BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
                 -> {
-                    if (current.state != BridgeProtocol.RecordingState.RECORDING) return BridgeProtocol.Result.INVALID_STATE
+                    if (current.state != BridgeProtocol.RecordingState.RECORDING) {
+                        return CommandExecution(BridgeProtocol.Result.INVALID_STATE)
+                    }
                     val resolvedName = LocusCommandRouting.waypointNameFor(command, waypointName)
-                        ?: return BridgeProtocol.Result.INVALID_WAYPOINT_NAME
+                        ?: return CommandExecution(BridgeProtocol.Result.INVALID_WAYPOINT_NAME)
                     ActionBasics.actionTrackRecordAddWpt(
                         context,
                         version,
                         resolvedName,
                         LocusCommandRouting.WAYPOINT_AUTO_SAVE,
                     )
+                    null
                 }
             }
-            BridgeProtocol.Result.OK
+            CommandExecution(BridgeProtocol.Result.OK, expectedState)
         } catch (_: Exception) {
-            BridgeProtocol.Result.FAILED
+            CommandExecution(BridgeProtocol.Result.FAILED)
         }
     }
 

@@ -83,6 +83,8 @@ object PebbleMessages {
             BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to i(BridgeProtocol.MessageType.PROFILE_LIST_CHUNK.wire),
             BridgeProtocol.Key.RESULT.toUInt() to i(transfer.result.wire),
             BridgeProtocol.Key.TRANSFER_ID.toUInt() to i(transferId),
+            BridgeProtocol.Key.TRANSFER_GENERATION.toUInt() to
+                i(BridgeProtocol.DURABLE_TRANSFER_GENERATION),
             BridgeProtocol.Key.CHUNK_INDEX.toUInt() to i(index),
             BridgeProtocol.Key.CHUNK_COUNT.toUInt() to i(transfer.chunks.size),
             BridgeProtocol.Key.CHUNK_DATA.toUInt() to text(chunk),

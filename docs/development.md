@@ -21,8 +21,13 @@ Install Locus Map 4 from Google Play. Install a current CoreApp build compatible
 Android 2, then install `watchapp/build/watchapp.pbw` through it. The reproducible QEMU setup uses
 CoreApp's direct transport from the pinned `coredevices/mobileapp` commit
 `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`.
-The Android diagnostics screen reports Locus, Pebble/Core selection, watch connection, recording
-state, refresh mode, and the last bridge error.
+Before using either a Play-distributed or source-built CoreApp, open the bridge diagnostics and
+explicitly approve the exact SHA-256 signing-certificate digest shown for package
+`coredevices.coreapp`. The bridge does not trust a package name, certificate subject, or first
+installation on its own. Approval is persisted, checked against the current signer and Android's
+authenticated signing history on every guard/bind, and fails closed after an unrelated reinstall.
+The Android diagnostics screen reports this trust state, Locus, Pebble/Core selection, watch
+connection, recording state, refresh mode, command-journal health, and the last bridge error.
 
 ## Toolchain
 
@@ -45,6 +50,17 @@ The PebbleKit bound service starts polling when the watchapp opens and stops it 
 closes. Adaptive mode sends an immediate snapshot, polls every two seconds for 15 seconds after
 opening or a command, and then every ten seconds. Fixed five- and ten-second modes are available
 from the Android diagnostics screen.
+
+Snapshot delivery epochs are reserved durably before every outbound request and continue increasing
+across bridge process restarts and backward phone-clock corrections. Before clearing bridge storage
+or reinstalling it, close the watchapp and keep it closed through the reset, bridge restart, and
+CoreApp signer reenrollment; reopen it only afterward to establish a coordinated new epoch baseline.
+Locus command broadcasts have no acknowledgement, so the bridge polls newly executed recording-state
+changes before it sends an OK result; an unconfirmed transition returns FAILED with the latest state.
+The signer approval, command journal, snapshot-epoch store, and profile-transfer serial store are
+excluded from both Android cloud backup and device transfer so an uninstall/reinstall cannot
+silently restore stale safety state;
+ordinary bridge preferences remain eligible for backup.
 
 ## QEMU/Core integration
 

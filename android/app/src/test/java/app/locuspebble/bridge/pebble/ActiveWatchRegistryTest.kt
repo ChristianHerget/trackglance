@@ -17,4 +17,15 @@ class ActiveWatchRegistryTest {
         assertTrue(registry.closed("watch-b"))
         assertTrue(registry.isEmpty())
     }
+
+    @Test fun trustLossClearsEveryTrackedWatch() {
+        val registry = ActiveWatchRegistry<String>()
+        registry.opened("watch-a")
+        registry.opened("watch-b")
+
+        assertTrue(registry.clear())
+        assertTrue(registry.isEmpty())
+        assertFalse(registry.clear())
+        assertTrue(registry.opened("watch-a"))
+    }
 }

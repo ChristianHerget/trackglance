@@ -10,6 +10,8 @@
     <application
         android:name=".BridgeApplication"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="Locus Pebble Bridge"
         android:roundIcon="@mipmap/ic_launcher"
@@ -23,7 +25,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Export permits Core binding; startup disables auto-selection and pins PebbleKit to CoreApp. -->
+        <!-- Export permits Core binding; the service guard requires the approved signer and Core selection. -->
         <service
             android:name=".pebble.BridgePebbleListenerService"
             android:exported="true"

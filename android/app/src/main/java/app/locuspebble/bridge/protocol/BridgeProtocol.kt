@@ -14,6 +14,15 @@ object BridgeProtocol {
     const val MAX_PROFILE_LIST_CHUNKS = 103
     const val MAX_CHUNK_BYTES = 80
     const val MAX_WATCH_ID_BYTES = 128
+    const val DELIVERY_MAX_ATTEMPTS = 3
+    const val DELIVERY_ATTEMPT_TIMEOUT_MILLIS = 10_000L
+    const val DELIVERY_RETRY_BASE_MILLIS = 100L
+    const val COMMAND_CONFIRMATION_MILLIS = 1_500L
+    const val RECEIVER_TRANSFER_TIMEOUT_SECONDS = 45
+    const val RECEIVER_COMMAND_RESULT_TIMEOUT_SECONDS = 120
+    const val TRANSFER_SERIAL_MASK = 0x7fff_ffffL
+    const val TRANSFER_SERIAL_HALF_RANGE = 0x4000_0000L
+    const val DURABLE_TRANSFER_GENERATION = 1
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
     object Key {
@@ -56,6 +65,7 @@ object BridgeProtocol {
         const val WAYPOINT_NAME = 36
         const val CURRENT_HEART_RATE = 37
         const val HEART_RATE_SEQUENCE = 38
+        const val TRANSFER_GENERATION = 39
     }
 
     enum class MessageType(val wire: Int) {

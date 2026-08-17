@@ -8,6 +8,13 @@ heart rate. Select opens state-aware controls for start, pause/resume, stop-and-
 selection, and adding a waypoint. Pebble Time 2 can optionally forward its raw heart rate to Locus
 while recording; navigation and map previews remain out of scope.
 
+The Android bridge fails closed until the user explicitly approves CoreApp's exact SHA-256 signing
+certificate in diagnostics. This preserves source-built/debug CoreApp workflows without trusting a
+package name or certificate subject alone; the signer is revalidated for every guard and bind.
+Before clearing bridge storage or reinstalling the bridge, close the watchapp first, keep it closed
+through restart and signer reenrollment, and reopen it afterward so snapshot ordering starts from a
+coordinated new snapshot and profile-transfer ordering baseline.
+
 ## Repository layout
 
 - `android/app` — Kotlin/Compose Android bridge using Locus API and PebbleKit Android 2.

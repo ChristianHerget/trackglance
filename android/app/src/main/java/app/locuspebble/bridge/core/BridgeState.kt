@@ -18,6 +18,8 @@ data class BridgeStatus(
     val lastWatchHeartRate: Int? = null,
     val lastHeartRateForwardedEpochMillis: Long? = null,
     val currentLocusHeartRate: Int? = null,
+    val commandJournalError: String? = null,
+    val diagnosticsError: String? = null,
     val lastError: String? = null,
 )
 
@@ -30,7 +32,20 @@ internal fun BridgeStatus.withPebbleSelection(trustedPackage: String?): BridgeSt
 
 internal fun BridgeStatus.withPebbleConnectionFailure(message: String): BridgeStatus = copy(
     watchConnected = false,
-    lastError = message,
+    diagnosticsError = message,
+)
+
+internal fun BridgeStatus.withDiagnosticsSnapshot(
+    recordingState: BridgeProtocol.RecordingState,
+    sampledAtMillis: Long,
+    currentHeartRate: Int?,
+    error: String?,
+): BridgeStatus = copy(
+    locusAvailable = recordingState != BridgeProtocol.RecordingState.UNAVAILABLE,
+    recordingState = recordingState,
+    lastUpdateEpochMillis = sampledAtMillis,
+    currentLocusHeartRate = currentHeartRate,
+    diagnosticsError = error,
 )
 
 object BridgeState {

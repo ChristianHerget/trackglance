@@ -17,8 +17,8 @@ class SerializedSnapshotDeliveryTest {
         val statuses = mutableListOf<Int>()
         val delivered = mutableListOf<Int>()
         val delivery = SerializedSnapshotDelivery<String, Int>(
-            read = reads::incrementAndGet,
-            updateStatus = statuses::add,
+            read = { reads.incrementAndGet() },
+            updateStatus = { snapshot, _ -> statuses.add(snapshot) },
             send = { snapshot, _ ->
                 if (snapshot == 1) {
                     firstSendStarted.complete(Unit)
@@ -45,5 +45,41 @@ class SerializedSnapshotDeliveryTest {
 
         assertEquals(listOf(1, 2), statuses)
         assertEquals(listOf(1, 2), delivered)
+    }
+
+    @Test fun mutationPublishesANewerSnapshotBeforeItsResult() = runBlocking {
+        var value = 1
+        val events = mutableListOf<String>()
+        val delivery = SerializedSnapshotDelivery<String, Int>(
+            read = { value },
+            updateStatus = { _, _ -> },
+            send = { snapshot, _ ->
+                events += "snapshot:$snapshot"
+                true
+            },
+        )
+
+        delivery.deliver(listOf("watch"))
+        val result = delivery.reserveThenMutateAndDeliverSnapshot(
+            targets = listOf("watch"),
+            reserve = { Unit },
+            mutate = {
+                value = 2
+                events += "mutation"
+                "ok"
+            },
+            readAfterMutation = { _, _ -> value },
+            finish = { mutation, snapshotDelivered ->
+                events += "result:$mutation:$snapshotDelivered"
+                snapshotDelivered
+            },
+            reservationFailed = { false },
+        )
+
+        assertEquals(true, result)
+        assertEquals(
+            listOf("snapshot:1", "mutation", "snapshot:2", "result:ok:true"),
+            events,
+        )
     }
 }
