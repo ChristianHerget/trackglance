@@ -27,15 +27,16 @@ state, refresh mode, and the last bridge error.
 
 ```sh
 sudo apt install openjdk-17-jdk-headless python3-pip python3-venv nodejs npm \
-  libsdl1.2debian libfdt1
+  libsdl2-2.0-0 libasound2 libpulse0 libx11-6 libfdt1
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install pebble-tool --python 3.13
-pebble sdk install latest
+pebble sdk install 4.33.1
+pebble sdk activate 4.33.1
 ```
 
 Use Android Studio to install Platform 36 and Build Tools 36.0.0. Create an untracked
 `local.properties` containing `sdk.dir=/absolute/path/to/Android/Sdk` when Android Studio has not
-already done so.
+already done so. Node.js 18 or newer is required for the watchapp verification suite.
 
 ## Update lifecycle
 
@@ -68,9 +69,19 @@ remain a later hardware smoke test.
 Normal verification compiles the instrumentation test but does not change Locus data:
 
 ```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
-  :android:app:compileDebugAndroidTestKotlin
+./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
+./gradlew :android:app:compileDebugAndroidTestKotlin
+cd watchapp
+npm ci
+npm test
+pebble clean
+pebble build
+npm run verify:pbw
 ```
+
+`verifyPebbleTargets` checks stack/scheduler invariants plus cross-language protocol and packaging
+metadata. `verify:pbw` must run after `pebble build`; it inspects the generated archive rather than
+assuming package declarations were honored.
 
 The real Locus contract test is deliberately opt-in. It requires an idle Locus Map installation,
 creates a short recording using Locus's active profile, and saves the recording. It refuses to run

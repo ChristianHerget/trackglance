@@ -17,7 +17,7 @@ repository / build host
   |-- Node.js + Pebble SDK -----------> watchapp PBW (C + embedded PKJS)
   |-- PebbleOS QEMU :12344 <--- TCP ---> CoreApp on Android
   |                                      |
-  |                                      | PebbleKit Android broadcasts
+  |                                      | PebbleKit Android bound service
   |                                      v
   +--- ADB --------------------------> Locus Bridge APK
                                          |
@@ -29,13 +29,14 @@ repository / build host
 The end-to-end path for a command is:
 
 ```text
-watch button -> watchapp C -> AppMessage -> CoreApp -> embedded PKJS
-             -> Android bridge -> Locus API -> Locus recording state
-             -> Android bridge -> PKJS -> AppMessage -> watchapp dashboard
+watch button -> watchapp C -> AppMessage -> CoreApp -> Android bridge -> Locus API
+             -> Android bridge -> CoreApp -> AppMessage -> watchapp dashboard
 ```
 
-All layers are required. A successful C build, a successful APK build, or even a successful
-AppMessage acknowledgement proves only one part of the path.
+CoreApp also hosts the embedded PKJS settings process and delivers AppMessages to it in parallel;
+PKJS is not an intermediate hop in the watch-to-Android command path. All runtime layers are
+required. A successful C build, a successful APK build, or even a successful AppMessage
+acknowledgement proves only one part of the path.
 
 ## Known-good baseline
 
@@ -139,6 +140,7 @@ npm ci
 npm test
 pebble clean
 pebble build
+npm run verify:pbw
 cd ..
 ```
 
@@ -149,7 +151,8 @@ android/app/build/outputs/apk/debug/app-debug.apk
 watchapp/build/watchapp.pbw
 ```
 
-Check versions and PBW contents before installation:
+The final npm command verifies PBW targets, metadata, resources, and embedded PKJS. Check versions
+and contents manually as needed before installation:
 
 ```sh
 ANDROID_SDK_ROOT=/absolute/path/to/Android/Sdk
@@ -395,9 +398,12 @@ The delivered activity may be reported as
 
 ## 7. Configure profiles and verify settings
 
-Open the watchapp settings from CoreApp while the watchapp is running. The first opening may show
-cached data while the profile query completes. A healthy fresh response changes the notice to
-**Locus profiles updated**.
+Open the watchapp settings from CoreApp while the watchapp is running. With a valid same-version
+cache, the page opens immediately with a stale-data notice while a refresh is queued. Without a
+valid cache, it waits for a fresh response for up to 500 ms and then opens with either fresh data or
+an unavailable notice. A response received after a page is already open is stored atomically for
+the next opening; the data URL cannot update the already-open page. A complete empty response also
+replaces the old cache and is shown explicitly instead of retaining stale profile names.
 
 Verify all of the following:
 
@@ -616,7 +622,7 @@ The first container milestone should run these commands without Android or GUI a
 ```sh
 ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
   :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
-cd watchapp && npm ci && npm test && pebble clean && pebble build
+cd watchapp && npm ci && npm test && pebble clean && pebble build && npm run verify:pbw
 ```
 
 ### Phase 2: QEMU service

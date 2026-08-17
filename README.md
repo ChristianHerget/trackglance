@@ -3,10 +3,10 @@
 An Android companion and native Pebble watchapp that display live Locus Map 4 track-recording
 statistics and control recording from a Pebble Time 2 or Pebble Round 2.
 
-The initial dashboard shows elapsed time, distance, current speed, average speed, altitude, and
-ascent. Select opens state-aware controls for start, pause/resume, stop-and-save, and adding a
-waypoint. Heart-rate input, navigation, and map previews are intentionally deferred, while the
-versioned protocol leaves room for them.
+Fresh dashboards show elapsed time, distance, current speed, average speed, altitude, and current
+heart rate. Select opens state-aware controls for start, pause/resume, stop-and-save, profile
+selection, and adding a waypoint. Pebble Time 2 can optionally forward its raw heart rate to Locus
+while recording; navigation and map previews remain out of scope.
 
 ## Repository layout
 
@@ -17,18 +17,30 @@ versioned protocol leaves room for them.
 - `docs/end-to-end-testing.md` — complete installation, acceptance-test, troubleshooting, and
   containerization guide.
 
-The provisional Android application ID is `app.locuspebble.bridge`. Change it, the watchapp
-`companionApp` entry, and the download URL together before publishing.
+The Android application ID is `app.locuspebble.bridge`; the PBW companion metadata points to that
+package and this repository as the project/download page. A fork that changes the ID must update
+both values. There is no published GitHub release yet, so the metadata does not claim a working
+latest-release artifact URL.
 
 ## Build and test
 
-Requirements are JDK 17, Android SDK Platform 36, and Pebble CLI/SDK 4.33 or newer.
+Requirements are JDK 17, Node.js 18 or newer, Android SDK Platform 36 with Build Tools 36.0.0,
+Pebble Tool 5.0.39, and Pebble SDK 4.33.1.
 
 ```sh
-./gradlew :android:app:testDebugUnitTest :android:app:assembleDebug
+./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
+./gradlew :android:app:compileDebugAndroidTestKotlin
 cd watchapp
+npm ci
+npm test
+pebble clean
 pebble build
+npm run verify:pbw
 ```
+
+The parity check compares protocol keys, versions, limits, UUIDs, supported targets, and companion
+metadata across Kotlin, C, PKJS, package metadata, and the protocol document. The PBW check then
+verifies the actual archive, including both platform payloads and embedded PKJS.
 
 Artifacts:
 

@@ -5,56 +5,66 @@ plugins {
 
 val verifyWatchStack = tasks.register<Exec>("verifyWatchStack") {
     group = "verification"
-    description = "Rejects local C buffers that exceed the Pebble stack budget."
+    description = "Checks Pebble stack storage and the serialized watch outbox."
     workingDir(layout.projectDirectory.dir("watchapp"))
     commandLine("node", "test/watch_stack.test.js")
     inputs.files(
         layout.projectDirectory.file("watchapp/src/c/main.c"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.c"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.h"),
         layout.projectDirectory.file("watchapp/test/watch_stack.test.js"),
+    )
+}
+
+val verifyProtocolParity = tasks.register<Exec>("verifyProtocolParity") {
+    group = "verification"
+    description = "Checks protocol keys, versions, limits, targets, and companion metadata."
+    workingDir(layout.projectDirectory.dir("watchapp"))
+    commandLine("node", "test/protocol_parity.test.js")
+    inputs.files(
+        layout.projectDirectory.file("android/app/build.gradle.kts"),
+        layout.projectDirectory.file(
+            "android/app/src/main/java/app/locuspebble/bridge/protocol/BridgeProtocol.kt",
+        ),
+        layout.projectDirectory.file("protocol/README.md"),
+        layout.projectDirectory.file("watchapp/package-lock.json"),
+        layout.projectDirectory.file("watchapp/package.json"),
+        layout.projectDirectory.file("watchapp/src/c/main.c"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.c"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.h"),
+        layout.projectDirectory.file("watchapp/src/pkjs/index.js"),
+        layout.projectDirectory.file("watchapp/test/protocol_parity.test.js"),
     )
 }
 
 val verifyPebbleTargets = tasks.register("verifyPebbleTargets") {
     group = "verification"
-    description = "Ensures the watchapp is built only for Time 2 and Round 2."
-    val packageFile = layout.projectDirectory.file("watchapp/package.json")
-    val pkjsFile = layout.projectDirectory.file("watchapp/src/pkjs/index.js")
-    val watchSourceFile = layout.projectDirectory.file("watchapp/src/c/main.c")
-    val androidBuildFile = layout.projectDirectory.file("android/app/build.gradle.kts")
-    inputs.files(packageFile, pkjsFile, watchSourceFile, androidBuildFile)
-    dependsOn(verifyWatchStack)
-    doLast {
-        val packageText = packageFile.asFile.readText()
-        val targetBlock = Regex(""""targetPlatforms"\s*:\s*\[([^]]*)]""")
-            .find(packageText)?.groupValues?.get(1)
-            ?: error("watchapp/package.json has no targetPlatforms array")
-        val targets = Regex(""""([^\"]+)"""").findAll(targetBlock)
-            .map { it.groupValues[1] }.toSet()
-        check(targets == setOf("emery", "gabbro")) {
-            "Expected only emery and gabbro, found $targets"
-        }
-        check(Regex("\"version\"\\s*:\\s*\"0\\.1\\.7\"").containsMatchIn(packageText))
-        val watchVersion = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
-            .find(packageText)?.groupValues?.get(1) ?: error("Missing watch version")
-        val androidVersion = Regex("versionName\\s*=\\s*\"([^\"]+)\"")
-            .find(androidBuildFile.asFile.readText())?.groupValues?.get(1)
-            ?: error("Missing Android versionName")
-        check(watchVersion == androidVersion) {
-            "APK version $androidVersion and PBW version $watchVersion must match"
-        }
-        check(watchSourceFile.asFile.readText().contains("#define RELEASE_VERSION \"$watchVersion\""))
-        check(pkjsFile.asFile.readText().contains("RELEASE='$watchVersion'"))
-        check(Regex("\"capabilities\"\\s*:\\s*\\[[^]]*\"configurable\"[^]]*\"health\"").containsMatchIn(packageText))
-        check(Regex("\"enableMultiJS\"\\s*:\\s*true").containsMatchIn(packageText))
-        check(pkjsFile.asFile.isFile) { "Embedded PKJS is missing" }
-        check(watchSourceFile.asFile.readText().contains("#define PROTOCOL_VERSION 3"))
-        check(Regex("\"WAYPOINT_NAME\"\\s*:\\s*36").containsMatchIn(packageText))
-        check(Regex("\"CURRENT_HEART_RATE\"\\s*:\\s*37").containsMatchIn(packageText))
-        check(Regex("\"HEART_RATE_SEQUENCE\"\\s*:\\s*38").containsMatchIn(packageText))
-    }
+    description = "Checks supported Pebble targets and cross-language protocol parity."
+    dependsOn(verifyProtocolParity, verifyWatchStack)
+}
+
+tasks.register<Exec>("verifyPebbleBundle") {
+    group = "verification"
+    description = "Checks the built PBW platforms, metadata, resources, and embedded PKJS."
+    workingDir(layout.projectDirectory.dir("watchapp"))
+    commandLine("node", "test/pbw.test.js")
+    inputs.files(
+        layout.projectDirectory.file("watchapp/build/watchapp.pbw"),
+        layout.projectDirectory.file("watchapp/package.json"),
+        layout.projectDirectory.file("watchapp/src/c/main.c"),
+        layout.projectDirectory.file("watchapp/src/c/persistent_blob.c"),
+        layout.projectDirectory.file("watchapp/src/c/persistent_blob.h"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.c"),
+        layout.projectDirectory.file("watchapp/src/c/watch_config.h"),
+        layout.projectDirectory.file("watchapp/src/pkjs/index.js"),
+        layout.projectDirectory.file("watchapp/test/pbw.test.js"),
+    )
 }
 
 project(":android:app") {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
     tasks.matching { it.name == "check" }.configureEach {
         dependsOn(rootProject.tasks.named("verifyPebbleTargets"))
     }
