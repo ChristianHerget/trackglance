@@ -105,6 +105,11 @@ class MainActivity : ComponentActivity() {
                         StatusLine("Last update", status.lastUpdateEpochMillis?.let {
                             DateFormat.getTimeInstance().format(Date(it))
                         } ?: "Never")
+                        StatusLine("Last watch HR", status.lastWatchHeartRate?.let { "$it bpm" } ?: "Never")
+                        StatusLine("Last HR forwarded", status.lastHeartRateForwardedEpochMillis?.let {
+                            DateFormat.getTimeInstance().format(Date(it))
+                        } ?: "Never")
+                        StatusLine("Current Locus HR", status.currentLocusHeartRate?.let { "$it bpm" } ?: "Unavailable")
                         status.lastError?.let { StatusLine("Last error", it) }
                     }
                 }

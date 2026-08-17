@@ -17,12 +17,14 @@ class BridgeProtocolTest {
             averageSpeedMps = 1.567f,
             altitudeMetres = -12.34,
             ascentMetres = 87.65f,
+            currentHeartRate = 123,
         )
         assertEquals(1235, snapshot.distanceWire())
         assertEquals(123, snapshot.currentSpeedWire())
         assertEquals(157, snapshot.averageSpeedWire())
         assertEquals(-123, snapshot.altitudeWire())
         assertEquals(877, snapshot.ascentWire())
+        assertEquals(123, snapshot.integerWire(snapshot.currentHeartRate))
     }
 
     @Test fun refreshModesUseExpectedCadence() {

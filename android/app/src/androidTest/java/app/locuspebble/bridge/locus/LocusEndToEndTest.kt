@@ -51,6 +51,8 @@ class LocusEndToEndTest {
         testStartedRecording = true
         assertTrue("Locus did not enter recording state", awaitState(BridgeProtocol.RecordingState.RECORDING))
         assertEquals(profileName, gateway.readSnapshot().locusProfileName)
+        assertTrue("Locus HR task was not sent", gateway.sendHeartRate(123))
+        assertTrue("Locus did not report injected HR", awaitHeartRate(123))
         pauseForObservation()
 
         assertCommand(BridgeProtocol.Command.PAUSE_RESUME)
@@ -92,5 +94,14 @@ class LocusEndToEndTest {
             Thread.sleep(250)
         }
         return gateway.readSnapshot().state == expected
+    }
+
+    private fun awaitHeartRate(expected: Int, timeoutMillis: Long = 5_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            if (gateway.readSnapshot().currentHeartRate == expected) return true
+            Thread.sleep(100)
+        }
+        return gateway.readSnapshot().currentHeartRate == expected
     }
 }

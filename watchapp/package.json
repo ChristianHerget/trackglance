@@ -1,7 +1,7 @@
 {
   "name": "locus-pebble-bridge",
   "author": "Christian Herget",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "keywords": ["locus", "hiking", "fitness"],
   "scripts": {
@@ -18,7 +18,7 @@
     "enableMultiJS": true,
     "targetPlatforms": ["emery", "gabbro"],
     "watchapp": {"watchface": false},
-    "capabilities": ["configurable"],
+    "capabilities": ["configurable", "health"],
     "resources": {"media": []},
     "messageKeys": {
       "PROTOCOL_VERSION": 0,
@@ -57,7 +57,9 @@
       "TRANSFER_ID": 33,
       "LOCUS_MODE": 34,
       "APP_VERSION": 35,
-      "WAYPOINT_NAME": 36
+      "WAYPOINT_NAME": 36,
+      "CURRENT_HEART_RATE": 37,
+      "HEART_RATE_SEQUENCE": 38
     },
     "companionApp": {
       "android": {

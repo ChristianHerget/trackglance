@@ -49,11 +49,13 @@ object BridgeProtocol {
         const val LOCUS_MODE = 34
         const val APP_VERSION = 35
         const val WAYPOINT_NAME = 36
+        const val CURRENT_HEART_RATE = 37
+        const val HEART_RATE_SEQUENCE = 38
     }
 
     enum class MessageType(val wire: Int) {
         SNAPSHOT(1), COMMAND(2), COMMAND_RESULT(3), REQUEST_SNAPSHOT(4),
-        CONFIG_CHUNK(5), PROFILE_LIST_CHUNK(6), REQUEST_PROFILE_LIST(7),
+        CONFIG_CHUNK(5), PROFILE_LIST_CHUNK(6), REQUEST_PROFILE_LIST(7), HEART_RATE_SAMPLE(8),
     }
     enum class RecordingState(val wire: Int) { STOPPED(0), RECORDING(1), PAUSED(2), UNAVAILABLE(3) }
     enum class Command(val wire: Int) {
@@ -69,6 +71,7 @@ object BridgeProtocol {
         AVERAGE_SPEED(6), MAX_SPEED(7), CURRENT_PACE(8), AVERAGE_PACE(9), ALTITUDE(10), ASCENT(11),
         DESCENT(12), VERTICAL_SPEED(13), SLOPE(14), AVERAGE_HEART_RATE(15), MAX_HEART_RATE(16),
         AVERAGE_CADENCE(17), MAX_CADENCE(18), AVERAGE_POWER(19), MAX_POWER(20), ENERGY(21),
+        CURRENT_HEART_RATE(22),
     }
 
     fun validProfileName(name: String?): Boolean = name != null &&
@@ -123,6 +126,7 @@ object BridgeProtocol {
         val verticalSpeedMps: Float? = null,
         val slopePercent: Float? = null,
         val averageHeartRate: Int? = null,
+        val currentHeartRate: Int? = null,
         val maxHeartRate: Int? = null,
         val averageCadence: Int? = null,
         val maxCadence: Int? = null,

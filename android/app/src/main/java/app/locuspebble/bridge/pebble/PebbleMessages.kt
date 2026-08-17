@@ -30,6 +30,7 @@ object PebbleMessages {
         BridgeProtocol.Key.SLOPE_TENTHS_PERCENT.toUInt() to i(value.slopeWire()),
         BridgeProtocol.Key.AVERAGE_HEART_RATE.toUInt() to i(value.integerWire(value.averageHeartRate)),
         BridgeProtocol.Key.MAX_HEART_RATE.toUInt() to i(value.integerWire(value.maxHeartRate)),
+        BridgeProtocol.Key.CURRENT_HEART_RATE.toUInt() to i(value.integerWire(value.currentHeartRate)),
         BridgeProtocol.Key.AVERAGE_CADENCE.toUInt() to i(value.integerWire(value.averageCadence)),
         BridgeProtocol.Key.MAX_CADENCE.toUInt() to i(value.integerWire(value.maxCadence)),
         BridgeProtocol.Key.AVERAGE_POWER.toUInt() to i(value.integerWire(value.averagePower)),

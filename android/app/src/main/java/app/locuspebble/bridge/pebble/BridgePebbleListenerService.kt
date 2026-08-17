@@ -37,6 +37,19 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             BridgeRuntime.get(this).sendRecordingProfiles()
             return ReceiveResult.Ack
         }
+        if (type == BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire) {
+            val sessionId = PebbleMessages.integer(data, BridgeProtocol.Key.SESSION_ID)
+                ?: return ReceiveResult.Nack
+            val sequence = PebbleMessages.integer(data, BridgeProtocol.Key.HEART_RATE_SEQUENCE)
+                ?: return ReceiveResult.Nack
+            val bpm = PebbleMessages.integer(data, BridgeProtocol.Key.CURRENT_HEART_RATE)?.toInt()
+                ?: return ReceiveResult.Nack
+            val sampledAt = PebbleMessages.integer(data, BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS)
+                ?: return ReceiveResult.Nack
+            return if (BridgeRuntime.get(this).handleHeartRate(sessionId, sequence, bpm, sampledAt)) {
+                ReceiveResult.Ack
+            } else ReceiveResult.Nack
+        }
         if (type != BridgeProtocol.MessageType.COMMAND.wire) return ReceiveResult.Nack
         val sessionId = PebbleMessages.integer(data, BridgeProtocol.Key.SESSION_ID) ?: return ReceiveResult.Nack
         val id = PebbleMessages.integer(data, BridgeProtocol.Key.COMMAND_ID) ?: return ReceiveResult.Nack

@@ -1,5 +1,6 @@
 package app.locuspebble.bridge.locus
 
+import android.content.Intent
 import android.content.Context
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import locus.api.android.ActionBasics
@@ -38,6 +39,7 @@ class LocusGateway(private val context: Context) {
             verticalSpeedMps = update.speedVertical.takeIf { update.isGpsLocValid },
             slopePercent = update.slope.takeIf { update.isGpsLocValid },
             averageHeartRate = stats?.heartRateAverage?.takeIf { it > 0 },
+            currentHeartRate = update.locMyLocation.sensorHeartRate?.toInt()?.takeIf { it > 0 },
             maxHeartRate = stats?.heartRateMax?.takeIf { it > 0 },
             averageCadence = stats?.cadenceAverage?.takeIf { it > 0 },
             maxCadence = stats?.cadenceMax?.takeIf { it > 0 },
@@ -46,6 +48,16 @@ class LocusGateway(private val context: Context) {
             energyKcal = stats?.energy?.takeIf { it > 0 },
             locusProfileName = update.trackRecProfileName.takeIf { it.isNotBlank() },
         )
+    }
+
+    /** Sends one live sensor value. Locus provides no acknowledgement for this broadcast. */
+    fun sendHeartRate(bpm: Int): Boolean {
+        if (bpm !in 25..250) return false
+        val version = activeVersion() ?: return false
+        val intent = Intent(LocusHeartRateTask.ACTION)
+            .putExtra(LocusHeartRateTask.EXTRA_TASKS, LocusHeartRateTask.payload(bpm))
+        LocusUtils.sendBroadcast(context, intent, version)
+        return true
     }
 
     fun recordingProfiles(): List<String> {
@@ -107,6 +119,15 @@ class LocusGateway(private val context: Context) {
         } catch (_: Exception) {
             BridgeProtocol.Result.FAILED
         }
+    }
+}
+
+object LocusHeartRateTask {
+    const val ACTION = "com.asamm.locus.DATA_TASK"
+    const val EXTRA_TASKS = "tasks"
+    fun payload(bpm: Int): String {
+        require(bpm in 25..250)
+        return "{heart_rate:{data:${bpm}.0}}"
     }
 }
 

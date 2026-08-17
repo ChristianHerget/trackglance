@@ -73,7 +73,7 @@ assert(
   'startup must queue the profile request instead of starting two AppMessage sends back-to-back',
 );
 assert(
-  source.includes('if(s_request_profiles_after_send){s_request_profiles_after_send=false;send_message(MSG_REQUEST_PROFILE_LIST,0);}'),
+  source.includes('if(s_request_profiles_after_send&&s_relay_index>=s_relay_count){s_request_profiles_after_send=false;send_message(MSG_REQUEST_PROFILE_LIST,0);}'),
   'the outbox callback must deliver the queued profile request',
 );
 
@@ -118,3 +118,14 @@ assert(source.includes('if(s_dictation_session)dictation_session_destroy(s_dicta
   'the dictation session must be released during shutdown');
 assert(source.includes('status!=DictationSessionStatusFailureTranscriptionRejected'),
   'user cancellation must return silently without creating a waypoint');
+
+assert(source.includes('HealthMetricHeartRateRawBPM'),'HR injection must use the newest raw BPM');
+assert(source.includes('bpm<25||bpm>250'),'raw BPM must be range checked');
+assert(source.includes('s_hr_pending=true'),'HR messages must be conflated in one pending slot');
+assert(source.includes('if(s_outbox_busy)return'),'all AppMessages must use a single-flight scheduler');
+assert(source.indexOf('if(s_pending_message_type)') < source.indexOf('if(s_hr_pending)write_message'),
+  'control messages must take priority over pending HR');
+assert(source.includes('health_service_set_heart_rate_sample_period(0)'),
+  'shutdown must restore the automatic sample period');
+assert(source.includes('static void deinit(void){stop_health();'),
+  'watchapp exit must stop HealthService immediately');

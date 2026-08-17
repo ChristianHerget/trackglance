@@ -8,6 +8,9 @@ assert.strictEqual(config.locale('fr_FR'), 'en');
 assert.deepStrictEqual(config.defaultsFor('de').profiles.map(p => p.name), ['Gehen', 'Radfahren']);
 assert.deepStrictEqual(config.defaultsFor('de_DE').profiles.map(p => p.locus), ['Gehen', 'Radfahren']);
 assert.deepStrictEqual(config.defaultsFor('en').profiles.map(p => p.name), ['Walking', 'Cycling']);
+assert.strictEqual(config.defaults.watchHrToLocus,false);
+assert.strictEqual(config.defaults.heartRateIntervalSeconds,5);
+assert(config.defaults.profiles.every(p => p.metrics[5]===22),'fresh defaults show current HR in slot 6');
 const original = JSON.parse(JSON.stringify(config.defaults));
 original.profiles.forEach(p => { p.protected = true; });
 const migrated = config.parse(config.serialize(config.migrate(original)));
@@ -26,7 +29,7 @@ assert(config.chunks('Ä'.repeat(60), 80).every(x => Buffer.byteLength(x) <= 80)
 assert.strictEqual(config.chunks('🥾'.repeat(30), 80).join(''), '🥾'.repeat(30));
 
 const names = ['Walking','Cycling'];
-const pageUrl = config.page(config.defaults, names, 'en', 'fresh');
+const pageUrl = config.page(config.defaults, names, 'en', 'fresh', true);
 const html = decodeURIComponent(pageUrl.split(',').slice(1).join(','));
 const embeddedScript = html.match(/<script>([\s\S]*)<\/script>/)[1];
 assert.doesNotThrow(() => new Function(embeddedScript));
@@ -34,6 +37,12 @@ assert(!embeddedScript.includes('Array.from('));
 let closed = null;
 const dom = new JSDOM(html,{runScripts:'dangerously',beforeParse(w){w.__pebbleConfigClose=x=>{closed=x;};w.confirm=()=>true;w.alert=()=>{};}});
 const d = dom.window.document;
+assert(d.getElementById('heartRate'));
+assert.strictEqual(d.getElementById('watchHr').checked,false);
+assert.strictEqual(d.getElementById('hrIntervalRow').className,'hidden');
+d.getElementById('watchHr').click();
+assert(d.getElementById('hrIntervalRow').className.includes('row'));
+d.getElementById('hrInterval').value='60';d.getElementById('hrInterval').oninput();
 const rows = () => d.querySelectorAll('#profiles .row');
 assert.strictEqual(rows().length,2);
 assert.strictEqual(d.querySelectorAll('#actions .actionrow').length,2,'shared actions use two fixed rows');
@@ -65,12 +74,16 @@ d.getElementById('save').click();
 assert(closed);
 const saved=JSON.parse(closed);
 assert.strictEqual(saved.selected,0);
+assert.strictEqual(saved.watchHrToLocus,true);
+assert.strictEqual(saved.heartRateIntervalSeconds,60);
 assert(saved.profiles.every(p=>p.protected===false));
 assert.strictEqual(new Set(saved.profiles.map(p=>p.id)).size,saved.profiles.length);
 assert(!saved.profiles.some(p=>p.id===copiedId&&p.name.includes('copy')),'copies receive fresh IDs');
 
 const legacy='dark|0\nOnly|Hiking|0|1';
 const legacyParsed=config.parse(legacy);
+assert.strictEqual(legacyParsed.watchHrToLocus,false);
+assert.strictEqual(legacyParsed.heartRateIntervalSeconds,5);
 assert(legacyParsed.profiles[0].id,'four-field profiles migrate to stable IDs');
 const stable=config.parse(config.serialize(legacyParsed));
 assert.strictEqual(stable.profiles[0].id,legacyParsed.profiles[0].id,'IDs survive serialization');
@@ -91,7 +104,7 @@ global.localStorage = {
 };
 global.Pebble = {
   addEventListener: (name,callback) => { handlers[name] = callback; },
-  getActiveWatchInfo: () => ({language:'de_DE'}),
+  getActiveWatchInfo: () => ({language:'de_DE',platform:'gabbro',isEmulator:false}),
   sendAppMessage: (message,ok) => { if (ok) ok(); },
   openURL: url => { global.openedSettingsURL = url; },
 };
@@ -103,15 +116,15 @@ handlers.showConfiguration();
 assert(global.openedSettingsURL && global.openedSettingsURL.startsWith('data:text/html'),
   'settings opens on the first click without waiting for the profile relay');
 global.openedSettingsURL = null;
-handlers.appmessage({payload:{1:6,4:3,35:'0.1.6',33:76,30:0,31:1,32:''}});
+handlers.appmessage({payload:{1:6,4:3,35:'0.1.7',33:76,30:0,31:1,32:''}});
 assert.strictEqual(global.openedSettingsURL,null,'a background response does not reopen settings');
-handlers.appmessage({payload:{1:6,4:0,35:'0.1.6',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
+handlers.appmessage({payload:{1:6,4:0,35:'0.1.7',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
 handlers.showConfiguration();
 assert(global.openedSettingsURL && global.openedSettingsURL.startsWith('data:text/html'));
 const lifecycleHtml = decodeURIComponent(global.openedSettingsURL.split(',').slice(1).join(','));
 assert(lifecycleHtml.includes('Wandern'));
 global.openedSettingsURL = null;
-handlers.appmessage({payload:{MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.6',TRANSFER_ID:79,
+handlers.appmessage({payload:{MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.7',TRANSFER_ID:79,
   CHUNK_INDEX:0,CHUNK_COUNT:1,CHUNK_DATA:'Spazieren\nMountainbike'}});
 handlers.showConfiguration();
 assert(decodeURIComponent(global.openedSettingsURL).includes('Mountainbike'),

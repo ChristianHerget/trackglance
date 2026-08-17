@@ -14,6 +14,9 @@ data class BridgeStatus(
     val locusProfiles: List<String>? = null,
     val lastProfileRequestEpochMillis: Long? = null,
     val lastUpdateEpochMillis: Long? = null,
+    val lastWatchHeartRate: Int? = null,
+    val lastHeartRateForwardedEpochMillis: Long? = null,
+    val currentLocusHeartRate: Int? = null,
     val lastError: String? = null,
 )
 
