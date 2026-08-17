@@ -53,31 +53,26 @@ class PebbleMessagesTest {
         assertFalse(dictionary.containsKey(BridgeProtocol.Key.LOCUS_PROFILE_NAME.toUInt()))
     }
 
-    @Test fun profileTransferFailsClosedWhenPayloadOrChunkCountExceedsWatchLimits() {
+    @Test fun invalidProfileTransferCannotConstructAuthoritativeEmptyFrames() {
         val oversized = List(40) { index -> "$index-${"x".repeat(250)}" }
-        val oversizedMessage = PebbleMessages.profileListChunks(oversized, transferId = 1).single()
-        assertEquals(
-            BridgeProtocol.Result.FAILED.wire,
-            PebbleMessages.signed32(oversizedMessage, BridgeProtocol.Key.RESULT),
-        )
-        assertEquals("", PebbleMessages.string(oversizedMessage, BridgeProtocol.Key.CHUNK_DATA))
-
-        val tooManyChunks = PebbleMessages.profileListChunks(
-            listOf("x".repeat(200)),
-            transferId = 2,
-            chunkBytes = 1,
-        ).single()
-        assertEquals(
-            BridgeProtocol.Result.FAILED.wire,
-            PebbleMessages.signed32(tooManyChunks, BridgeProtocol.Key.RESULT),
+        assertNull(PebbleMessages.profileListChunks(oversized, transferId = 1))
+        assertNull(PebbleMessages.profileListChunks(listOf("Hiking", "Hiking"), transferId = 2))
+        assertNull(
+            PebbleMessages.profileListChunks(
+                listOf("x".repeat(200)),
+                transferId = 3,
+                chunkBytes = 1,
+            ),
         )
     }
 
     @Test fun validProfileTransferIsByteBoundedAndComplete() {
-        val messages = PebbleMessages.profileListChunks(
-            listOf("Wandern ÄÖÜ 🥾", "Running"),
-            transferId = 7,
-            chunkBytes = 12,
+        val messages = requireNotNull(
+            PebbleMessages.profileListChunks(
+                listOf("Wandern ÄÖÜ 🥾", "Running"),
+                transferId = 7,
+                chunkBytes = 12,
+            ),
         )
         assertTrue(messages.size > 1)
         assertTrue(messages.size <= BridgeProtocol.MAX_PROFILE_LIST_CHUNKS)

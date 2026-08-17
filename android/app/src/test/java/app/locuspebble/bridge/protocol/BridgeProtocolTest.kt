@@ -88,4 +88,14 @@ class BridgeProtocolTest {
             BridgeProtocol.requireUnsigned32(UInt.MAX_VALUE.toLong() + 1)
         }
     }
+
+    @Test fun watchIdentifiersAreBoundedAndRequireWellFormedUtf8Text() {
+        assertTrue(BridgeProtocol.validWatchId("watch-a"))
+        assertTrue(BridgeProtocol.validWatchId("Pebble 🪨"))
+        assertFalse(BridgeProtocol.validWatchId(""))
+        assertFalse(BridgeProtocol.validWatchId("\ufeff\u0085"))
+        assertFalse(BridgeProtocol.validWatchId("broken\ud800"))
+        assertFalse(BridgeProtocol.validWatchId("\udc00broken"))
+        assertFalse(BridgeProtocol.validWatchId("x".repeat(BridgeProtocol.MAX_WATCH_ID_BYTES + 1)))
+    }
 }

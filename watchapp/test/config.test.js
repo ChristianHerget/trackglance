@@ -20,6 +20,9 @@ assert(config.validName('Ä'.repeat(20)),'display names are limited by code poin
 assert(config.validName('🥾'.repeat(20)),'twenty four-byte code points fit the shared 80-byte field');
 assert(!config.validName('🥾'.repeat(21)));
 assert(!config.validName('bad\tname'));
+assert(!config.validName('bad\u007fname'));
+assert(config.validName('trail\u0085name'),'U+0085 is shared whitespace, not a rejected C0/DEL scalar');
+assert(!config.validName('\u0085'),'an all-U+0085 field is blank under the shared whitespace set');
 assert(!config.validName('\ufeff\ufeff'),'all-Unicode-whitespace names are rejected consistently');
 assert(!config.validLocus('L'.repeat(256)));
 const namedPair = (first,second) => {
@@ -128,6 +131,12 @@ for (const [upper,lower] of foldedPairs) {
 for (const [left,right] of [['Ā','ā'],['ΟΣ','Ος'],['İ','i\u0307']]) {
   assert.notStrictEqual(dom.window.fold(left),dom.window.fold(right),'embedded settings preserves exact scalars');
 }
+assert.strictEqual(dom.window.scan('trail\u0085name',20),10,
+  'embedded settings permits U+0085 inside a nonblank field');
+assert.strictEqual(dom.window.scan('\u0085',20),-1,
+  'embedded settings treats an all-U+0085 field as blank');
+assert.strictEqual(dom.window.scan('bad\u007fname',20),-1,
+  'embedded settings rejects DEL explicitly');
 assert(d.getElementById('heartRate'));
 assert.strictEqual(d.getElementById('watchHr').checked,false);
 assert.strictEqual(d.getElementById('hrIntervalRow').className,'hidden');
@@ -270,6 +279,8 @@ handlers.appmessage({payload:{PROTOCOL_VERSION:3,MESSAGE_TYPE:6,RESULT:0,APP_VER
 handlers.showConfiguration();
 assert(decodeURIComponent(global.openedSettingsURL).includes('Mountainbike'),
   'real PebbleKit named AppMessage keys are accepted');
+assert(noticeText(global.openedSettingsURL).includes('Zuletzt gespeicherte Locus-Profile'),
+  'an in-memory response is demoted to stale until the current settings refresh completes');
 sent[sentCount-1].ok();
 
 handlers.appmessage({payload:{0:3,1:6,4:3,35:'0.1.7',33:80,30:0,31:1,32:''}});
@@ -278,7 +289,8 @@ assert.deepStrictEqual(JSON.parse(storage['locusProfiles.v3']).names,[],
 global.openedSettingsURL = null;
 handlers.showConfiguration();
 lifecycleHtml=decodeURIComponent(global.openedSettingsURL);
-assert(noticeText(global.openedSettingsURL).includes('Locus liefert keine Aufzeichnungsprofile'));
+assert(noticeText(global.openedSettingsURL).includes('Zuletzt gespeicherte Locus-Profile'),
+  'a previously received empty list is also stale on a later settings opening');
 sent[sentCount-1].ok();
 
 handlers.appmessage({payload:{0:3,1:6,4:0,35:'0.1.2',33:81,30:0,31:1,32:'Hiking'}});
@@ -299,12 +311,16 @@ sent[sentCount-1].ok();
 function candidateNamed(name){const value=config.parse(storage.config);value.profiles[0].name=name;return value;}
 function closeWith(value){handlers.webviewclosed({response:encodeURIComponent(JSON.stringify(value))});}
 function finishConfigAt(start){const count=sent[start].message[31],id=sent[start].message[33],parts=[];for(let i=0;i<count;i++){assert.strictEqual(sent[start+i].message[33],id);parts.push(sent[start+i].message[32]);sent[start+i].ok();}return {id,wire:parts.join(''),next:start+count};}
+function exhaustFinalFrameAt(start){const count=sent[start].message[31],id=sent[start].message[33],parts=[];for(let i=0;i<count-1;i++){assert.strictEqual(sent[start+i].message[33],id);parts.push(sent[start+i].message[32]);sent[start+i].ok();}const final=start+count-1;parts.push(sent[final].message[32]);sent[final].fail();sent[final+1].fail();sent[final+2].fail();return {id,wire:parts.join(''),next:final+3};}
 function configAck(id,result){handlers.appmessage({payload:{0:3,1:9,35:'0.1.7',33:id,4:result}});}
 function fireAckTimeout(){const entry=[...fakeTimers.entries()].find(([,timer])=>timer.delay===10000);assert(entry,'an ACK deadline must be armed only after transport completion');fakeTimers.delete(entry[0]);entry[1].callback();}
 
 const committedBeforeSave=storage.config;
 let configStart=sentCount;
 closeWith(candidateNamed('Alpha'));
+let durableBeforeTransport=JSON.parse(storage['configPending.v3']).items[0];
+assert.strictEqual(durableBeforeTransport.selfUncertain,true,
+  'a candidate is durably marked possibly applied before its first frame can reach the watch');
 let alpha=finishConfigAt(configStart);
 assert.strictEqual(storage.config,committedBeforeSave,'transport success alone must not commit settings');
 const sentBeforeConcurrentSave=sentCount;
@@ -356,12 +372,13 @@ configStart=sentCount;
 closeWith(candidateNamed('Old transport'));
 const olderTransportId=sent[configStart].message[33];
 closeWith(candidateNamed('New transport'));
-sent[configStart].fail();
-sent[configStart+1].fail();
-sent[configStart+2].fail();
-const newerAfterTransportFailure=finishConfigAt(configStart+3);
+const lostFinalAck=exhaustFinalFrameAt(configStart);
+assert(lostFinalAck.wire.includes('Old transport'));
+const newerAfterTransportFailure=finishConfigAt(lostFinalAck.next);
 assert(newerAfterTransportFailure.wire.includes('New transport'),
-  'transport exhaustion retires an older candidate when a newer save is durable');
+  'final-frame ACK loss advances to a durable newer save');
+assert(JSON.parse(storage['configPending.v3']).items[0].fallbackWires[0].includes('Old transport'),
+  'final-frame ACK loss hands the possibly applied wire to the newer candidate as a fallback');
 configAck(olderTransportId,0);
 assert(config.parse(storage.config).profiles[0].name==='Newer ACK candidate');
 configAck(newerAfterTransportFailure.id,7);
@@ -421,6 +438,344 @@ assert(config.parse(storage.config).profiles[0].name==='Restart recovery');
 assert.strictEqual(storage['configPending.v3'],undefined);
 assert.strictEqual(sent[restarted.next].message[1],7,'startup profile discovery still follows transport, not the ACK wait');
 sent[restarted.next].ok();
+
+configStart=sentCount;
+closeWith(candidateNamed('Direct storage fail'));
+const immediateStorageFailure=finishConfigAt(configStart);
+configAck(immediateStorageFailure.id,9);
+assert(config.parse(storage.config).profiles[0].name==='Restart recovery',
+  'a first-attempt storage failure is definitive and keeps the prior commit');
+assert.strictEqual(storage['configPending.v3'],undefined,
+  'a first-attempt storage failure retires the rejected candidate');
+
+configStart=sentCount;
+closeWith(candidateNamed('Ambiguous retry'));
+const ambiguousOne=finishConfigAt(configStart);
+fireAckTimeout();
+const ambiguousTwo=finishConfigAt(ambiguousOne.next);
+configAck(ambiguousTwo.id,9);
+let ambiguousPending=JSON.parse(storage['configPending.v3']).items[0];
+assert(ambiguousPending.wire.includes('Ambiguous retry'));
+assert.strictEqual(ambiguousPending.uncertain,true,
+  'an application-result timeout is recorded durably before a whole-transfer retry');
+assert(config.parse(storage.config).profiles[0].name==='Restart recovery',
+  'a storage result after an earlier timeout cannot promote or discard ambiguous settings');
+configAck(ambiguousOne.id,0);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Ambiguous retry'),
+  'a late success cannot reorder the already settled retry result');
+global.openedSettingsURL=null;
+handlers.showConfiguration();
+assert(noticeText(global.openedSettingsURL).includes('Bestätigung steht noch aus'),
+  'the next settings opening describes the ambiguous state without claiming the old value remained');
+sent[sentCount-1].ok();
+global.openedSettingsURL=null;
+handlers.showConfiguration();
+assert(noticeText(global.openedSettingsURL).includes('Bestätigung steht noch aus'),
+  'durable unresolved state remains visible on repeated settings openings');
+sent[sentCount-1].ok();
+
+const ambiguousRestartStart=sentCount;
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+handlers.ready();
+const ambiguousRecovery=finishConfigAt(ambiguousRestartStart);
+assert(ambiguousRecovery.wire.includes('Ambiguous retry'),
+  'restart retries the durable ambiguous candidate instead of the older committed settings');
+configAck(ambiguousRecovery.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Ambiguous retry');
+assert.strictEqual(storage['configPending.v3'],undefined);
+assert.strictEqual(sent[ambiguousRecovery.next].message[1],7);
+sent[ambiguousRecovery.next].ok();
+
+configStart=sentCount;
+closeWith(candidateNamed('Possible A'));
+const possibleAOne=finishConfigAt(configStart);
+fireAckTimeout();
+closeWith(candidateNamed('Newer B'));
+const possibleATwo=finishConfigAt(possibleAOne.next);
+fireAckTimeout();
+const possibleAThree=finishConfigAt(possibleATwo.next);
+fireAckTimeout();
+const inheritedStorage=finishConfigAt(possibleAThree.next);
+assert(inheritedStorage.wire.includes('Newer B'));
+configAck(inheritedStorage.id,9);
+const inheritedRecovery=finishConfigAt(inheritedStorage.next);
+assert(inheritedRecovery.wire.includes('Possible A'),
+  'a definitive first-attempt failure of B restores its possibly applied A fallback');
+let inheritedPending=JSON.parse(storage['configPending.v3']).items[0];
+assert(inheritedPending.wire.includes('Possible A'));
+assert.strictEqual(inheritedPending.selfUncertain,true);
+assert(config.parse(storage.config).profiles[0].name==='Ambiguous retry',
+  'restoring an ambiguous fallback cannot expose the older committed configuration');
+configAck(inheritedRecovery.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Possible A');
+assert.strictEqual(storage['configPending.v3'],undefined);
+
+configStart=sentCount;
+closeWith(candidateNamed('Fallback A'));
+const fallbackAOne=finishConfigAt(configStart);
+fireAckTimeout();
+closeWith(candidateNamed('Invalid B'));
+const fallbackATwo=finishConfigAt(fallbackAOne.next);
+fireAckTimeout();
+const fallbackAThree=finishConfigAt(fallbackATwo.next);
+fireAckTimeout();
+const invalidSuperseding=finishConfigAt(fallbackAThree.next);
+assert(invalidSuperseding.wire.includes('Invalid B'));
+configAck(invalidSuperseding.id,8);
+const restoredFallback=finishConfigAt(invalidSuperseding.next);
+assert(restoredFallback.wire.includes('Fallback A'),
+  'an invalid superseding save restores the only possibly applied safe baseline');
+assert(!restoredFallback.wire.includes('Invalid B'));
+configAck(restoredFallback.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Fallback A');
+assert.strictEqual(storage['configPending.v3'],undefined);
+
+configStart=sentCount;
+closeWith(candidateNamed('Deterministic A'));
+const deterministicA=finishConfigAt(configStart);
+closeWith(candidateNamed('Downstream B'));
+let downstreamPending=JSON.parse(storage['configPending.v3']).items[1];
+assert(downstreamPending.fallbackWires[0].includes('Deterministic A'),
+  'a save staged during transport initially preserves the in-flight fallback');
+configAck(deterministicA.id,9);
+const downstreamB=finishConfigAt(deterministicA.next);
+downstreamPending=JSON.parse(storage['configPending.v3']).items[0];
+assert(downstreamPending.wire.includes('Downstream B'));
+assert.deepStrictEqual(downstreamPending.fallbackWires,[],
+  'a first-attempt storage failure proves A was not applied and clears B\'s inherited marker');
+configAck(downstreamB.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Downstream B');
+assert.strictEqual(storage['configPending.v3'],undefined);
+
+// Simulate process death after enqueue but before even the first transport callback. The durable
+// pre-send ambiguity must make a later storage failure non-terminal because the abandoned process
+// may have completed the transfer after dying from PKJS's point of view.
+configStart=sentCount;
+closeWith(candidateNamed('Crash window'));
+const abandonedId=sent[configStart].message[33];
+const crashPending=JSON.parse(storage['configPending.v3']).items[0];
+assert.strictEqual(crashPending.selfUncertain,true);
+assert(crashPending.wire.includes('Crash window'));
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const recreatedStart=sentCount;
+handlers.ready();
+const recreated=finishConfigAt(recreatedStart);
+assert(recreated.wire.includes('Crash window'));
+configAck(recreated.id,9);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Crash window'),
+  'storage failure after process recreation preserves the possibly applied candidate');
+assert(config.parse(storage.config).profiles[0].name==='Downstream B');
+configAck(abandonedId,0);
+assert(config.parse(storage.config).profiles[0].name==='Downstream B',
+  'a late result from the abandoned process cannot bypass the live retry correlation');
+sent[recreated.next].ok();
+
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const reconciliationStart=sentCount;
+handlers.ready();
+const reconciled=finishConfigAt(reconciliationStart);
+assert(reconciled.wire.includes('Crash window'));
+configAck(reconciled.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Crash window');
+assert.strictEqual(storage['configPending.v3'],undefined);
+sent[reconciled.next].ok();
+
+// The same durable rule applies after every chunk has transported: process death before the
+// correlated result loses the live proof that a later failure belongs to the first attempt.
+configStart=sentCount;
+closeWith(candidateNamed('Post-transport crash'));
+const transportedBeforeCrash=finishConfigAt(configStart);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Post-transport crash'));
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const postTransportRestart=sentCount;
+handlers.ready();
+const postTransportRetry=finishConfigAt(postTransportRestart);
+configAck(postTransportRetry.id,9);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Post-transport crash'),
+  'a storage failure after post-transport recreation cannot discard a possibly applied wire');
+configAck(transportedBeforeCrash.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Crash window',
+  'the abandoned attempt result is stale relative to the recreated operation');
+sent[postTransportRetry.next].ok();
+
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const postTransportReconcileStart=sentCount;
+handlers.ready();
+const postTransportReconciled=finishConfigAt(postTransportReconcileStart);
+configAck(postTransportReconciled.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Post-transport crash');
+assert.strictEqual(storage['configPending.v3'],undefined);
+sent[postTransportReconciled.next].ok();
+
+// A failed transport callback for the final frame does not prove the watch missed that frame. The
+// retry after process recreation must retain the candidate if its correlated storage attempt fails.
+configStart=sentCount;
+closeWith(candidateNamed('Lost final ACK'));
+const finalAckLoss=exhaustFinalFrameAt(configStart);
+assert(finalAckLoss.wire.includes('Lost final ACK'));
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Lost final ACK'));
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const finalAckRestartStart=sentCount;
+handlers.ready();
+const finalAckRetry=finishConfigAt(finalAckRestartStart);
+configAck(finalAckRetry.id,9);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Lost final ACK'),
+  'restart followed by storage failure preserves a final-frame ACK-loss candidate');
+assert(config.parse(storage.config).profiles[0].name==='Post-transport crash');
+sent[finalAckRetry.next].ok();
+
+delete require.cache[require.resolve('../src/pkjs/index.js')];
+require('../src/pkjs/index.js');
+const finalAckReconcileStart=sentCount;
+handlers.ready();
+const finalAckReconciled=finishConfigAt(finalAckReconcileStart);
+configAck(finalAckReconciled.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Lost final ACK');
+assert.strictEqual(storage['configPending.v3'],undefined);
+sent[finalAckReconciled.next].ok();
+
+function wireNamed(name){return config.serialize(candidateNamed(name));}
+function reloadLifecycle(){delete require.cache[require.resolve('../src/pkjs/index.js')];require('../src/pkjs/index.js');}
+
+// Pending records written by the original 0.1.7 queue had no uncertainty fields even after an
+// ambiguous transport or application timeout. They must be migrated conservatively.
+const legacyAmbiguousWire=wireNamed('Legacy ambiguous');
+storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.7',items:[{
+  token:'legacy-ambiguous',wire:legacyAmbiguousWire,
+}]});
+reloadLifecycle();
+let recoveryStart=sentCount;
+handlers.ready();
+const legacyRetry=finishConfigAt(recoveryStart);
+let migratedPending=JSON.parse(storage['configPending.v3']);
+assert.strictEqual(migratedPending.format,2);
+assert.strictEqual(migratedPending.items[0].selfUncertain,true,
+  'legacy pending state is ambiguous because the old process may already have sent it');
+configAck(legacyRetry.id,9);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Legacy ambiguous'),
+  'a storage failure cannot discard migrated legacy ambiguity');
+assert(config.parse(storage.config).profiles[0].name==='Lost final ACK');
+sent[legacyRetry.next].ok();
+
+// A parseable same-protocol queue survives a release update and is rewritten to the current
+// release before it is retried. A later storage failure still cannot erase it.
+const releaseRecoveryWire=wireNamed('Release recovery');
+storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.6',format:2,items:[{
+  token:'release-recovery',wire:releaseRecoveryWire,uncertain:true,selfUncertain:true,fallbackWires:[],
+}]});
+reloadLifecycle();
+recoveryStart=sentCount;
+handlers.ready();
+const releaseRetry=finishConfigAt(recoveryStart);
+assert(releaseRetry.wire.includes('Release recovery'),
+  'startup retries a parseable prior-release pending wire before committed settings');
+migratedPending=JSON.parse(storage['configPending.v3']);
+assert.strictEqual(migratedPending.release,'0.1.7');
+assert.strictEqual(migratedPending.format,2);
+configAck(releaseRetry.id,9);
+assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Release recovery'));
+sent[releaseRetry.next].ok();
+
+// Existing but unmigratable state is not equivalent to absence: startup must fail closed instead
+// of sending the older committed configuration over a watch that may contain a newer value.
+const malformedPriorRelease=JSON.stringify({protocol:3,release:'0.1.6',items:[{
+  token:'broken-recovery',wire:'not a canonical configuration',
+}]});
+storage['configPending.v3']=malformedPriorRelease;
+reloadLifecycle();
+recoveryStart=sentCount;
+handlers.ready();
+assert.strictEqual(sent[recoveryStart].message[1],7,
+  'blocked pending storage permits profile discovery but sends no committed config');
+assert.strictEqual(storage['configPending.v3'],malformedPriorRelease,
+  'unmigratable recovery evidence remains intact for a future compatible release');
+assert.strictEqual(storage['configNotice.v3'],'uncertain');
+sent[recoveryStart].ok();
+
+const tamperedWire=wireNamed('Tampered lineage');
+const tamperedLineage=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+  token:'tampered-lineage',wire:tamperedWire,uncertain:true,selfUncertain:true,
+  fallbackWires:[tamperedWire],
+}]});
+storage['configPending.v3']=tamperedLineage;
+reloadLifecycle();
+recoveryStart=sentCount;
+handlers.ready();
+assert.strictEqual(sent[recoveryStart].message[1],7,
+  'a duplicate/tampered recovery lineage blocks committed configuration delivery');
+assert.strictEqual(storage['configPending.v3'],tamperedLineage);
+sent[recoveryStart].ok();
+
+const invariantA=wireNamed('Invariant A'),invariantB=wireNamed('Invariant B'),invariantC=wireNamed('Invariant C');
+const brokenTwoItemLineage=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+  token:'invariant-b',wire:invariantB,uncertain:true,selfUncertain:true,fallbackWires:[invariantA],
+},{
+  token:'invariant-c',wire:invariantC,uncertain:true,selfUncertain:false,
+  fallbackWires:[invariantB],
+}]});
+storage['configPending.v3']=brokenTwoItemLineage;
+reloadLifecycle();
+recoveryStart=sentCount;
+handlers.ready();
+assert.strictEqual(sent[recoveryStart].message[1],7,
+  'a downstream item that omits part of the current lineage fails closed');
+assert.strictEqual(storage['configPending.v3'],brokenTwoItemLineage);
+sent[recoveryStart].ok();
+
+// The uncertainty bound is fail-closed. A ninth distinct possible wire cannot truncate the oldest
+// predecessor merely to accept another save.
+const boundedWires=[];
+for(let i=0;i<8;i++)boundedWires.push(wireNamed('Bounded '+i));
+const boundedState={protocol:3,release:'0.1.7',format:2,items:[{
+  token:'bounded-state',wire:boundedWires[0],uncertain:true,selfUncertain:true,
+  fallbackWires:boundedWires.slice(1),
+}]};
+storage['configPending.v3']=JSON.stringify(boundedState);
+reloadLifecycle();
+recoveryStart=sentCount;
+closeWith(candidateNamed('Ninth distinct'));
+assert.strictEqual(sentCount,recoveryStart,'a lineage-overflow save is not sent');
+assert.deepStrictEqual(JSON.parse(storage['configPending.v3']),boundedState,
+  'lineage overflow preserves all eight prior possibilities without truncation');
+assert.strictEqual(storage['configNotice.v3'],'uncertain');
+closeWith(config.parse(boundedWires[7]));
+const boundedExistingRetry=finishConfigAt(recoveryStart);
+const boundedExistingPending=JSON.parse(storage['configPending.v3']).items[0];
+assert.strictEqual(new Set([boundedExistingPending.wire].concat(boundedExistingPending.fallbackWires)).size,8,
+  'resaving an existing possible wire reorders but does not grow or truncate a full lineage');
+configAck(boundedExistingRetry.id,0);
+assert.strictEqual(storage['configPending.v3'],undefined);
+
+// Preserve the complete A/B/C predecessor chain. If C and then B are deterministically invalid,
+// A remains the only possible applied configuration and is reconciled rather than forgotten.
+const nestedA=wireNamed('Nested A'),nestedB=wireNamed('Nested B');
+storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+  token:'nested-b',wire:nestedB,uncertain:true,selfUncertain:true,fallbackWires:[nestedA],
+}]});
+reloadLifecycle();
+recoveryStart=sentCount;
+closeWith(candidateNamed('Nested C'));
+const nestedC=finishConfigAt(recoveryStart);
+configAck(nestedC.id,8);
+const nestedBRetry=finishConfigAt(nestedC.next);
+let nestedPending=JSON.parse(storage['configPending.v3']).items[0];
+assert(nestedPending.wire.includes('Nested B'));
+assert(nestedPending.fallbackWires[0].includes('Nested A'),
+  'restoring B also restores B\'s predecessor lineage');
+configAck(nestedBRetry.id,8);
+const nestedARetry=finishConfigAt(nestedBRetry.next);
+nestedPending=JSON.parse(storage['configPending.v3']).items[0];
+assert(nestedPending.wire.includes('Nested A'));
+assert.deepStrictEqual(nestedPending.fallbackWires,[]);
+configAck(nestedARetry.id,0);
+assert(config.parse(storage.config).profiles[0].name==='Nested A');
+assert.strictEqual(storage['configPending.v3'],undefined);
 
 global.setTimeout = originalSetTimeout;
 global.clearTimeout = originalClearTimeout;

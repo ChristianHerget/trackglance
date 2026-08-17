@@ -1,6 +1,7 @@
 #include <pebble.h>
 
 #include "persistent_blob.h"
+#include "watch_build_hash.auto.h"
 #include "watch_config.h"
 
 #define PROTOCOL_VERSION 3
@@ -487,28 +488,64 @@ static bool store_active_config(const char *data) {
   return data && persistent_blob_write(&s_config_blob, data, strlen(data));
 }
 
+static bool cleanup_pending_config(const char *failure_log) {
+  if (persistent_blob_delete(&s_pending_config_blob)) {
+    s_pending_cleanup_required = false;
+    return true;
+  }
+  s_pending_cleanup_required = true;
+  APP_LOG(APP_LOG_LEVEL_ERROR, "%s", failure_log);
+  show_notice(tr("Config cleanup failed", "Konfig.-Bereinigung fehlgeschlagen"), 5);
+  return false;
+}
+
+static bool prepare_pending_config_for_direct_apply(void) {
+  if (s_pending_cleanup_required) {
+    return cleanup_pending_config("Pending configuration cleanup retry failed");
+  }
+  if (!persistent_blob_exists(&s_pending_config_blob)) return true;
+  if (!persistent_blob_read(&s_pending_config_blob, s_pending_chunks, sizeof(s_pending_chunks))) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Discarding unreadable pending configuration before direct apply");
+    return cleanup_pending_config("Unreadable pending configuration cleanup failed");
+  }
+  copy_text(s_config_work, sizeof(s_config_work), s_pending_chunks);
+  if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Discarding invalid pending configuration before direct apply");
+    return cleanup_pending_config("Invalid pending configuration cleanup failed");
+  }
+
+  // A queued result made this configuration the confirmed baseline. Promote it before
+  // deleting the pending copy so every persistence prefix retains either this value or
+  // the incoming replacement. If cleanup fails, installing it also keeps RAM and the
+  // active blob aligned while a retry prevents a later restart from rolling back.
+  if (!store_active_config(s_pending_chunks)) {
+    show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
+    return false;
+  }
+  install_config(&s_parsed_config, true);
+  return cleanup_pending_config("Promoted pending configuration cleanup failed");
+}
+
 static void apply_pending_config_if_stopped(void) {
   if (!s_snapshot_received || s_snapshot.state != STATE_STOPPED) return;
   if (s_pending_cleanup_required) {
-    if (persistent_blob_delete(&s_pending_config_blob)) {
-      s_pending_cleanup_required = false;
-    } else {
-      APP_LOG(APP_LOG_LEVEL_ERROR, "Pending configuration cleanup retry failed");
-      show_notice(tr("Config cleanup failed", "Konfig.-Bereinigung fehlgeschlagen"), 5);
-    }
+    cleanup_pending_config("Pending configuration cleanup retry failed");
     return;
   }
   if (!persistent_blob_exists(&s_pending_config_blob)) return;
   if (!persistent_blob_read(&s_pending_config_blob, s_pending_chunks, sizeof(s_pending_chunks))) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Pending configuration is unreadable");
-    s_pending_cleanup_required = !persistent_blob_delete(&s_pending_config_blob);
-    show_notice(tr("Config storage error", "Konfigurationsfehler"), 5);
+    if (cleanup_pending_config("Unreadable pending configuration cleanup failed")) {
+      show_notice(tr("Config storage error", "Konfigurationsfehler"), 5);
+    }
     return;
   }
   copy_text(s_config_work, sizeof(s_config_work), s_pending_chunks);
   if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
-    s_pending_cleanup_required = !persistent_blob_delete(&s_pending_config_blob);
-    show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Pending configuration is invalid");
+    if (cleanup_pending_config("Invalid pending configuration cleanup failed")) {
+      show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
+    }
     return;
   }
   if (!store_active_config(s_pending_chunks)) {
@@ -516,11 +553,7 @@ static void apply_pending_config_if_stopped(void) {
     return;
   }
   install_config(&s_parsed_config, true);
-  if (!persistent_blob_delete(&s_pending_config_blob)) {
-    s_pending_cleanup_required = true;
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Applied pending configuration but cleanup failed");
-    show_notice(tr("Config cleanup failed", "Konfig.-Bereinigung fehlgeschlagen"), 5);
-  }
+  cleanup_pending_config("Applied pending configuration but cleanup failed");
 }
 
 static void apply_theme(void) {
@@ -1010,6 +1043,11 @@ static void handle_send_failure(OutboundKind kind, AppMessageResult reason) {
           (int)kind, (int)reason, (int)*attempts + 1);
   s_outbox_busy = false;
   s_inflight_kind = OUTBOUND_NONE;
+  if (kind == OUTBOUND_HEART_RATE && !s_hr_prepared) {
+    *attempts = 0;
+    send_next();
+    return;
+  }
   (*attempts)++;
   if (*attempts >= MAX_SEND_ATTEMPTS) {
     *attempts = 0;
@@ -1288,13 +1326,19 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
     show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
   } else if (s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS &&
              s_snapshot.state == STATE_STOPPED) {
-    if (!persistent_blob_delete(&s_pending_config_blob)) {
-      s_pending_cleanup_required = true;
+    if (!prepare_pending_config_for_direct_apply()) {
       result = RESULT_STORAGE_FAILED;
-      show_notice(tr("Config cleanup failed", "Konfig.-Bereinigung fehlgeschlagen"), 5);
     } else {
-      s_pending_cleanup_required = false;
-      if (store_active_config(s_chunks)) {
+      // Reparse after reconciliation because promoting a queued baseline may update the
+      // stable active-profile ID used to select a profile in the incoming configuration.
+      copy_text(s_config_work, sizeof(s_config_work), s_chunks);
+      if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
+        result = RESULT_INVALID_CONFIG;
+        APP_LOG(
+            APP_LOG_LEVEL_ERROR,
+            "Validated configuration failed to reparse after reconciliation");
+        show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
+      } else if (store_active_config(s_chunks)) {
         install_config(&s_parsed_config, true);
       } else {
         result = RESULT_STORAGE_FAILED;
@@ -1662,11 +1706,17 @@ static void stop_health(void) {
   s_health_subscribed = false;
   s_hr_pending = false;
   s_hr_prepared = false;
+  s_send_attempts[OUTBOUND_HEART_RATE] = 0;
   s_last_hr_sent_valid = false;
 }
 
+static bool fresh_recording_snapshot(void) {
+  return s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS &&
+      s_snapshot.state == STATE_RECORDING;
+}
+
 static void update_health_subscription(void) {
-  const bool wanted = s_watch_hr_to_locus && s_snapshot.state == STATE_RECORDING;
+  const bool wanted = s_watch_hr_to_locus && fresh_recording_snapshot();
   if (!wanted) {
     stop_health();
     return;
@@ -1878,7 +1928,10 @@ static void tick(struct tm *time, TimeUnits units) {
   if (expire_command_records()) {
     show_notice(tr("Command response timeout", "Befehlsantwort fehlt"), 4);
   }
-  if (s_snapshot_received && s_snapshot_age < UINT16_MAX) s_snapshot_age++;
+  if (s_snapshot_received && s_snapshot_age < UINT16_MAX) {
+    s_snapshot_age++;
+    if (s_snapshot_age == SNAPSHOT_STALE_SECONDS + 1) update_health_subscription();
+  }
   render();
   send_next();
 }
@@ -1927,6 +1980,7 @@ static uint32_t create_session_id(void) {
 }
 
 static bool init(void) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", LOCUS_WATCH_BUILD_SHA256_MARKER);
   const char *locale = i18n_get_system_locale();
   s_german = locale && strncmp(locale, "de", 2) == 0;
   default_profiles();

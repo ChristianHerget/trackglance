@@ -2,6 +2,8 @@ package app.locuspebble.bridge.core
 
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BridgeStateTest {
@@ -19,5 +21,31 @@ class BridgeStateTest {
         workers.forEach(Thread::join)
 
         assertEquals(8_000, BridgeState.status.value.lastWatchHeartRate)
+    }
+
+    @Test fun losingTheTrustedPebbleSelectionClearsCachedWatchDiagnostics() {
+        val untrusted = BridgeStatus(
+            watchAppOpen = true,
+            pebbleAppPackage = "coredevices.coreapp",
+            watchConnected = true,
+            watchVersion = "0.1.7",
+        ).withPebbleSelection(null)
+
+        assertNull(untrusted.pebbleAppPackage)
+        assertFalse(untrusted.watchConnected)
+        assertFalse(untrusted.watchAppOpen)
+        assertNull(untrusted.watchVersion)
+    }
+
+    @Test fun watchInfoFailureClearsACachedConnection() {
+        val failed = BridgeStatus(
+            watchAppOpen = true,
+            pebbleAppPackage = "coredevices.coreapp",
+            watchConnected = true,
+            watchVersion = "0.1.7",
+        ).withPebbleConnectionFailure("Core info unavailable")
+
+        assertFalse(failed.watchConnected)
+        assertEquals("Core info unavailable", failed.lastError)
     }
 }

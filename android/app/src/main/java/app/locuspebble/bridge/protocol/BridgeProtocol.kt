@@ -13,6 +13,7 @@ object BridgeProtocol {
     const val MAX_PROFILE_LIST_BYTES = 8191
     const val MAX_PROFILE_LIST_CHUNKS = 103
     const val MAX_CHUNK_BYTES = 80
+    const val MAX_WATCH_ID_BYTES = 128
     val APP_UUID = java.util.UUID.fromString("51c8d7cf-4cb2-4ef8-98c9-641706feb250")
 
     object Key {
@@ -98,6 +99,12 @@ object BridgeProtocol {
         rejectPipe = false,
     )
 
+    fun validWatchId(value: String?): Boolean = validText(
+        value,
+        maxBytes = MAX_WATCH_ID_BYTES,
+        rejectPipe = false,
+    )
+
     private fun validText(
         value: String?,
         maxBytes: Int,
@@ -145,9 +152,9 @@ object BridgeProtocol {
         return payload.takeIf { it.toByteArray(Charsets.UTF_8).size <= MAX_PROFILE_LIST_BYTES }
     }
 
-    data class ProfileTransfer(val result: Result, val chunks: List<String>)
+    data class ProfileTransfer internal constructor(val result: Result, val chunks: List<String>)
 
-    fun profileTransfer(names: List<String>, chunkBytes: Int = MAX_CHUNK_BYTES): ProfileTransfer {
+    fun profileTransfer(names: List<String>, chunkBytes: Int = MAX_CHUNK_BYTES): ProfileTransfer? {
         require(chunkBytes in 1..MAX_CHUNK_BYTES)
         val payload = profileListPayload(names)
         val candidateChunks = payload?.let {
@@ -158,7 +165,7 @@ object BridgeProtocol {
             }
         }
         if (candidateChunks == null || candidateChunks.size > MAX_PROFILE_LIST_CHUNKS) {
-            return ProfileTransfer(Result.FAILED, listOf(""))
+            return null
         }
         return ProfileTransfer(profileListResult(payload), candidateChunks)
     }

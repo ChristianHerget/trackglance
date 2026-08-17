@@ -1,6 +1,7 @@
 package app.locuspebble.bridge.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,5 +54,24 @@ class BoundedTargetDeliveryTest {
                 delivery.deliver(listOf("watch")) { throw CancellationException("cancelled") }
             }
         }
+    }
+
+    @Test fun aNeverReturningAttemptTimesOutAndTheNextDeliveryCanProgress() = runBlocking {
+        var hang = true
+        val delivery = BoundedTargetDelivery<String>(
+            maxAttempts = 1,
+            attemptTimeoutMillis = 25,
+            retryDelay = {},
+        )
+
+        assertFalse(
+            delivery.deliver(listOf("watch")) {
+                if (hang) awaitCancellation()
+                it.toSet()
+            },
+        )
+
+        hang = false
+        assertTrue(delivery.deliver(listOf("watch")) { it.toSet() })
     }
 }

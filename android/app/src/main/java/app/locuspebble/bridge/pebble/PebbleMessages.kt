@@ -65,10 +65,18 @@ object PebbleMessages {
         names: List<String>,
         transferId: Int,
         chunkBytes: Int = BridgeProtocol.MAX_CHUNK_BYTES,
-    ): List<PebbleDictionary> {
+    ): List<PebbleDictionary>? {
         require(chunkBytes in 1..BridgeProtocol.MAX_CHUNK_BYTES)
         require(transferId >= 0)
-        val transfer = BridgeProtocol.profileTransfer(names, chunkBytes)
+        val transfer = BridgeProtocol.profileTransfer(names, chunkBytes) ?: return null
+        return profileListChunks(transfer, transferId)
+    }
+
+    internal fun profileListChunks(
+        transfer: BridgeProtocol.ProfileTransfer,
+        transferId: Int,
+    ): List<PebbleDictionary> {
+        require(transferId >= 0)
         return transfer.chunks.mapIndexed { index, chunk -> mapOf(
             BridgeProtocol.Key.VERSION.toUInt() to i(BridgeProtocol.VERSION),
             BridgeProtocol.Key.APP_VERSION.toUInt() to text(BuildConfig.VERSION_NAME),

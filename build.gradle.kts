@@ -26,7 +26,13 @@ val verifyProtocolParity = tasks.register<Exec>("verifyProtocolParity") {
         layout.projectDirectory.file(
             "android/app/src/main/java/app/locuspebble/bridge/protocol/BridgeProtocol.kt",
         ),
+        layout.projectDirectory.file("docs/development.md"),
+        layout.projectDirectory.file("docs/end-to-end-testing.md"),
+        layout.projectDirectory.file("gradle/verification-metadata.xml"),
+        layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.jar"),
+        layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties"),
         layout.projectDirectory.file("protocol/README.md"),
+        layout.projectDirectory.file("settings.gradle.kts"),
         layout.projectDirectory.file("watchapp/package-lock.json"),
         layout.projectDirectory.file("watchapp/package.json"),
         layout.projectDirectory.file("watchapp/src/c/main.c"),
@@ -51,14 +57,10 @@ tasks.register<Exec>("verifyPebbleBundle") {
     inputs.files(
         layout.projectDirectory.file("watchapp/build/watchapp.pbw"),
         layout.projectDirectory.file("watchapp/package.json"),
-        layout.projectDirectory.file("watchapp/src/c/main.c"),
-        layout.projectDirectory.file("watchapp/src/c/persistent_blob.c"),
-        layout.projectDirectory.file("watchapp/src/c/persistent_blob.h"),
-        layout.projectDirectory.file("watchapp/src/c/watch_config.c"),
-        layout.projectDirectory.file("watchapp/src/c/watch_config.h"),
-        layout.projectDirectory.file("watchapp/src/pkjs/index.js"),
         layout.projectDirectory.file("watchapp/test/pbw.test.js"),
+        layout.projectDirectory.file("watchapp/wscript"),
     )
+    inputs.dir(layout.projectDirectory.dir("watchapp/src"))
 }
 
 project(":android:app") {

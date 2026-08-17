@@ -127,6 +127,28 @@ class CommandJournalTest {
         )
     }
 
+    @Test fun malformedWatchIdentifierNeverEntersTheDurableJournal() {
+        val storage = MemoryStorage()
+        val journal = CommandJournal(storage)
+        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
+
+        assertEquals(
+            CommandJournal.BeginResult.Collision,
+            journal.begin(CommandJournal.Key("broken\ud800", 1, 1), fingerprint),
+        )
+        assertTrue(storage.records.isEmpty())
+        assertTrue(journal.snapshot().isEmpty())
+    }
+
+    @Test fun malformedUtf16CommandPayloadsCannotCollapseToReplacementFingerprints() {
+        val malformedHigh = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ud800", null)
+        val malformedOther = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ud801", null)
+        val literalQuestion = CommandJournal.fingerprint(BridgeProtocol.Command.START, "?", null)
+        val replacementCharacter = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ufffd", null)
+
+        assertEquals(4, setOf(malformedHigh, malformedOther, literalQuestion, replacementCharacter).size)
+    }
+
     private class MemoryStorage : CommandJournal.Storage {
         var records: List<CommandJournal.Record> = emptyList()
         var saveSucceeds = true

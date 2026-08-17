@@ -40,7 +40,11 @@ npm run verify:pbw
 
 The parity check compares protocol keys, versions, limits, UUIDs, supported targets, and companion
 metadata across Kotlin, C, PKJS, package metadata, and the protocol document. The PBW check then
-verifies the actual archive, including both platform payloads and embedded PKJS.
+verifies the actual archive, including both platform payloads, executable PKJS, manifest CRCs, and
+an embedded hash of every local watch build input. The Gradle distribution and wrapper JAR are
+checksum-pinned; Android dependency versions are locked and every resolved plugin/library artifact
+is SHA-256 verified. Deliberate dependency updates must regenerate and review both lock and
+verification data.
 
 Artifacts:
 

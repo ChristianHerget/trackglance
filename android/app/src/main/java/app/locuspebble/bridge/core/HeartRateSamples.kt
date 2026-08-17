@@ -1,5 +1,7 @@
 package app.locuspebble.bridge.core
 
+import app.locuspebble.bridge.protocol.BridgeProtocol
+
 /** Stateful validation for independent unsigned watch/session sequence streams. */
 class HeartRateSampleGate(
     private val maxAgeSeconds: Long = 30,
@@ -26,7 +28,7 @@ class HeartRateSampleGate(
         sampledAt: Long,
         now: Long,
     ): Boolean {
-        if (watchId.isBlank()) return false
+        if (!BridgeProtocol.validWatchId(watchId)) return false
         if (session !in 0..0xffff_ffffL || sequence !in 0..0xffff_ffffL || bpm !in 25..250) return false
         if (sampledAt > now + 5 || sampledAt < now - maxAgeSeconds) return false
         val stream = Stream(watchId, session)

@@ -1,4 +1,6 @@
-import os.path
+import hashlib
+import json
+import os
 
 top = '.'
 out = 'build'
@@ -12,15 +14,108 @@ def configure(ctx):
     ctx.load('pebble_sdk')
 
 
+def _watch_build_inputs(root):
+    root_path = root.abspath()
+    relative_paths = set()
+    for relative_path in ('wscript', 'package.json'):
+        absolute_path = os.path.join(root_path, relative_path)
+        if os.path.islink(absolute_path) or not os.path.isfile(absolute_path):
+            raise ValueError('Watch build input is not a regular local file: {}'.format(relative_path))
+        relative_paths.add(relative_path)
+
+    source_root = os.path.join(root_path, 'src')
+    if os.path.islink(source_root) or not os.path.isdir(source_root):
+        raise ValueError('Watch source root is not a regular local directory: src')
+    for directory, directory_names, file_names in os.walk(source_root, followlinks=False):
+        directory_names.sort(key=lambda value: value.encode('utf-8'))
+        for directory_name in directory_names:
+            absolute_path = os.path.join(directory, directory_name)
+            if os.path.islink(absolute_path):
+                relative_path = os.path.relpath(absolute_path, root_path).replace(os.sep, '/')
+                raise ValueError('Watch build input must not be a symlink: {}'.format(relative_path))
+        for file_name in file_names:
+            absolute_path = os.path.join(directory, file_name)
+            relative_path = os.path.relpath(absolute_path, root_path).replace(os.sep, '/')
+            if os.path.islink(absolute_path):
+                raise ValueError('Watch build input must not be a symlink: {}'.format(relative_path))
+            if os.path.isfile(absolute_path):
+                relative_paths.add(relative_path)
+
+    package_path = os.path.join(root_path, 'package.json')
+    with open(package_path, 'r', encoding='utf-8') as package_file:
+        package = json.load(package_file)
+    for resource in package.get('pebble', {}).get('resources', {}).get('media', []):
+        resource_path = resource.get('file') if isinstance(resource, dict) else None
+        if not isinstance(resource_path, str):
+            continue
+        absolute_path = os.path.abspath(os.path.join(root_path, resource_path))
+        if os.path.commonpath([root_path, absolute_path]) != root_path:
+            raise ValueError('Pebble resource escapes the watchapp directory: {}'.format(resource_path))
+        relative_path = os.path.relpath(absolute_path, root_path)
+        current_path = root_path
+        for path_part in relative_path.split(os.sep):
+            current_path = os.path.join(current_path, path_part)
+            if os.path.islink(current_path):
+                raise ValueError('Pebble resource must not use symlinks: {}'.format(resource_path))
+        if not os.path.isfile(absolute_path):
+            raise ValueError('Pebble resource is not a regular file: {}'.format(resource_path))
+        relative_paths.add(relative_path.replace(os.sep, '/'))
+
+    return sorted(relative_paths, key=lambda value: value.encode('utf-8'))
+
+
+def _write_build_input_hash_header(root, output):
+    digest = hashlib.sha256()
+    for relative_path in _watch_build_inputs(root):
+        digest.update(relative_path.encode('utf-8'))
+        digest.update(b'\0')
+        with open(os.path.join(root.abspath(), relative_path), 'rb') as input_file:
+            digest.update(input_file.read())
+        digest.update(b'\0')
+
+    build_input_hash = digest.hexdigest()
+    contents = (
+        '#ifndef LOCUS_WATCH_BUILD_HASH_AUTO_H\n'
+        '#define LOCUS_WATCH_BUILD_HASH_AUTO_H\n'
+        '\n'
+        '#define LOCUS_WATCH_BUILD_SHA256 "{}"\n'
+        '#define LOCUS_WATCH_BUILD_SHA256_MARKER \\\n'
+        '  "LOCUS_WATCH_BUILD_SHA256:" LOCUS_WATCH_BUILD_SHA256\n'
+        '\n'
+        '#endif\n'
+    ).format(build_input_hash)
+    output_path = output.abspath()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    try:
+        with open(output_path, 'r', encoding='utf-8') as output_file:
+            if output_file.read() == contents:
+                return
+    except OSError:
+        pass
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as output_file:
+        output_file.write(contents)
+
+
 def build(ctx):
     ctx.load('pebble_sdk')
+    build_hash_header = ctx.path.get_bld().find_or_declare('include/watch_build_hash.auto.h')
+
+    # The digest covers every local watch build input but never generated output, so hashing this
+    # recipe itself remains non-recursive. Generate one stable header before either platform graph.
+    _write_build_input_hash_header(ctx.path, build_hash_header)
+
     binaries = []
     cached_env = ctx.env
     for platform in ctx.env.TARGET_PLATFORMS:
         ctx.env = ctx.all_envs[platform]
         ctx.set_group(ctx.env.PLATFORM_NAME)
         app_elf = '{}/pebble-app.elf'.format(ctx.env.BUILD_DIR)
-        ctx.pbl_build(source=ctx.path.ant_glob('src/c/**/*.c'), target=app_elf, bin_type='app')
+        # pbl_build mutates its source list when it adds platform-generated objects. Give every
+        # platform a fresh list so Emery cannot inherit Gabbro's appinfo/resources/message keys.
+        ctx.pbl_build(source=ctx.path.ant_glob('src/c/**/*.c'),
+                      target=app_elf,
+                      bin_type='app',
+                      includes=[build_hash_header.parent])
         binaries.append({'platform': platform, 'app_elf': app_elf})
     ctx.env = cached_env
     ctx.set_group('bundle')

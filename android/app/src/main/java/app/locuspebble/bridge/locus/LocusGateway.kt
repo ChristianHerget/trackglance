@@ -11,12 +11,17 @@ import locus.api.android.utils.LocusUtils
 interface LocusBridgeGateway {
     fun readSnapshot(nowMillis: Long = System.currentTimeMillis()): BridgeProtocol.Snapshot
     fun sendHeartRate(bpm: Int): Boolean
-    fun recordingProfiles(): List<String>
+    fun recordingProfiles(): RecordingProfilesResult
     fun execute(
         command: BridgeProtocol.Command,
         profileName: String? = null,
         waypointName: String? = null,
     ): BridgeProtocol.Result
+}
+
+sealed interface RecordingProfilesResult {
+    data class Success(val names: List<String>) : RecordingProfilesResult
+    data class Failure(val message: String) : RecordingProfilesResult
 }
 
 class LocusGateway(private val context: Context) : LocusBridgeGateway {
@@ -80,10 +85,14 @@ class LocusGateway(private val context: Context) : LocusBridgeGateway {
         }
     }
 
-    override fun recordingProfiles(): List<String> = try {
-        activeVersion()?.let(::recordingProfiles).orEmpty()
-    } catch (_: Exception) {
-        emptyList()
+    override fun recordingProfiles(): RecordingProfilesResult = try {
+        val version = activeVersion()
+            ?: return RecordingProfilesResult.Failure("Locus is unavailable")
+        RecordingProfilesResult.Success(recordingProfiles(version))
+    } catch (error: Exception) {
+        RecordingProfilesResult.Failure(
+            error.message?.takeIf(String::isNotBlank) ?: "Could not query Locus recording profiles",
+        )
     }
 
     private fun recordingProfiles(version: LocusVersion): List<String> =

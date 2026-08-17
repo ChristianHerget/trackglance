@@ -8,6 +8,7 @@
     </queries>
 
     <application
+        android:name=".BridgeApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="Locus Pebble Bridge"
@@ -22,7 +23,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Export permits Core binding; PebbleKit checks caller UID and this service pins CoreApp. -->
+        <!-- Export permits Core binding; startup disables auto-selection and pins PebbleKit to CoreApp. -->
         <service
             android:name=".pebble.BridgePebbleListenerService"
             android:exported="true"

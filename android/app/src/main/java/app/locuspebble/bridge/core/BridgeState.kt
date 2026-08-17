@@ -21,6 +21,18 @@ data class BridgeStatus(
     val lastError: String? = null,
 )
 
+internal fun BridgeStatus.withPebbleSelection(trustedPackage: String?): BridgeStatus = copy(
+    pebbleAppPackage = trustedPackage,
+    watchConnected = trustedPackage != null && watchConnected,
+    watchAppOpen = trustedPackage != null && watchAppOpen,
+    watchVersion = watchVersion.takeIf { trustedPackage != null },
+)
+
+internal fun BridgeStatus.withPebbleConnectionFailure(message: String): BridgeStatus = copy(
+    watchConnected = false,
+    lastError = message,
+)
+
 object BridgeState {
     private val mutable = MutableStateFlow(BridgeStatus())
     val status = mutable.asStateFlow()

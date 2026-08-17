@@ -5,7 +5,6 @@ import app.locuspebble.bridge.core.BridgeRuntime
 import app.locuspebble.bridge.core.BridgeState
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.BasePebbleListenerService
-import io.rebble.pebblekit2.client.DefaultPebbleAndroidAppPicker
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.ReceiveResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
@@ -14,13 +13,19 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class BridgePebbleListenerService : BasePebbleListenerService() {
+    private val companionPin by lazy {
+        TrustedPebbleCompanionProvider.get(applicationContext)
+    }
     private val trustedCompanion by lazy {
-        TrustedPebbleCompanionGuard {
-            DefaultPebbleAndroidAppPicker.getInstance(applicationContext).getCurrentlySelectedApp()
-        }
+        companionPin.guard
     }
     private val lifecycleCallbacks by lazy {
         SerializedTrustedLifecycleCallbacks(trustedCompanion)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        companionPin.initializeBlocking()
     }
 
     override suspend fun onMessageReceived(
@@ -47,7 +52,9 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         data: PebbleDictionary,
         watch: WatchIdentifier,
     ): ReceiveResult {
-        if (watchappUUID != BridgeProtocol.APP_UUID || watch.value.isBlank()) return ReceiveResult.Nack
+        if (watchappUUID != BridgeProtocol.APP_UUID || !BridgeProtocol.validWatchId(watch.value)) {
+            return ReceiveResult.Nack
+        }
         val version = PebbleMessages.signed32(data, BridgeProtocol.Key.VERSION)
         val appVersion = PebbleMessages.string(data, BridgeProtocol.Key.APP_VERSION)
         val type = PebbleMessages.signed32(data, BridgeProtocol.Key.MESSAGE_TYPE)
@@ -130,7 +137,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onAppOpened(watchappUUID: UUID, watch: WatchIdentifier) {
-        if (watchappUUID != BridgeProtocol.APP_UUID || watch.value.isBlank()) return
+        if (watchappUUID != BridgeProtocol.APP_UUID || !BridgeProtocol.validWatchId(watch.value)) return
         coroutineScope.launch {
             lifecycleCallbacks.runIfTrusted {
                 try {
@@ -143,7 +150,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
-        if (watchappUUID != BridgeProtocol.APP_UUID || watch.value.isBlank()) return
+        if (watchappUUID != BridgeProtocol.APP_UUID || !BridgeProtocol.validWatchId(watch.value)) return
         coroutineScope.launch {
             lifecycleCallbacks.runIfTrusted {
                 try {

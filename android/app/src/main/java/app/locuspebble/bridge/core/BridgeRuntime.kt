@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.core.content.edit
 import app.locuspebble.bridge.locus.LocusBridgeGateway
 import app.locuspebble.bridge.locus.LocusGateway
+import app.locuspebble.bridge.locus.RecordingProfilesResult
 import app.locuspebble.bridge.pebble.ActiveWatchRegistry
 import app.locuspebble.bridge.pebble.DefaultPebbleDictionarySender
 import app.locuspebble.bridge.pebble.PebbleMessages
@@ -209,27 +210,48 @@ class BridgeRuntime internal constructor(
     }
 
     suspend fun sendRecordingProfiles(watch: WatchIdentifier): Boolean = profileTransferMutex.withLock {
-        val names = try {
+        val query = try {
             withContext(ioDispatcher) { locus.recordingProfiles() }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            reportError(error)
-            emptyList()
+            RecordingProfilesResult.Failure(
+                error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
+            )
+        }
+        val names = when (query) {
+            is RecordingProfilesResult.Success -> query.names
+            is RecordingProfilesResult.Failure -> {
+                BridgeState.update {
+                    it.copy(
+                        lastProfileRequestEpochMillis = wallMillis(),
+                        lastError = query.message,
+                    )
+                }
+                return@withLock false
+            }
+        }
+        val transfer = BridgeProtocol.profileTransfer(names)
+        if (transfer == null) {
+            BridgeState.update {
+                it.copy(
+                    lastProfileRequestEpochMillis = wallMillis(),
+                    lastError = "Locus profile list is invalid or exceeds the watch transfer limit",
+                )
+            }
+            return@withLock false
         }
         BridgeState.update {
-            val oversized = BridgeProtocol.profileListPayload(names) == null
             it.copy(
                 locusProfiles = names,
                 lastProfileRequestEpochMillis = wallMillis(),
                 lastError = when {
-                    oversized -> "Locus profile list is invalid or exceeds the watch transfer limit"
                     names.isEmpty() -> "Locus returned no recording profiles"
                     else -> null
                 },
             )
         }
-        val messages = PebbleMessages.profileListChunks(names, nextTransferId())
+        val messages = PebbleMessages.profileListChunks(transfer, nextTransferId())
         messages.forEach { message ->
             if (!transport.send(message, listOf(watch))) {
                 reportError("Could not deliver a complete profile list to the source watch")
@@ -329,9 +351,11 @@ object Preferences {
     private const val KEY_REFRESH_MODE = "refresh_mode"
 
     fun refreshMode(context: Context): RefreshMode {
-        val name = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .getString(KEY_REFRESH_MODE, RefreshMode.ADAPTIVE.name)
-        return runCatching { RefreshMode.valueOf(name!!) }.getOrDefault(RefreshMode.ADAPTIVE)
+        return runCatching {
+            val name = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+                .getString(KEY_REFRESH_MODE, RefreshMode.ADAPTIVE.name)
+            RefreshMode.valueOf(name ?: RefreshMode.ADAPTIVE.name)
+        }.getOrDefault(RefreshMode.ADAPTIVE)
     }
 
     fun setRefreshMode(context: Context, mode: RefreshMode) {

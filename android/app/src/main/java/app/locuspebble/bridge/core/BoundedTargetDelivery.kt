@@ -1,14 +1,17 @@
 package app.locuspebble.bridge.core
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Pure retry policy used by the Pebble transport adapter. */
 class BoundedTargetDelivery<T>(
     private val maxAttempts: Int = 3,
+    private val attemptTimeoutMillis: Long = 10_000L,
     private val retryDelay: suspend (attempt: Int) -> Unit,
 ) {
     init {
         require(maxAttempts > 0)
+        require(attemptTimeoutMillis > 0)
     }
 
     suspend fun deliver(
@@ -20,7 +23,9 @@ class BoundedTargetDelivery<T>(
         val remaining = intended.toMutableSet()
         repeat(maxAttempts) { zeroBasedAttempt ->
             val delivered = try {
-                attempt(remaining.toList())
+                withTimeoutOrNull(attemptTimeoutMillis) {
+                    attempt(remaining.toList())
+                }.orEmpty()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {

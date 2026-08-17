@@ -11,6 +11,9 @@ class ProfileProtocolTest {
     @Test fun profileTransferDistinguishesEmptyLocusResultFromProfiles() {
         assertEquals(BridgeProtocol.Result.FAILED, BridgeProtocol.profileListResult(""))
         assertEquals(BridgeProtocol.Result.OK, BridgeProtocol.profileListResult("Wandern"))
+        val empty = requireNotNull(BridgeProtocol.profileTransfer(emptyList()))
+        assertEquals(BridgeProtocol.Result.FAILED, empty.result)
+        assertEquals(listOf(""), empty.chunks)
     }
 
     @Test fun profileNamesAndCaseInsensitiveMatchingAreValidated() {
@@ -58,21 +61,10 @@ class ProfileProtocolTest {
         assertNull(BridgeProtocol.profileListPayload(listOf("Hiking", "bad\nname")))
         assertNull(BridgeProtocol.profileListPayload(listOf("Hiking", "Hiking")))
 
-        val oversizedTransfer = BridgeProtocol.profileTransfer(oversized)
-        assertEquals(BridgeProtocol.Result.FAILED, oversizedTransfer.result)
-        assertEquals(listOf(""), oversizedTransfer.chunks)
-
-        val duplicateTransfer = BridgeProtocol.profileTransfer(listOf("Hiking", "Hiking"))
-        assertEquals(BridgeProtocol.Result.FAILED, duplicateTransfer.result)
-        assertEquals(listOf(""), duplicateTransfer.chunks)
-
-        val tooManyChunks = BridgeProtocol.profileTransfer(listOf("x".repeat(200)), chunkBytes = 1)
-        assertEquals(BridgeProtocol.Result.FAILED, tooManyChunks.result)
-        assertEquals(listOf(""), tooManyChunks.chunks)
-        assertEquals(
-            BridgeProtocol.Result.FAILED,
-            BridgeProtocol.profileTransfer(listOf("🥾"), chunkBytes = 3).result,
-        )
+        assertNull(BridgeProtocol.profileTransfer(oversized))
+        assertNull(BridgeProtocol.profileTransfer(listOf("Hiking", "Hiking")))
+        assertNull(BridgeProtocol.profileTransfer(listOf("x".repeat(200)), chunkBytes = 1))
+        assertNull(BridgeProtocol.profileTransfer(listOf("🥾"), chunkBytes = 3))
     }
 
     @Test fun validProfileTransferRespectsTheProtocolChunkCountAndByteLimits() {
@@ -81,7 +73,9 @@ class ProfileProtocolTest {
         assertThrows(IllegalArgumentException::class.java) {
             BridgeProtocol.profileTransfer(listOf("Hiking"), chunkBytes = 81)
         }
-        val transfer = BridgeProtocol.profileTransfer(listOf("Wandern ÄÖÜ 🥾", "Running"), chunkBytes = 12)
+        val transfer = requireNotNull(
+            BridgeProtocol.profileTransfer(listOf("Wandern ÄÖÜ 🥾", "Running"), chunkBytes = 12),
+        )
         assertEquals(BridgeProtocol.Result.OK, transfer.result)
         assertEquals("Wandern ÄÖÜ 🥾\nRunning", transfer.chunks.joinToString(""))
         assertTrue(transfer.chunks.size <= BridgeProtocol.MAX_PROFILE_LIST_CHUNKS)

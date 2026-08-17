@@ -23,8 +23,16 @@ static size_t s_torn_write_bytes;
 static int s_fail_delete_key = -1;
 static int s_crash_before_delete = -1;
 static int s_delete_calls;
+static int s_crash_before_mutation = -1;
+static int s_mutation_calls;
 static jmp_buf s_power_cut;
 static size_t s_persist_max_size = STORE_KEYS * PERSIST_DATA_MAX_LENGTH;
+
+static void maybe_cut_power_before_mutation(void) {
+  if (s_crash_before_mutation >= 0 && s_mutation_calls++ == s_crash_before_mutation) {
+    longjmp(s_power_cut, 1);
+  }
+}
 
 static StoredValue *stored(uint32_t key) {
   assert(key < STORE_KEYS);
@@ -65,6 +73,7 @@ int persist_read_string(uint32_t key, char *buffer, size_t buffer_size) {
 }
 
 int persist_write_data(uint32_t key, const void *data, size_t size) {
+  maybe_cut_power_before_mutation();
   if ((int)key == s_fail_write_key || size > PERSIST_DATA_MAX_LENGTH) return E_ERROR;
   StoredValue *value = stored(key);
   const size_t written_size = (int)key == s_torn_write_key && s_torn_write_bytes < size ?
@@ -84,6 +93,7 @@ int persist_write_string(uint32_t key, const char *cstring) {
 }
 
 status_t persist_delete(uint32_t key) {
+  maybe_cut_power_before_mutation();
   if (s_crash_before_delete >= 0 && s_delete_calls++ == s_crash_before_delete) {
     longjmp(s_power_cut, 1);
   }
@@ -102,6 +112,8 @@ static void reset_store(void) {
   s_fail_delete_key = -1;
   s_crash_before_delete = -1;
   s_delete_calls = 0;
+  s_crash_before_mutation = -1;
+  s_mutation_calls = 0;
   s_persist_max_size = STORE_KEYS * PERSIST_DATA_MAX_LENGTH;
 }
 
@@ -114,6 +126,20 @@ static const PersistentBlob TEST_BLOB = {
   .metadata_key = {1, 3},
   .legacy_key = 2,
   .bank_base = {10, 20},
+  .max_chunks = 4,
+};
+
+static const PersistentBlob ACTIVE_CONFIG_BLOB = {
+  .metadata_key = {4, 6},
+  .legacy_key = 5,
+  .bank_base = {30, 40},
+  .max_chunks = 4,
+};
+
+static const PersistentBlob PENDING_CONFIG_BLOB = {
+  .metadata_key = {7, 9},
+  .legacy_key = 8,
+  .bank_base = {50, 60},
   .max_chunks = 4,
 };
 
@@ -343,6 +369,138 @@ static void test_persistent_blob_delete_failures(void) {
   assert(!persistent_blob_exists(&TEST_BLOB));
 }
 
+static void setup_config_replacement(
+    const char *current,
+    const char *queued) {
+  reset_store();
+  assert(persistent_blob_write(&ACTIVE_CONFIG_BLOB, current, strlen(current)));
+  assert(persistent_blob_write(&PENDING_CONFIG_BLOB, queued, strlen(queued)));
+}
+
+// This is the persistence-only sequence used by main.c after both inputs have been
+// parsed. Keeping it here lets the failure-injecting store prove every durable prefix;
+// watch_stack.test.js separately locks production to the same ordering.
+static bool replace_config_preserving_pending(const char *replacement) {
+  char queued[1025];
+  if (!persistent_blob_read(&PENDING_CONFIG_BLOB, queued, sizeof(queued)) ||
+      !persistent_blob_write(&ACTIVE_CONFIG_BLOB, queued, strlen(queued)) ||
+      !persistent_blob_delete(&PENDING_CONFIG_BLOB)) {
+    return false;
+  }
+  return persistent_blob_write(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
+}
+
+static int config_value_kind(const char *value, const char *current,
+    const char *queued, const char *replacement) {
+  if (strcmp(value, current) == 0) return 0;
+  if (strcmp(value, queued) == 0) return 1;
+  if (strcmp(value, replacement) == 0) return 2;
+  return -1;
+}
+
+static void assert_config_replacement_invariant(
+    const char *current,
+    const char *queued,
+    const char *replacement) {
+  char active[1025];
+  char pending[1025];
+  assert(persistent_blob_read(&ACTIVE_CONFIG_BLOB, active, sizeof(active)));
+  const int active_kind = config_value_kind(active, current, queued, replacement);
+  assert(active_kind >= 0);
+
+  const bool pending_exists = persistent_blob_exists(&PENDING_CONFIG_BLOB);
+  const bool pending_readable = persistent_blob_read(
+      &PENDING_CONFIG_BLOB, pending, sizeof(pending));
+  if (pending_readable) {
+    assert(strcmp(pending, queued) == 0);
+    assert(active_kind == 0 || active_kind == 1);
+  } else if (pending_exists) {
+    // Pending deletion may have lost power after its data disappeared but before
+    // metadata cleanup. Promotion must already have made the queued baseline active.
+    assert(active_kind == 1);
+  } else {
+    assert(active_kind == 1 || active_kind == 2);
+  }
+  if (active_kind == 2) assert(!pending_exists);
+}
+
+static void recover_config_replacement(
+    const char *queued,
+    const char *replacement) {
+  char pending[1025];
+  if (persistent_blob_read(&PENDING_CONFIG_BLOB, pending, sizeof(pending))) {
+    assert(strcmp(pending, queued) == 0);
+    assert(persistent_blob_write(&ACTIVE_CONFIG_BLOB, pending, strlen(pending)));
+  }
+  if (persistent_blob_exists(&PENDING_CONFIG_BLOB)) {
+    assert(persistent_blob_delete(&PENDING_CONFIG_BLOB));
+  }
+  assert(persistent_blob_write(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement)));
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
+  assert(!persistent_blob_exists(&PENDING_CONFIG_BLOB));
+}
+
+static void test_config_replacement_preserves_queued_baseline(void) {
+  const char current[] = "current configuration";
+  const char queued[] = "confirmed queued configuration";
+  const char replacement[] = "direct replacement configuration";
+
+  setup_config_replacement(current, queued);
+  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.bank_base[1];
+  assert(!replace_config_preserving_pending(replacement));
+  s_fail_write_key = -1;
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, current, strlen(current));
+  assert_blob_equals(&PENDING_CONFIG_BLOB, queued, strlen(queued));
+
+  setup_config_replacement(current, queued);
+  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.bank_base[0];
+  assert(!replace_config_preserving_pending(replacement));
+  s_fail_delete_key = -1;
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
+  assert_blob_equals(&PENDING_CONFIG_BLOB, queued, strlen(queued));
+
+  setup_config_replacement(current, queued);
+  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.metadata_key[0];
+  assert(!replace_config_preserving_pending(replacement));
+  s_fail_delete_key = -1;
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
+  assert(persistent_blob_exists(&PENDING_CONFIG_BLOB));
+  char unreadable[1025];
+  assert(!persistent_blob_read(&PENDING_CONFIG_BLOB, unreadable, sizeof(unreadable)));
+  recover_config_replacement(queued, replacement);
+
+  setup_config_replacement(current, queued);
+  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.bank_base[0];
+  assert(!replace_config_preserving_pending(replacement));
+  s_fail_write_key = -1;
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
+  assert(!persistent_blob_exists(&PENDING_CONFIG_BLOB));
+
+  bool reached_completion = false;
+  for (int cut = 0; cut < 32; cut++) {
+    setup_config_replacement(current, queued);
+    s_mutation_calls = 0;
+    s_crash_before_mutation = cut;
+    if (setjmp(s_power_cut) == 0) {
+      assert(replace_config_preserving_pending(replacement));
+      s_crash_before_mutation = -1;
+      reached_completion = true;
+    } else {
+      s_crash_before_mutation = -1;
+    }
+
+    assert_config_replacement_invariant(current, queued, replacement);
+    recover_config_replacement(queued, replacement);
+    if (reached_completion) break;
+  }
+  assert(reached_completion);
+
+  // A same-ID application retry repeats the durable write. It is safe whether the
+  // previous result was lost before or after the replacement commit.
+  assert(persistent_blob_write(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement)));
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
+}
+
 static void test_persistent_blob_capacity(void) {
   reset_store();
   char first[258];
@@ -460,6 +618,11 @@ static void test_watch_config_transfer(void) {
 
   assert(watch_config_transfer_accept(
       &transfer, buffer, sizeof(buffer), 7, 2, 3, "ef", 2) == WATCH_TRANSFER_COMPLETE);
+  assert(strcmp(buffer, "abcdef") == 0);
+
+  watch_config_transfer_reset(&transfer);
+  assert(watch_config_transfer_accept(
+      &transfer, buffer, sizeof(buffer), 7, 0, 1, "abcdef", 6) == WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "abcdef") == 0);
 
   watch_config_transfer_reset(&transfer);
@@ -597,6 +760,7 @@ int main(void) {
   test_persistent_blob_legacy_barrier();
   test_persistent_blob_delete_power_cuts();
   test_persistent_blob_delete_failures();
+  test_config_replacement_preserves_queued_baseline();
   test_persistent_blob_capacity();
   test_persistent_blob_invalid_layout();
   test_watch_config_transfer();

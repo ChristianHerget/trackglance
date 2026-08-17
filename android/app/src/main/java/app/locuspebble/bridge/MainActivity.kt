@@ -31,9 +31,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.locuspebble.bridge.core.BridgeState
 import app.locuspebble.bridge.core.Preferences
 import app.locuspebble.bridge.core.RefreshMode
+import app.locuspebble.bridge.core.withPebbleConnectionFailure
+import app.locuspebble.bridge.core.withPebbleSelection
 import app.locuspebble.bridge.locus.LocusGateway
+import app.locuspebble.bridge.pebble.TRUSTED_CORE_APP_PACKAGE
+import app.locuspebble.bridge.pebble.TrustedPebbleCompanionProvider
 import app.locuspebble.bridge.protocol.BridgeProtocol
-import io.rebble.pebblekit2.client.DefaultPebbleAndroidAppPicker
 import io.rebble.pebblekit2.client.DefaultPebbleInfoRetriever
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -54,20 +57,18 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun refreshDiagnostics() {
         var pebbleError: String? = null
-        val selected = try {
-            DefaultPebbleAndroidAppPicker.getInstance(this@MainActivity).getCurrentlySelectedApp()
+        val trusted = try {
+            val companionPin = TrustedPebbleCompanionProvider.get(this@MainActivity)
+            companionPin.ensureTrustedBounded()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             pebbleError = error.message ?: error.javaClass.simpleName
-            null
+            false
         }
-        BridgeState.update {
-            it.copy(
-                pebbleAppPackage = selected,
-                watchConnected = if (selected == null) false else it.watchConnected,
-            )
-        }
+        val selected = TRUSTED_CORE_APP_PACKAGE.takeIf { trusted }
+        if (!trusted && pebbleError == null) pebbleError = "Trusted CoreApp is unavailable"
+        BridgeState.update { it.withPebbleSelection(selected) }
         val snapshot = withContext(Dispatchers.IO) { LocusGateway(this@MainActivity).readSnapshot() }
         BridgeState.update {
             it.copy(
@@ -88,7 +89,8 @@ class MainActivity : ComponentActivity() {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
+                val message = error.message ?: error.javaClass.simpleName
+                BridgeState.update { it.withPebbleConnectionFailure(message) }
             }
         }
     }

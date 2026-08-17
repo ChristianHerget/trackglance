@@ -5,7 +5,25 @@ import android.content.Context
 import android.util.Base64
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
+
+private fun strictUtf8Encode(value: String): ByteArray {
+    val bytes = Charsets.UTF_8.newEncoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .encode(CharBuffer.wrap(value))
+    val result = ByteArray(bytes.remaining())
+    bytes.get(result)
+    return result
+}
+
+private fun strictUtf8Decode(value: ByteArray): String = Charsets.UTF_8.newDecoder()
+    .onMalformedInput(CodingErrorAction.REPORT)
+    .onUnmappableCharacter(CodingErrorAction.REPORT)
+    .decode(ByteBuffer.wrap(value))
+    .toString()
 
 /**
  * A bounded, durable, at-most-once command journal.
@@ -135,16 +153,26 @@ class CommandJournal(
                 if (value == null) {
                     digest.update(0.toByte())
                 } else {
-                    val bytes = value.toByteArray(Charsets.UTF_8)
-                    digest.update(1.toByte())
-                    digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
-                    digest.update(bytes)
+                    val bytes = runCatching { strictUtf8Encode(value) }.getOrNull()
+                    if (bytes != null) {
+                        digest.update(1.toByte())
+                        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+                        digest.update(bytes)
+                    } else {
+                        // Preserve exact malformed UTF-16 code units instead of encoder replacement bytes.
+                        digest.update(2.toByte())
+                        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.length).array())
+                        value.forEach { codeUnit ->
+                            digest.update((codeUnit.code ushr 8).toByte())
+                            digest.update(codeUnit.code.toByte())
+                        }
+                    }
                 }
             }
             return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
         }
 
-        private fun validKey(key: Key): Boolean = key.watchId.isNotBlank() &&
+        private fun validKey(key: Key): Boolean = BridgeProtocol.validWatchId(key.watchId) &&
             validUnsigned(key.sessionId) && validUnsigned(key.commandId)
 
         private fun validFingerprint(value: String): Boolean = value.length == SHA_256_HEX_LENGTH &&
@@ -169,7 +197,7 @@ class SharedPreferencesCommandJournalStorage(context: Context) : CommandJournal.
         .commit()
 
     private fun encode(record: CommandJournal.Record): String = listOf(
-        Base64.encodeToString(record.key.watchId.toByteArray(Charsets.UTF_8), BASE64_FLAGS),
+        Base64.encodeToString(strictUtf8Encode(record.key.watchId), BASE64_FLAGS),
         record.key.sessionId.toString(),
         record.key.commandId.toString(),
         record.fingerprint,
@@ -188,7 +216,7 @@ class SharedPreferencesCommandJournalStorage(context: Context) : CommandJournal.
         }
         CommandJournal.Record(
             key = CommandJournal.Key(
-                watchId = String(Base64.decode(fields[0], BASE64_FLAGS), Charsets.UTF_8),
+                watchId = strictUtf8Decode(Base64.decode(fields[0], BASE64_FLAGS)),
                 sessionId = fields[1].toLong(),
                 commandId = fields[2].toLong(),
             ),

@@ -42,8 +42,10 @@ Configuration is chunked as
 `theme|legacy-selected-index|watch-HR-to-Locus (0/1)|heart-rate-interval-seconds`, followed by one newline-separated profile
 per line: `display-name|exact-locus-name|protected-flag|comma-separated-metric-ids|stable-profile-id`.
 There are one through eight profiles, each with one through six unique metric IDs. Display names,
-Locus names, and stable IDs must be nonblank valid UTF-8 without control characters or `|`;
-stable IDs are limited to 39 bytes. Display names must also be unique under a bounded, scalar-wise
+Locus names, and stable IDs must be valid UTF-8, contain neither U+0000–U+001F, U+007F, nor `|`,
+and contain at least one scalar outside the shared whitespace set U+0020, U+0085, U+00A0, U+1680,
+U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, and U+FEFF. Stable IDs are limited to
+39 bytes. Display names must also be unique under a bounded, scalar-wise
 fold shared by the watch and PKJS: U+0041–U+005A, U+00C0–U+00D6, U+00D8–U+00DE,
 U+0391–U+03A1, U+03A3–U+03AB, and U+0410–U+042F map to the scalar 0x20 higher;
 U+0400–U+040F maps 0x50 higher. There is no locale, normalization, contextual, or multi-scalar
@@ -65,26 +67,49 @@ transfer ID and exactly one context-specific result: applied `0`, queued-until-a
 `7`, invalid `8`, or storage failure `9`. A fresh stopped snapshot is required for direct apply;
 recording, paused, unavailable, missing, or stale state queues a valid configuration. If the result
 deadline expires after successful transport, PKJS retries the entire identical transfer with the
-same ID, up to three application attempts. This is idempotent and lets the watch replay a result
-lost after persistence. Wrong-ID, malformed, duplicate, and late results cannot settle another
-transaction.
+same ID, up to three application attempts. The desired configuration is unchanged, but the watch
+does not durably remember or replay a completed result: it validates and stores every completed
+retry again, so a later storage result may differ from an earlier lost result. Wrong-ID, malformed,
+duplicate, and late results cannot settle another transaction.
 
-A webview save is first stored in a separate, release-tagged pending queue. The committed settings
-key changes only after correlated applied/queued confirmation. Concurrent saves are serialized and
-unsent candidates are last-write-wins. An explicit invalid/storage result removes that candidate.
-An exhausted transport/result timeout remains durable for reconnect or process restart when it is
-the newest candidate; if a newer durable save is already waiting, the failed older candidate is
-retired and the newer one proceeds immediately. A later save likewise supersedes and unblocks a
-timed-out candidate. Startup sends durable pending state before the older committed value, preventing
-a lost result from reverting an already-applied watch. The next settings opening reports transport,
-timeout, rejection, or storage failure while continuing to show the last confirmed configuration.
+A webview save is first stored in a separate protocol-, release-, and format-tagged pending queue.
+Before any frame of a pending candidate is enqueued, PKJS durably marks that wire as possibly
+applied. The committed settings key changes only after correlated applied/queued confirmation.
+Concurrent saves are serialized and unsent candidates are last-write-wins, but each newer candidate
+carries the complete newest-first lineage of possibly applied predecessors. The lineage is bounded
+at eight distinct configurations. A ninth distinct ambiguity is not sent or stored in place of that
+lineage; the prior recovery state remains durable and settings reports unresolved reconciliation.
+
+During one live send, PKJS retains the uncertainty state captured before that pre-send marker. A
+correlated invalid result is deterministic. A first-attempt correlated storage result likewise
+proves that attempt did not apply, so PKJS clears only the uncertainty introduced for that live
+attempt and restores or rebases any captured predecessor. Transport failure is always ambiguous:
+PebbleKit can report a missing transport acknowledgement after the watch processed the final frame.
+An application-result timeout or process loss also destroys proof of non-application, so a later
+storage/transport failure leaves the candidate durable for reconciliation. If an ambiguous older
+candidate fails while a newer durable save is already waiting, the newer candidate proceeds with
+that candidate and all of its predecessors as its recovery lineage. Confirmed success establishes
+the new baseline and clears all inherited uncertainty.
+
+Legacy pending records without uncertainty metadata migrate as possibly applied. A canonical queue
+in a recognized pending format with the same protocol also migrates across release tags and is
+rewritten in the current format.
+Startup always sends migratable durable pending state before the older committed value. If a pending
+record exists but its protocol, wire, or lineage cannot be safely migrated and validated, startup
+fails closed and does not send the committed value. These rules prevent a lost result or an update
+from reverting an already-applied watch. Settings continues to report unresolved reconciliation on
+every opening while pending or blocked state remains; terminal rejection or storage notices are
+shown on the next opening. The page continues to show the last confirmed configuration.
 
 Installed Locus profile lists are newline-separated UTF-8 names using the same chunk envelope.
-Android obtains them from `ActionBasics.getTrackRecordingProfiles`. The watch validates and caches
-only a complete transfer, then relays a complete cached list to PebbleKit JS. The complete list is
-at most 8191 bytes and 103 chunks; every name obeys the 255-byte field rules and exact duplicates
-are invalid. Profile-list chunks use result `0` for a non-empty query and `3` for an empty list, so
-an empty Locus result is distinguishable from no relay response.
+Android obtains them from `ActionBasics.getTrackRecordingProfiles`. It sends and persists result `3`
+with an empty payload only when that query succeeds and authoritatively returns an empty list. Locus
+unavailability, a thrown query, invalid names, duplicates, or an oversized result NACK the request
+and produce no completed profile-list transfer, preserving the watch and PKJS stale caches. The
+watch validates and caches only a complete transfer, then relays a complete cached list to PebbleKit
+JS. The complete list is at most 8191 bytes and 103 chunks; every name obeys the 255-byte field rules
+and exact duplicates are invalid. Profile-list chunks use result `0` for a non-empty query and `3`
+for an authoritative empty list, so an empty Locus result is distinguishable from no relay response.
 
 All envelope fields use their documented integer or string tuple types; decimal strings are not
 accepted as integers. Chunk 0 starts or restarts a profile-list transfer even when an ID is reused.
@@ -95,9 +120,11 @@ chunk is present and the joined byte and field limits pass validation.
 JS atomically replaces its persistent cache after a complete compatible transfer, including a
 complete empty result. Cache entries carry protocol and release metadata; missing or mismatched
 metadata is ignored. With a valid cache, settings opens immediately with a stale-data notice while
-requesting a refresh. Without one, it waits up to 500 ms for a fresh response before opening. A
-response that arrives after the data-URL page has opened is available on the next opening. A later
-complete compatible response clears a prior in-memory incompatibility notice.
+requesting a refresh. Any prior in-memory response is likewise demoted to stale at the start of a
+later settings opening. Without a cache, settings waits up to 500 ms for a fresh response before
+opening. A response that arrives after the data-URL page has opened is cached and appears as stale on
+the next opening while another refresh is requested. A later complete compatible response clears a
+prior in-memory incompatibility notice.
 
 Older protocol-v3 configuration headers migrate to watch injection disabled and a five-second
 interval; profiles, metric selections, and order are not rewritten. Fresh English and German
@@ -134,5 +161,6 @@ envelope and show an explicit incompatibility error where a user-facing surface 
 
 Waypoint command `4` retains the fixed name `Pebble waypoint`. On microphone-capable watches,
 command `5` carries the exact text accepted in Pebble's confirmation UI under key 36. Android
-rejects blank, control-character, or oversized names before calling Locus. Both waypoint commands
-auto-save at the current recording position and are valid only while actively recording.
+rejects names that contain U+0000–U+001F or U+007F, consist only of the shared whitespace set above,
+or exceed 120 UTF-8 bytes before calling Locus. Both waypoint commands auto-save at the current
+recording position and are valid only while actively recording.

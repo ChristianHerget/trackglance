@@ -3,7 +3,9 @@ package app.locuspebble.bridge.pebble
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.TransmissionResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +49,41 @@ class PebbleTransportTest {
         assertTrue(sender.targets.isEmpty())
     }
 
+    @Test fun outboundDeliveryStopsImmediatelyWhenThePinnedSelectionChanges() = runBlocking {
+        val watch = WatchIdentifier("watch")
+        val delegate = FakeSender { _, watches ->
+            watches.associateWith { TransmissionResult.Success }
+        }
+        var trusted = true
+        val sender = DefaultPebbleDictionarySender(delegate) { trusted }
+
+        assertEquals(
+            mapOf(watch to TransmissionResult.Success),
+            sender.send(emptyMap(), listOf(watch)),
+        )
+        trusted = false
+        assertNull(sender.send(emptyMap(), listOf(watch)))
+        assertEquals(listOf(listOf(watch)), delegate.targets)
+    }
+
+    @Test fun timedOutSenderDoesNotBlockALaterDelivery() = runBlocking {
+        val watch = WatchIdentifier("watch")
+        val sender = FakeSender { attempt, watches ->
+            if (attempt == 1) awaitCancellation()
+            watches.associateWith { TransmissionResult.Success }
+        }
+        val transport = ReliablePebbleTransport(
+            sender = sender,
+            maxAttempts = 1,
+            attemptTimeoutMillis = 25,
+            retryDelay = {},
+        )
+
+        assertFalse(transport.send(emptyMap(), listOf(watch)))
+        assertTrue(transport.send(emptyMap(), listOf(watch)))
+        assertEquals(2, sender.targets.size)
+    }
+
     @Test fun activeRegistryKeepsPollingUntilTheLastWatchCloses() {
         val registry = ActiveWatchRegistry<String>()
         assertTrue(registry.opened("watch-a"))
@@ -57,6 +94,20 @@ class PebbleTransportTest {
         assertFalse(registry.isEmpty())
         assertTrue(registry.closed("watch-b"))
         assertTrue(registry.isEmpty())
+    }
+
+    @Test fun connectorCleanupIsIdempotentAndFailSafeBeforeBinding() {
+        var closes = 0
+        val close = IdempotentClose {
+            closes++
+            throw IllegalArgumentException("not bound")
+        }
+
+        close.close()
+        close.close()
+
+        assertTrue(close.isClosed)
+        assertEquals(1, closes)
     }
 
     private class FakeSender(

@@ -18,8 +18,9 @@ If both `arc:5555` and `emulator-5554` appear, use an explicit `-s` selector. AD
 errors inside a managed coding sandbox do not imply an ARCVM configuration problem.
 
 Install Locus Map 4 from Google Play. Install a current CoreApp build compatible with PebbleKit
-Android 2, then install `watchapp/build/watchapp.pbw` through it. QEMU testing requires CoreApp's
-direct transport from `coredevices/mobileapp` commit `38fd4c6` or later.
+Android 2, then install `watchapp/build/watchapp.pbw` through it. The reproducible QEMU setup uses
+CoreApp's direct transport from the pinned `coredevices/mobileapp` commit
+`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`.
 The Android diagnostics screen reports Locus, Pebble/Core selection, watch connection, recording
 state, refresh mode, and the last bridge error.
 
@@ -28,8 +29,8 @@ state, refresh mode, and the last bridge error.
 ```sh
 sudo apt install openjdk-17-jdk-headless python3-pip python3-venv nodejs npm \
   libsdl2-2.0-0 libasound2 libpulse0 libx11-6 libfdt1
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install pebble-tool --python 3.13
+curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
+uv tool install 'pebble-tool==5.0.39' --python 3.13
 pebble sdk install 4.33.1
 pebble sdk activate 4.33.1
 ```

@@ -1,6 +1,7 @@
 package app.locuspebble.bridge.core
 
 import app.locuspebble.bridge.locus.LocusBridgeGateway
+import app.locuspebble.bridge.locus.RecordingProfilesResult
 import app.locuspebble.bridge.pebble.PebbleDictionarySender
 import app.locuspebble.bridge.pebble.PebbleMessages
 import app.locuspebble.bridge.pebble.ReliablePebbleTransport
@@ -128,9 +129,69 @@ class BridgeRuntimeTest {
         }
     }
 
+    @Test fun failedOrInvalidProfileQueriesNeverSendAnAuthoritativeEmptyTransfer() = runBlocking {
+        val oversized = (0 until 40).map { index ->
+            "profile-$index-${"x".repeat(240)}"
+        }
+        val failures = listOf(
+            FakeLocus(profileFailure = "Locus is unavailable"),
+            FakeLocus(throwProfileQuery = true),
+            FakeLocus(profiles = listOf("broken\nname")),
+            FakeLocus(profiles = listOf("Hiking", "Hiking")),
+            FakeLocus(profiles = oversized),
+        )
+
+        failures.forEachIndexed { index, locus ->
+            val sender = RecordingSender()
+            val runtime = runtime(sender = sender, locus = locus)
+            try {
+                assertFalse(runtime.sendRecordingProfiles(WatchIdentifier("watch-$index")))
+                assertTrue(sender.calls.isEmpty())
+            } finally {
+                runtime.close()
+            }
+        }
+    }
+
+    @Test fun successfulEmptyProfileQuerySendsTheAuthoritativeEmptyResult() = runBlocking {
+        val sender = RecordingSender()
+        val runtime = runtime(sender, FakeLocus(profiles = emptyList()))
+        try {
+            assertTrue(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
+            assertEquals(1, sender.calls.size)
+            assertEquals(
+                BridgeProtocol.Result.FAILED.wire,
+                PebbleMessages.signed32(sender.calls.single().dictionary, BridgeProtocol.Key.RESULT),
+            )
+            assertEquals(
+                "",
+                PebbleMessages.string(sender.calls.single().dictionary, BridgeProtocol.Key.CHUNK_DATA),
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test fun rejectedProfileQueryDoesNotConsumeATransferIdentifier() = runBlocking {
+        val sender = RecordingSender()
+        val locus = FakeLocus(profiles = listOf("Hiking", "Hiking"))
+        val runtime = runtime(sender, locus)
+        try {
+            assertFalse(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
+            locus.profiles = listOf("Hiking")
+            assertTrue(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
+            assertEquals(
+                100,
+                PebbleMessages.signed32(sender.calls.single().dictionary, BridgeProtocol.Key.TRANSFER_ID),
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
     private fun runtime(
         sender: RecordingSender,
-        locus: FakeLocus = FakeLocus(),
+        locus: LocusBridgeGateway = FakeLocus(),
     ): BridgeRuntime = BridgeRuntime(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         locus = locus,
@@ -146,7 +207,9 @@ class BridgeRuntimeTest {
 
     private class FakeLocus(
         private var heartRateFailures: Int = 0,
-        private val profiles: List<String> = listOf("Hiking"),
+        var profiles: List<String> = listOf("Hiking"),
+        private val profileFailure: String? = null,
+        private val throwProfileQuery: Boolean = false,
     ) : LocusBridgeGateway {
         var executions = 0
         var heartRateCalls = 0
@@ -168,7 +231,11 @@ class BridgeRuntimeTest {
             return true
         }
 
-        override fun recordingProfiles(): List<String> = profiles
+        override fun recordingProfiles(): RecordingProfilesResult {
+            if (throwProfileQuery) error("synthetic profile query failure")
+            return profileFailure?.let(RecordingProfilesResult::Failure)
+                ?: RecordingProfilesResult.Success(profiles)
+        }
 
         override fun execute(
             command: BridgeProtocol.Command,

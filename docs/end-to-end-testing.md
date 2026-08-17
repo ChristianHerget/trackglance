@@ -52,7 +52,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | Android Build Tools | 36.0.0 |
 | Bridge and watchapp | 0.1.7 |
 | Wire protocol | v3 |
-| CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6` or later |
+| CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
 
 Pin tool versions in automation. An SDK directory named `latest`, a moving Git branch, or an
@@ -111,8 +111,8 @@ do not delete it merely because a build or network connection was interrupted.
 Install `uv`, Pebble Tool, and a pinned Pebble SDK:
 
 ```sh
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install pebble-tool --python 3.13
+curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
+uv tool install 'pebble-tool==5.0.39' --python 3.13
 pebble sdk install 4.33.1
 pebble sdk activate 4.33.1
 pebble --version
@@ -212,12 +212,14 @@ cannot install an ARM-only APK. In that case, use a compatible ARM Android targe
 from source for the required ABI.
 
 CoreApp's direct QEMU transport is present in
-[`coredevices/mobileapp`](https://github.com/coredevices/mobileapp) commit `38fd4c6` and later. To
-build it from source:
+[`coredevices/mobileapp`](https://github.com/coredevices/mobileapp) commit
+`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`. To reproduce the verified source build, check out that
+exact revision:
 
 ```sh
 git clone https://github.com/coredevices/mobileapp.git coreapp
 cd coreapp
+git checkout --detach 38fd4c6892599d6a02b4b3ca0b3fd518a51d6170
 cp androidApp/src/google-services-dummy.json androidApp/src/google-services.json
 printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
 ./gradlew :androidApp:assembleDebug

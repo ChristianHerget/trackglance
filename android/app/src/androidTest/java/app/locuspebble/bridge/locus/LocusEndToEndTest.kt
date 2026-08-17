@@ -41,7 +41,9 @@ class LocusEndToEndTest {
     }
 
     @Test fun startPauseResumeAndStopRoundTripThroughLocus() {
-        val profileName = gateway.recordingProfiles().firstOrNull()
+        val profileName = (gateway.recordingProfiles() as? RecordingProfilesResult.Success)
+            ?.names
+            ?.firstOrNull()
         assumeTrue("Locus has no recording profile", profileName != null)
         assertEquals(
             "Locus rejected named Start",

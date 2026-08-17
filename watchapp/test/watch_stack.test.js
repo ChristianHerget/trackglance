@@ -210,6 +210,21 @@ assert(bodies.health_event.includes('HealthMetricHeartRateRawBPM'),
 assert(bodies.health_event.includes('bpm<25||bpm>250'), 'raw BPM must be range checked');
 assert(bodies.health_event.includes('s_hr_pending=true'),
   'HR messages must be conflated in one pending slot');
+assert(bodies.fresh_recording_snapshot.includes('s_snapshot_received&&') &&
+    bodies.fresh_recording_snapshot.includes('s_snapshot_age<=SNAPSHOT_STALE_SECONDS') &&
+    bodies.fresh_recording_snapshot.includes('s_snapshot.state==STATE_RECORDING'),
+  'HR collection must require a fresh recording snapshot');
+assert(bodies.update_health_subscription.includes(
+  's_watch_hr_to_locus&&fresh_recording_snapshot()'),
+  'HealthService subscription must use the complete snapshot-freshness gate');
+assert(bodies.stop_health.includes('s_send_attempts[OUTBOUND_HEART_RATE]=0;'),
+  'stopping HealthService must discard retry history for obsolete heart-rate work');
+assert(bodies.handle_send_failure.includes(
+  'if(kind==OUTBOUND_HEART_RATE&&!s_hr_prepared){*attempts=0;send_next();return;}'),
+  'a late failure for an invalidated heart-rate packet must not consume a future retry');
+assert(bodies.tick.includes('s_snapshot_age==SNAPSHOT_STALE_SECONDS+1') &&
+    bodies.tick.includes('update_health_subscription();'),
+  'the freshness transition must immediately reevaluate and stop HealthService');
 assert(bodies.stop_health.includes('health_service_set_heart_rate_sample_period(0)'),
   'shutdown must restore the automatic sample period');
 assert(bodies.update_health_subscription.includes(
@@ -234,6 +249,40 @@ assert(bodies.accept_config_chunk.includes('result=RESULT_INVALID_CONFIG') &&
     bodies.accept_config_chunk.includes('result=RESULT_STORAGE_FAILED') &&
     bodies.accept_config_chunk.includes('s_snapshot_age<=SNAPSHOT_STALE_SECONDS'),
   'configuration ACKs must distinguish validation/storage/queued state and require a fresh stop');
+assert(bodies.cleanup_pending_config.includes(
+  'if(persistent_blob_delete(&s_pending_config_blob)){s_pending_cleanup_required=false;returntrue;}') &&
+    bodies.cleanup_pending_config.includes('s_pending_cleanup_required=true;'),
+  'pending cleanup must stay fail-closed until every pending key is removed');
+const pendingPreparation = bodies.prepare_pending_config_for_direct_apply;
+const pendingRead = pendingPreparation.indexOf(
+  'persistent_blob_read(&s_pending_config_blob,s_pending_chunks,sizeof(s_pending_chunks))');
+const pendingParse = pendingPreparation.indexOf(
+  'parse_config_buffer(s_config_work,&s_parsed_config)');
+const pendingPromotion = pendingPreparation.indexOf('store_active_config(s_pending_chunks)');
+const pendingInstall = pendingPreparation.indexOf('install_config(&s_parsed_config,true)');
+const pendingCleanup = pendingPreparation.lastIndexOf('cleanup_pending_config(');
+assert(pendingRead >= 0 && pendingParse > pendingRead && pendingPromotion > pendingParse &&
+    pendingInstall > pendingPromotion && pendingCleanup > pendingInstall,
+  'a readable queued baseline must be validated, promoted, and installed before cleanup');
+assert(pendingPreparation.includes(
+  'if(s_pending_cleanup_required){returncleanup_pending_config(') &&
+    pendingPreparation.includes(
+      'returncleanup_pending_config("Unreadablependingconfigurationcleanupfailed")') &&
+    pendingPreparation.includes(
+      'returncleanup_pending_config("Invalidpendingconfigurationcleanupfailed")'),
+  'known-stale, unreadable, and invalid pending state must be cleared before direct replacement');
+assert(!bodies.apply_pending_config_if_stopped.includes(
+  'persistent_blob_delete(&s_pending_config_blob)') &&
+    (bodies.apply_pending_config_if_stopped.match(/cleanup_pending_config\(/g) || []).length === 4,
+  'deferred apply must use the same fail-closed cleanup state for stale, corrupt, and applied data');
+const directPreparation = bodies.accept_config_chunk.indexOf(
+  'prepare_pending_config_for_direct_apply()');
+const directReplacement = bodies.accept_config_chunk.indexOf('store_active_config(s_chunks)');
+assert(directPreparation >= 0 && directReplacement > directPreparation &&
+    !bodies.accept_config_chunk.includes('persistent_blob_delete(&s_pending_config_blob)'),
+  'direct apply must reconcile pending state before transactionally storing the replacement');
+assert(bodies.accept_config_chunk.endsWith('reset_config_transfer();send_next();'),
+  'a completed transfer must reset before a same-ID application retry can start');
 assert(bodies.accept_config_chunk.includes(
   'if(id==s_config_transfer.id)reset_config_transfer();return;') &&
     bodies.accept_config_chunk.includes(
