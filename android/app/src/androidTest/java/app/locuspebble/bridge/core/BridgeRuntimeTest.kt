@@ -1367,6 +1367,7 @@ class BridgeRuntimeTest {
         override suspend fun send(
             dictionary: PebbleDictionary,
             watches: List<WatchIdentifier>,
+            admission: TrustAdmission,
         ): Map<WatchIdentifier, TransmissionResult> {
             calls += Call(dictionary, watches)
             if (yieldDuringSend) yield()
@@ -1387,15 +1388,6 @@ class BridgeRuntimeTest {
         )
 
         val calls = CopyOnWriteArrayList<Call>()
-
-        override suspend fun send(
-            dictionary: PebbleDictionary,
-            watches: List<WatchIdentifier>,
-        ): Map<WatchIdentifier, TransmissionResult>? = send(
-            dictionary,
-            watches,
-            TrustAdmission.INITIAL,
-        )
 
         override suspend fun send(
             dictionary: PebbleDictionary,
@@ -1430,6 +1422,7 @@ class BridgeRuntimeTest {
         override suspend fun send(
             dictionary: PebbleDictionary,
             watches: List<WatchIdentifier>,
+            admission: TrustAdmission,
         ): Map<WatchIdentifier, TransmissionResult> {
             val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
@@ -1470,6 +1463,7 @@ class BridgeRuntimeTest {
         override suspend fun send(
             dictionary: PebbleDictionary,
             watches: List<WatchIdentifier>,
+            admission: TrustAdmission,
         ): Map<WatchIdentifier, TransmissionResult> {
             val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
@@ -1483,3 +1477,52 @@ class BridgeRuntimeTest {
         override fun close() = Unit
     }
 }
+
+private val TEST_ADMISSION = TrustAdmission(0)
+
+private fun BridgeRuntime.watchAppOpened(watch: WatchIdentifier) =
+    watchAppOpened(watch, TEST_ADMISSION)
+
+private fun BridgeRuntime.watchObserved(watch: WatchIdentifier) =
+    watchObserved(watch, TEST_ADMISSION)
+
+private fun BridgeRuntime.watchAppClosed(watch: WatchIdentifier) =
+    watchAppClosed(watch, TEST_ADMISSION)
+
+private fun BridgeRuntime.handleHeartRate(
+    watch: WatchIdentifier,
+    sessionId: Long,
+    sequence: Long,
+    bpm: Int,
+    sampledAtEpochSeconds: Long,
+): Boolean = handleHeartRate(
+    watch,
+    sessionId,
+    sequence,
+    bpm,
+    sampledAtEpochSeconds,
+    TEST_ADMISSION,
+)
+
+private suspend fun BridgeRuntime.handleCommand(
+    watch: WatchIdentifier,
+    sessionId: Long,
+    commandId: Long,
+    command: BridgeProtocol.Command,
+    profileName: String?,
+    waypointName: String?,
+): Boolean = handleCommand(
+    watch,
+    sessionId,
+    commandId,
+    command,
+    profileName,
+    waypointName,
+    TEST_ADMISSION,
+)
+
+private suspend fun BridgeRuntime.sendRecordingProfiles(watch: WatchIdentifier): Boolean =
+    sendRecordingProfiles(watch, TEST_ADMISSION)
+
+private suspend fun BridgeRuntime.refresh(watches: Collection<WatchIdentifier>): Boolean =
+    refresh(watches, TEST_ADMISSION)

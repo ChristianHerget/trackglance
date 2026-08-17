@@ -24,7 +24,7 @@ class PebbleTransportTest {
         val delays = mutableListOf<Int>()
         val transport = ReliablePebbleTransport(sender, maxAttempts = 3) { delays += it }
 
-        assertTrue(transport.send(emptyMap(), listOf(watchA, watchB, watchA)))
+        assertTrue(transport.send(emptyMap(), listOf(watchA, watchB, watchA), TEST_ADMISSION))
         assertEquals(listOf(listOf(watchA, watchB), listOf(watchB)), sender.targets)
         assertEquals(listOf(1), delays)
     }
@@ -37,7 +37,7 @@ class PebbleTransportTest {
         }
         val transport = ReliablePebbleTransport(sender, maxAttempts = 3) {}
 
-        assertFalse(transport.send(emptyMap(), listOf(watch)))
+        assertFalse(transport.send(emptyMap(), listOf(watch), TEST_ADMISSION))
         assertEquals(3, sender.targets.size)
     }
 
@@ -45,7 +45,7 @@ class PebbleTransportTest {
         val sender = FakeSender { _, _ -> error("must not send") }
         val transport = ReliablePebbleTransport(sender)
 
-        assertTrue(transport.send(emptyMap(), emptyList()))
+        assertTrue(transport.send(emptyMap(), emptyList(), TEST_ADMISSION))
         assertTrue(sender.targets.isEmpty())
     }
 
@@ -59,10 +59,10 @@ class PebbleTransportTest {
 
         assertEquals(
             mapOf(watch to TransmissionResult.Success),
-            sender.send(emptyMap(), listOf(watch)),
+            sender.send(emptyMap(), listOf(watch), TEST_ADMISSION),
         )
         trusted = false
-        assertNull(sender.send(emptyMap(), listOf(watch)))
+        assertNull(sender.send(emptyMap(), listOf(watch), TEST_ADMISSION))
         assertEquals(listOf(listOf(watch)), delegate.targets)
     }
 
@@ -109,8 +109,8 @@ class PebbleTransportTest {
             retryDelay = {},
         )
 
-        assertFalse(transport.send(emptyMap(), listOf(watch)))
-        assertTrue(transport.send(emptyMap(), listOf(watch)))
+        assertFalse(transport.send(emptyMap(), listOf(watch), TEST_ADMISSION))
+        assertTrue(transport.send(emptyMap(), listOf(watch), TEST_ADMISSION))
         assertEquals(2, sender.targets.size)
     }
 
@@ -149,11 +149,16 @@ class PebbleTransportTest {
         override suspend fun send(
             dictionary: PebbleDictionary,
             watches: List<WatchIdentifier>,
+            admission: TrustAdmission,
         ): Map<WatchIdentifier, TransmissionResult>? {
             targets += watches
             return response(targets.size, watches)
         }
 
         override fun close() = Unit
+    }
+
+    private companion object {
+        val TEST_ADMISSION = TrustAdmission(0)
     }
 }

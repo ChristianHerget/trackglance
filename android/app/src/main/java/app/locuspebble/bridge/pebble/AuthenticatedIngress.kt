@@ -8,11 +8,6 @@ value class TrustAdmission(val generation: Long) {
     init {
         require(generation >= 0)
     }
-
-    companion object {
-        /** Test/default compatibility only; production ingress always captures the provider token. */
-        val INITIAL = TrustAdmission(0)
-    }
 }
 
 internal sealed interface TrustLeaseResult<out Result> {

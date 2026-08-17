@@ -89,7 +89,7 @@ class BridgeRuntime internal constructor(
         sequence: Long,
         bpm: Int,
         sampledAtEpochSeconds: Long,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ): Boolean {
         if (!admissionCurrent(admission)) return false
         val accepted = heartRateGate.accept(
@@ -140,13 +140,13 @@ class BridgeRuntime internal constructor(
 
     fun watchAppOpened(
         watch: WatchIdentifier,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ) = observeWatch(AdmittedWatch(watch, admission), markTransition = true)
 
     /** Recovers active-watch state when the process restarted while the watchapp stayed open. */
     fun watchObserved(
         watch: WatchIdentifier,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ) = observeWatch(AdmittedWatch(watch, admission), markTransition = false)
 
     private fun observeWatch(target: AdmittedWatch, markTransition: Boolean) {
@@ -188,7 +188,7 @@ class BridgeRuntime internal constructor(
 
     fun watchAppClosed(
         watch: WatchIdentifier,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ) {
         synchronized(lifecycleLock) {
             activeWatches.closed(AdmittedWatch(watch, admission))
@@ -221,7 +221,7 @@ class BridgeRuntime internal constructor(
         command: BridgeProtocol.Command,
         profileName: String?,
         waypointName: String?,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ): Boolean {
         val key = CommandJournal.Key(watch.value, sessionId, commandId)
         val fingerprint = CommandJournal.fingerprint(
@@ -348,7 +348,7 @@ class BridgeRuntime internal constructor(
 
     suspend fun sendRecordingProfiles(
         watch: WatchIdentifier,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ): Boolean = profileTransferMutex.withLock {
         val query = try {
             withContext(ioDispatcher) { locus.recordingProfiles() }
@@ -417,7 +417,7 @@ class BridgeRuntime internal constructor(
 
     suspend fun refresh(
         watches: Collection<WatchIdentifier>,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ): Boolean {
         return refreshTargets(watches.map { AdmittedWatch(it, admission) })
     }

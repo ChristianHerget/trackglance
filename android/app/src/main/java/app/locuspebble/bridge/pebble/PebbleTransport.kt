@@ -28,13 +28,8 @@ interface PebbleDictionarySender : AutoCloseable {
     suspend fun send(
         dictionary: PebbleDictionary,
         watches: List<WatchIdentifier>,
-    ): Map<WatchIdentifier, TransmissionResult>?
-
-    suspend fun send(
-        dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
         admission: TrustAdmission,
-    ): Map<WatchIdentifier, TransmissionResult>? = send(dictionary, watches)
+    ): Map<WatchIdentifier, TransmissionResult>?
 }
 
 // Process-wide ceiling: sender recreation cannot accumulate abandoned Core Binder workers.
@@ -62,15 +57,6 @@ class DefaultPebbleDictionarySender internal constructor(
             TrustedPebbleCompanionProvider.withOutboundAdmission(context, admission, block)
         },
         isTrusted = TrustedPebbleCompanionProvider.get(context).guard::isTrusted,
-    )
-
-    override suspend fun send(
-        dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
-    ): Map<WatchIdentifier, TransmissionResult>? = send(
-        dictionary,
-        watches,
-        TrustAdmission.INITIAL,
     )
 
     override suspend fun send(
@@ -111,15 +97,6 @@ private class CoreAppPebbleDictionarySender(
         connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
     )
     private val closeGuard = IdempotentClose { connector.close() }
-
-    override suspend fun send(
-        dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
-    ): Map<WatchIdentifier, TransmissionResult>? = send(
-        dictionary,
-        watches,
-        TrustAdmission.INITIAL,
-    )
 
     override suspend fun send(
         dictionary: PebbleDictionary,
@@ -389,7 +366,7 @@ class ReliablePebbleTransport(
     suspend fun send(
         dictionary: PebbleDictionary,
         watches: Collection<WatchIdentifier>,
-        admission: TrustAdmission = TrustAdmission.INITIAL,
+        admission: TrustAdmission,
     ): Boolean {
         return delivery.deliver(watches) { targets ->
             sender.send(dictionary, targets, admission).orEmpty()

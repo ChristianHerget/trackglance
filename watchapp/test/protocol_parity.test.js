@@ -16,6 +16,7 @@ const watchConfigSource = read('watchapp/src/c/watch_config.c');
 const watchConfig = read('watchapp/src/c/watch_config.h');
 const watchState = read('watchapp/src/c/watch_state.h');
 const androidTransport = read('android/app/src/main/java/app/locuspebble/bridge/pebble/PebbleTransport.kt');
+const androidIngress = read('android/app/src/main/java/app/locuspebble/bridge/pebble/AuthenticatedIngress.kt');
 const androidRuntime = read('android/app/src/main/java/app/locuspebble/bridge/core/BridgeRuntime.kt');
 const androidMessages = read('android/app/src/main/java/app/locuspebble/bridge/pebble/PebbleMessages.kt');
 const androidProfileSerial = read(
@@ -205,6 +206,12 @@ assert(androidTransport.includes('BridgeProtocol.DELIVERY_MAX_ATTEMPTS') &&
   'production Android transport must use the timing constants checked above');
 assert(androidRuntime.includes('BridgeProtocol.COMMAND_CONFIRMATION_MILLIS'),
   'production command confirmation must use the timing constant checked above');
+for (const source of [androidIngress,androidTransport,androidRuntime]) {
+  assert(!source.includes('TrustAdmission.INITIAL'),
+    'production trust-sensitive APIs must not expose a synthetic initial admission');
+  assert(!/admission\s*:\s*TrustAdmission\s*=/.test(source),
+    'production trust-sensitive APIs must require an explicit admission');
+}
 
 const displayLimits = /display names: at most (\d+) Unicode scalar values and (\d+) bytes; Locus names: at most (\d+) bytes/.exec(protocol);
 assert(displayLimits,'protocol must document the three profile-name limits in the key table');
