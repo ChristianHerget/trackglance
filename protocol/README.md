@@ -10,12 +10,12 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | Key | Name | Encoding |
 |---:|---|---|
 | 0 | protocol version | `3` |
-| 1 | message type | snapshot `1`, command `2`, result `3`, request snapshot `4`, config chunk `5`, Locus-profile chunk `6`, request profiles `7`, watch HR sample `8` |
-| 2, 7 | command ID, session ID | unsigned; deduplication key is the pair |
+| 1 | message type | snapshot `1`, command `2`, result `3`, request snapshot `4`, config chunk `5`, Locus-profile chunk `6`, request profiles `7`, watch HR sample `8`, config result `9` |
+| 2, 7 | command ID, session ID | unsigned; receiver deduplication includes the source watch, this pair, and the command payload |
 | 3 | command | Start `1`, Pause/Resume `2`, Stop/Save `3`, waypoint `4`, waypoint with dictated note `5` |
-| 4 | result | OK `0`, invalid state `1`, unavailable `2`, failed `3`, invalid profile `4`, profile missing `5`, invalid waypoint name `6` |
+| 4 | result | command/profile: OK `0`, invalid state `1`, unavailable `2`, failed `3`, invalid profile `4`, profile missing `5`, invalid waypoint name `6`; config result: applied `0`, queued `7`, invalid config `8`, storage failed `9` |
 | 5, 6 | recording state, sample time | stopped/recording/paused/unavailable `0..3`; Unix seconds |
-| 8, 9 | selected display name, exact Locus profile name | UTF-8; display names are limited to 20 characters, Locus names are preserved exactly |
+| 8, 9 | selected display name, exact Locus profile name | UTF-8; display names: at most 20 Unicode scalar values and 80 bytes; Locus names: at most 255 bytes |
 | 10, 17 | elapsed, moving time | seconds |
 | 11, 18 | total, moving distance | metres |
 | 12, 13, 19 | current, average, maximum speed | centimetres/second |
@@ -24,7 +24,7 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 21 | vertical speed | centimetres/second |
 | 22 | slope | tenths of a percent |
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
-| 30–33 | chunk index/count/data/transfer ID | zero-based index, total, UTF-8 chunk, signed transfer ID |
+| 30–33 | chunk index/count/data/transfer ID | zero-based index, total, at most 80 UTF-8 bytes, nonnegative signed 32-bit transfer ID |
 | 34 | Locus mode | reserved |
 | 35 | release version | exact APK/PBW release string, currently `0.1.7` |
 | 36 | waypoint name | confirmed dictation for command `5`; nonblank UTF-8, at most 120 bytes |
@@ -41,15 +41,63 @@ when Locus has not reported it. Pace is derived as `min/km` on the watch.
 Configuration is chunked as
 `theme|legacy-selected-index|watch-HR-to-Locus (0/1)|heart-rate-interval-seconds`, followed by one newline-separated profile
 per line: `display-name|exact-locus-name|protected-flag|comma-separated-metric-ids|stable-profile-id`.
-The fifth field is optional when reading older protocol-v3 data. A receiver applies
-only a complete, validated transfer. The watch persists the last complete configuration; complete
-configuration received during recording or pause is stored separately and applied after Stop.
+There are one through eight profiles, each with one through six unique metric IDs. Display names,
+Locus names, and stable IDs must be nonblank valid UTF-8 without control characters or `|`;
+stable IDs are limited to 39 bytes. Display names must also be unique under a bounded, scalar-wise
+fold shared by the watch and PKJS: U+0041–U+005A, U+00C0–U+00D6, U+00D8–U+00DE,
+U+0391–U+03A1, U+03A3–U+03AB, and U+0410–U+042F map to the scalar 0x20 higher;
+U+0400–U+040F maps 0x50 higher. There is no locale, normalization, contextual, or multi-scalar
+folding; all other Unicode scalars compare exactly, so `Ā` and `ā` are distinct. The fifth field is
+optional when reading older protocol-v3 data. The complete serialized configuration is at most
+4095 bytes and 52 chunks. A receiver applies only a complete, validated transfer. The watch persists
+the last complete configuration; complete configuration received during recording or pause is
+stored separately and applied after Stop.
+
+PKJS sends one AppMessage at a time. A configuration transaction registers its correlated result
+before enqueueing, sends chunks in index order, retries the identical frame after a NACK or timeout
+up to three total frame attempts, and aborts the unsent remainder if that limit is exhausted. The
+startup profile request is queued after the initial configuration transport completes or aborts;
+it does not wait for the application-level result. Transfer IDs are nonzero and advance between
+transactions within a PKJS process.
+
+After every complete, well-formed configuration transfer, the watch emits type `9` with the same
+transfer ID and exactly one context-specific result: applied `0`, queued-until-a-fresh-stopped-state
+`7`, invalid `8`, or storage failure `9`. A fresh stopped snapshot is required for direct apply;
+recording, paused, unavailable, missing, or stale state queues a valid configuration. If the result
+deadline expires after successful transport, PKJS retries the entire identical transfer with the
+same ID, up to three application attempts. This is idempotent and lets the watch replay a result
+lost after persistence. Wrong-ID, malformed, duplicate, and late results cannot settle another
+transaction.
+
+A webview save is first stored in a separate, release-tagged pending queue. The committed settings
+key changes only after correlated applied/queued confirmation. Concurrent saves are serialized and
+unsent candidates are last-write-wins. An explicit invalid/storage result removes that candidate.
+An exhausted transport/result timeout remains durable for reconnect or process restart when it is
+the newest candidate; if a newer durable save is already waiting, the failed older candidate is
+retired and the newer one proceeds immediately. A later save likewise supersedes and unblocks a
+timed-out candidate. Startup sends durable pending state before the older committed value, preventing
+a lost result from reverting an already-applied watch. The next settings opening reports transport,
+timeout, rejection, or storage failure while continuing to show the last confirmed configuration.
+
 Installed Locus profile lists are newline-separated UTF-8 names using the same chunk envelope.
 Android obtains them from `ActionBasics.getTrackRecordingProfiles`. The watch validates and caches
-only a complete transfer, then relays a complete cached list to PebbleKit JS. JS atomically replaces
-its persistent cache. Settings opens immediately with the latest complete cache while requesting a
-fresh transfer in the background. Profile-list chunks use result `0` for a non-empty query and `3`
-when Locus returns no profiles, so an empty Locus result is distinguishable from no relay response.
+only a complete transfer, then relays a complete cached list to PebbleKit JS. The complete list is
+at most 8191 bytes and 103 chunks; every name obeys the 255-byte field rules and exact duplicates
+are invalid. Profile-list chunks use result `0` for a non-empty query and `3` for an empty list, so
+an empty Locus result is distinguishable from no relay response.
+
+All envelope fields use their documented integer or string tuple types; decimal strings are not
+accepted as integers. Chunk 0 starts or restarts a profile-list transfer even when an ID is reused.
+Later chunks must keep the same ID, count, and result. An identical duplicate is harmless, while a
+conflicting duplicate invalidates the partial transfer. A payload becomes visible only after every
+chunk is present and the joined byte and field limits pass validation.
+
+JS atomically replaces its persistent cache after a complete compatible transfer, including a
+complete empty result. Cache entries carry protocol and release metadata; missing or mismatched
+metadata is ignored. With a valid cache, settings opens immediately with a stale-data notice while
+requesting a refresh. Without one, it waits up to 500 ms for a fresh response before opening. A
+response that arrives after the data-URL page has opened is available on the next opening. A later
+complete compatible response clears a prior in-memory incompatibility notice.
 
 Older protocol-v3 configuration headers migrate to watch injection disabled and a five-second
 interval; profiles, metric selections, and order are not rewritten. Fresh English and German
@@ -80,9 +128,9 @@ Start always carries key 9. Android validates the name, resolves it case-insensi
 currently installed profiles, and calls Locus with the exact installed spelling. An unresolved
 mapping returns result `5` and does not start recording.
 
-Every control and profile-relay message carries key 35. Android, watch C, and PebbleKit JS require
-the exact same release version and show an explicit incompatibility error when it differs or is
-missing; protocol version 3 remains unchanged.
+Every protocol dictionary carries keys 0, 1, and 35 with the exact protocol version, message type,
+and release string. Android, watch C, and PebbleKit JS reject a missing, mistyped, or mismatched
+envelope and show an explicit incompatibility error where a user-facing surface is available.
 
 Waypoint command `4` retains the fixed name `Pebble waypoint`. On microphone-capable watches,
 command `5` carries the exact text accepted in Pebble's confirmation UI under key 36. Android

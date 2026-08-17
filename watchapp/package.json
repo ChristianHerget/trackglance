@@ -1,11 +1,20 @@
 {
   "name": "locus-pebble-bridge",
+  "description": "Locus Map recording controls and live statistics for Pebble Time 2 and Round 2.",
   "author": "Christian Herget",
   "version": "0.1.7",
   "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChristianHerget/pebble-locus-map.git"
+  },
+  "homepage": "https://github.com/ChristianHerget/pebble-locus-map",
   "keywords": ["locus", "hiking", "fitness"],
+  "engines": {"node": ">=18"},
   "scripts": {
-    "test": "node test/config.test.js && node test/watch_stack.test.js"
+    "test": "node test/config.test.js && node test/protocol_parity.test.js && node test/c_core.test.js && node test/watch_stack.test.js",
+    "verify:pbw": "node test/pbw.test.js"
   },
   "dependencies": {},
   "devDependencies": {
@@ -63,10 +72,9 @@
     },
     "companionApp": {
       "android": {
-        "url": "https://github.com/",
+        "url": "https://github.com/ChristianHerget/pebble-locus-map",
         "apps": [
-          {"package": "app.locuspebble.bridge"},
-          {"package": "app.locuspebble.bridge.debug"}
+          {"package": "app.locuspebble.bridge"}
         ]
       }
     }
