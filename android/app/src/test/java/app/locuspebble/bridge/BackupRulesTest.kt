@@ -61,7 +61,6 @@ class BackupRulesTest {
         const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
         val SENSITIVE_STORES = setOf(
             "command_journal.xml",
-            "core_app_trust.xml",
             "snapshot_delivery_epoch.xml",
             "profile_transfer_serial.xml",
         )

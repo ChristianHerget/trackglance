@@ -7,7 +7,7 @@ import app.locuspebble.bridge.locus.CommandExecution
 import app.locuspebble.bridge.locus.LocusBridgeGateway
 import app.locuspebble.bridge.locus.LocusGateway
 import app.locuspebble.bridge.locus.RecordingProfilesResult
-import app.locuspebble.bridge.pebble.ActiveWatchRegistry
+import app.locuspebble.bridge.pebble.ActiveWatchSlot
 import app.locuspebble.bridge.pebble.DefaultPebbleDictionarySender
 import app.locuspebble.bridge.pebble.PebbleMessages
 import app.locuspebble.bridge.pebble.ReliablePebbleTransport
@@ -54,7 +54,7 @@ class BridgeRuntime internal constructor(
     ) -> TrustLeaseResult<Unit>)? = null,
     private val admissionCurrent: (TrustAdmission) -> Boolean = { true },
 ) : AutoCloseable {
-    private val activeWatches = ActiveWatchRegistry<AdmittedWatch>()
+    private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
     private val lifecycleLock = Any()
     private val childJobs = mutableSetOf<Job>()
     private val commandMutex = Mutex()
@@ -108,12 +108,15 @@ class BridgeRuntime internal constructor(
     }
 
     private suspend fun forwardHeartRate(sample: HeartRateSample) {
+        val source = AdmittedWatch(sample.watch, sample.admission)
+        if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
         if (!publishIfCurrent(sample.admission) {
                 BridgeState.update { it.copy(lastWatchHeartRate = sample.bpm) }
             }
         ) return
         val initial = readSnapshot(sample.admission)
         if (initial.state != BridgeProtocol.RecordingState.RECORDING) return
+        if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
         var forwarded = false
         val admitted = trustedMutationGate(sample.admission) {
             forwarded = withContext(ioDispatcher) { locus.sendHeartRate(sample.bpm) }
@@ -141,18 +144,23 @@ class BridgeRuntime internal constructor(
     fun watchAppOpened(
         watch: WatchIdentifier,
         admission: TrustAdmission,
-    ) = observeWatch(AdmittedWatch(watch, admission), markTransition = true)
+    ): Boolean = observeWatch(AdmittedWatch(watch, admission), markTransition = true)
 
     /** Recovers active-watch state when the process restarted while the watchapp stayed open. */
     fun watchObserved(
         watch: WatchIdentifier,
         admission: TrustAdmission,
-    ) = observeWatch(AdmittedWatch(watch, admission), markTransition = false)
+    ): Boolean = observeWatch(AdmittedWatch(watch, admission), markTransition = false)
 
-    private fun observeWatch(target: AdmittedWatch, markTransition: Boolean) {
+    private fun observeWatch(target: AdmittedWatch, markTransition: Boolean): Boolean {
         synchronized(lifecycleLock) {
             ensureHeartRateConsumerLocked()
-            val newlyOpened = activeWatches.opened(target)
+            val newlyOpened = if (markTransition) {
+                activeWatches.opened(target)
+            } else {
+                if (!activeWatches.observed(target)) return false
+                false
+            }
             BridgeState.update {
                 it.copy(watchAppOpen = true, lastError = if (markTransition) null else it.lastError)
             }
@@ -161,7 +169,7 @@ class BridgeRuntime internal constructor(
             }
             if (updateJob?.isActive == true) {
                 if (newlyOpened) launchTracked { refreshTargets(listOf(target)) }
-                return
+                return true
             }
             updateJob = launchTracked {
                 while (isActive) {
@@ -183,6 +191,7 @@ class BridgeRuntime internal constructor(
                     }
                 }
             }
+            return true
         }
     }
 
@@ -270,9 +279,9 @@ class BridgeRuntime internal constructor(
                 (mutation.latestSnapshot ?: readSnapshot(admission)).copy(sampledAtEpochSeconds = epoch)
             },
             finish = { mutation, snapshotDelivered ->
-                snapshotDelivered && transport.send(
+                snapshotDelivered && isActiveOrUntracked(target) && transport.send(
                     PebbleMessages.result(sessionId, commandId, mutation.result),
-                    listOf(watch),
+                    watch,
                     admission,
                 )
             },
@@ -405,7 +414,9 @@ class BridgeRuntime internal constructor(
         }
         val messages = PebbleMessages.profileListChunks(transfer, transferId)
         messages.forEach { message ->
-            if (!transport.send(message, listOf(watch), admission)) {
+            if (!isActiveOrUntracked(AdmittedWatch(watch, admission)) ||
+                !transport.send(message, watch, admission)
+            ) {
                 publishIfCurrent(admission) {
                     reportError("Could not deliver a complete profile list to the source watch")
                 }
@@ -416,10 +427,10 @@ class BridgeRuntime internal constructor(
     }
 
     suspend fun refresh(
-        watches: Collection<WatchIdentifier>,
+        watch: WatchIdentifier,
         admission: TrustAdmission,
     ): Boolean {
-        return refreshTargets(watches.map { AdmittedWatch(it, admission) })
+        return refreshTargets(listOf(AdmittedWatch(watch, admission)))
     }
 
     private suspend fun refreshTargets(targets: Collection<AdmittedWatch>): Boolean =
@@ -496,8 +507,14 @@ class BridgeRuntime internal constructor(
         targets: Collection<AdmittedWatch>,
     ): Boolean {
         val admission = targets.singleAdmissionOrNull() ?: return false
-        return transport.send(dictionary, targets.map(AdmittedWatch::watch), admission)
+        val target = targets.singleOrNull() ?: return false
+        if (!isActiveOrUntracked(target)) return false
+        val watch = target.watch
+        return transport.send(dictionary, watch, admission)
     }
+
+    private fun isActiveOrUntracked(target: AdmittedWatch): Boolean =
+        activeWatches.snapshot().singleOrNull()?.let { it == target } != false
 
     private fun updateStatus(snapshot: BridgeProtocol.Snapshot) = BridgeState.update {
         it.copy(

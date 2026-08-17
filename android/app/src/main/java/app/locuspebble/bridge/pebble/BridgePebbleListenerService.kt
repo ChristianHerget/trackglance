@@ -166,7 +166,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
                 )
             }
             if (appVersion == BuildConfig.VERSION_NAME && acceptedType) {
-                runtime.watchObserved(watch, admission)
+                return@runAdmittedInbound runtime.watchObserved(watch, admission)
             }
             true
         }
@@ -175,7 +175,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         }
         return when (type) {
             BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire -> {
-                if (runtime.refresh(listOf(watch), admission)) ReceiveResult.Ack else ReceiveResult.Nack
+                if (runtime.refresh(watch, admission)) ReceiveResult.Ack else ReceiveResult.Nack
             }
             BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire -> {
                 if (runtime.sendRecordingProfiles(watch, admission)) {

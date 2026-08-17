@@ -9,7 +9,6 @@ import android.os.IBinder
 import android.os.RemoteException
 import androidx.core.os.bundleOf
 import app.locuspebble.bridge.core.BoundedAbandonableCallExecutor
-import app.locuspebble.bridge.core.BoundedTargetDelivery
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.common.SendDataCallback
 import io.rebble.pebblekit2.common.UniversalRequestResponse
@@ -27,9 +26,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 interface PebbleDictionarySender : AutoCloseable {
     suspend fun send(
         dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
+        watch: WatchIdentifier,
         admission: TrustAdmission,
-    ): Map<WatchIdentifier, TransmissionResult>?
+    ): TransmissionResult?
 }
 
 // Process-wide ceiling: sender recreation cannot accumulate abandoned Core Binder workers.
@@ -43,8 +42,8 @@ class DefaultPebbleDictionarySender internal constructor(
     private val onTrustLost: () -> Unit = {},
     private val admissionGate: (suspend (
         TrustAdmission,
-        suspend () -> Map<WatchIdentifier, TransmissionResult>?,
-    ) -> TrustLeaseResult<Map<WatchIdentifier, TransmissionResult>?>)? = null,
+        suspend () -> TransmissionResult?,
+    ) -> TrustLeaseResult<TransmissionResult?>)? = null,
     private val isTrusted: suspend () -> Boolean,
 ) : PebbleDictionarySender {
     constructor(context: Context) : this(
@@ -61,19 +60,19 @@ class DefaultPebbleDictionarySender internal constructor(
 
     override suspend fun send(
         dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
+        watch: WatchIdentifier,
         admission: TrustAdmission,
-    ): Map<WatchIdentifier, TransmissionResult>? {
+    ): TransmissionResult? {
         val gate = admissionGate
         if (gate != null) {
-            return when (val result = gate(admission) { delegate.send(dictionary, watches, admission) }) {
+            return when (val result = gate(admission) { delegate.send(dictionary, watch, admission) }) {
                 is TrustLeaseResult.Admitted -> result.value
                 TrustLeaseResult.Stale,
                 TrustLeaseResult.Untrusted,
                 -> null
             }
         }
-        if (isTrusted()) return delegate.send(dictionary, watches, admission)
+        if (isTrusted()) return delegate.send(dictionary, watch, admission)
         onTrustLost()
         return null
     }
@@ -100,9 +99,9 @@ private class CoreAppPebbleDictionarySender(
 
     override suspend fun send(
         dictionary: PebbleDictionary,
-        watches: List<WatchIdentifier>,
+        watch: WatchIdentifier,
         admission: TrustAdmission,
-    ): Map<WatchIdentifier, TransmissionResult>? {
+    ): TransmissionResult? {
         if (closeGuard.isClosed) return null
         if (!isTrusted()) {
             connector.reset()
@@ -113,17 +112,13 @@ private class CoreAppPebbleDictionarySender(
             KEY_ACTION to REQUEST_SEND_DATA,
             KEY_WATCHAPP_UUID to BridgeProtocol.APP_UUID.toString(),
             KEY_DATA_DICTIONARY to dictionary.toBundle(),
-            KEY_WATCHES_ID to watches.map { it.value }.toTypedArray(),
+            KEY_WATCHES_ID to arrayOf(watch.value),
         )
         val response = request(payload) ?: return null
         val results = response.getBundle(KEY_TRANSMISSION_RESULTS) ?: Bundle()
-        return results.keySet().mapNotNull { watchId ->
-            if (!BridgeProtocol.validWatchId(watchId)) return@mapNotNull null
-            val encoded = results.getBundle(watchId)
-            val result = encoded?.let { TransmissionResult.fromBundle(it) }
-                ?: TransmissionResult.Unknown("Missing TransmissionResult in PebbleSender result bundle")
-            WatchIdentifier(watchId) to result
-        }.toMap()
+        val encoded = results.getBundle(watch.value)
+        return encoded?.let(TransmissionResult::fromBundle)
+            ?: TransmissionResult.Unknown("Missing TransmissionResult in PebbleSender result bundle")
     }
 
     private suspend fun request(request: Bundle): Bundle? {
@@ -357,34 +352,48 @@ class ReliablePebbleTransport(
         delay(BridgeProtocol.DELIVERY_RETRY_BASE_MILLIS * attempt)
     },
 ) : AutoCloseable {
-    private val delivery = BoundedTargetDelivery<WatchIdentifier>(
-        maxAttempts = maxAttempts,
-        attemptTimeoutMillis = attemptTimeoutMillis,
-        retryDelay = retryDelay,
-    )
+    init {
+        require(maxAttempts > 0)
+        require(attemptTimeoutMillis > 0)
+    }
 
     suspend fun send(
         dictionary: PebbleDictionary,
-        watches: Collection<WatchIdentifier>,
+        watch: WatchIdentifier,
         admission: TrustAdmission,
     ): Boolean {
-        return delivery.deliver(watches) { targets ->
-            sender.send(dictionary, targets, admission).orEmpty()
-                .filterValues { it == TransmissionResult.Success }
-                .keys
+        repeat(maxAttempts) { index ->
+            val result = withTimeoutOrNull(attemptTimeoutMillis) {
+                runCatching { sender.send(dictionary, watch, admission) }.getOrNull()
+            }
+            if (result == TransmissionResult.Success) return true
+            if (index + 1 < maxAttempts) retryDelay(index + 1)
         }
+        return false
     }
 
     override fun close() = sender.close()
 }
 
-/** Thread-safe tracking for the watches whose copy of this watchapp is currently open. */
-class ActiveWatchRegistry<T> {
-    private val values = LinkedHashSet<T>()
+/** Thread-safe single active-watch slot. Opening another watch replaces the previous one. */
+class ActiveWatchSlot<T> {
+    private var value: T? = null
 
-    @Synchronized fun opened(value: T): Boolean = values.add(value)
-    @Synchronized fun closed(value: T): Boolean = values.remove(value)
-    @Synchronized fun snapshot(): Set<T> = values.toSet()
-    @Synchronized fun isEmpty(): Boolean = values.isEmpty()
-    @Synchronized fun clear(): Boolean = values.isNotEmpty().also { values.clear() }
+    @Synchronized fun opened(value: T): Boolean = (this.value != value).also { this.value = value }
+
+    /** A data message may recover an empty slot, but cannot displace an explicitly opened watch. */
+    @Synchronized fun observed(value: T): Boolean {
+        if (this.value == null) this.value = value
+        return this.value == value
+    }
+
+    @Synchronized fun closed(value: T): Boolean {
+        if (this.value != value) return false
+        this.value = null
+        return true
+    }
+
+    @Synchronized fun snapshot(): Set<T> = value?.let(::setOf).orEmpty()
+    @Synchronized fun isEmpty(): Boolean = value == null
+    @Synchronized fun clear(): Boolean = (value != null).also { value = null }
 }

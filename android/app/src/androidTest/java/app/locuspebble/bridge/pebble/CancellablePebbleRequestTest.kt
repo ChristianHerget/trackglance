@@ -91,7 +91,7 @@ class CancellablePebbleRequestTest {
 
     @Test fun synchronousBlockedProxyIsAbandonedSoRevocationAndLaterRequestProgress() = runBlocking {
         val workers = BoundedAbandonableCallExecutor(2, "blocked-proxy-test")
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val blocked = CountDownLatch(1)
         val releaseBlocked = CountDownLatch(1)
         val endpoint = FakeEndpoint(
@@ -112,7 +112,7 @@ class CancellablePebbleRequestTest {
             assertNull(firstSend.await())
 
             var revoked = false
-            leases.mutateTrust { revoked = true }
+            leases.mutateSession { revoked = true }
             assertTrue(revoked)
 
             val healthy = FakeEndpoint().apply { respondImmediately = true }

@@ -3,7 +3,7 @@ package app.locuspebble.bridge
 import app.locuspebble.bridge.core.BoundedAbandonableCallExecutor
 import app.locuspebble.bridge.core.RefreshMode
 import app.locuspebble.bridge.core.loadOffMain
-import app.locuspebble.bridge.pebble.SerializedCoreTrustLeases
+import app.locuspebble.bridge.pebble.SerializedCoreSessionLeases
 import app.locuspebble.bridge.pebble.TrustAdmission
 import app.locuspebble.bridge.pebble.TrustLeaseResult
 import java.util.concurrent.CountDownLatch
@@ -60,9 +60,9 @@ class OffMainAndForeignQueryTest {
         }
     }
 
-    @Test fun blockedForeignQueryDoesNotDelayRevocationAndReapprovalQuietlyDiscardsItsResult() = runBlocking {
+    @Test fun blockedForeignQueryDoesNotDelaySessionChangeAndQuietlyDiscardsItsResult() = runBlocking {
         val workers = BoundedAbandonableCallExecutor(1, "provider-query-test")
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val queryStarted = CountDownLatch(1)
         val releaseQuery = CountDownLatch(1)
         var generation = 7L
@@ -93,10 +93,8 @@ class OffMainAndForeignQueryTest {
             }
             assertTrue(queryStarted.await(2, TimeUnit.SECONDS))
 
-            leases.mutateTrust {
+            leases.withOutbound {
                 generation++
-                // Models signer B already being approved when signer A's provider result returns.
-                trusted = true
             }
             releaseQuery.countDown()
 

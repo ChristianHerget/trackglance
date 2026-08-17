@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="command_journal.xml" />
-    <exclude domain="sharedpref" path="core_app_trust.xml" />
     <exclude domain="sharedpref" path="snapshot_delivery_epoch.xml" />
     <exclude domain="sharedpref" path="profile_transfer_serial.xml" />
 </full-backup-content>

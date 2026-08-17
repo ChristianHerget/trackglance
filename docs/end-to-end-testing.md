@@ -228,22 +228,12 @@ adb -s "$ANDROID_SERIAL" install -r \
 cd ..
 ```
 
-Open **Locus Pebble Bridge** after installing CoreApp. In **CoreApp identity**, compare the package
-and full SHA-256 signer digest with the APK you intended to install, tap **Trust this exact signer**,
-and confirm the same package and digest in the dialog. For a local build, verify it independently
-before approving it:
-
-```sh
-"$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs \
-  coreapp/androidApp/build/outputs/apk/debug/androidApp-debug.apk
-```
-
-There is no silent trust-on-first-use and no certificate-subject shortcut. The persisted approval
-survives bridge restarts, but an uninstall/reinstall under a different signing key is blocked until
-that new exact digest is deliberately approved. A legitimate Android signing-key rotation remains
-trusted only when the platform reports the approved key in the package signing history.
-If Core attempted its first delivery while trust enrollment or picker initialization was still in
-progress, wait for diagnostics to show the approved CoreApp, then close and reopen the watchapp to
+Open **Locus Pebble Bridge** after installing CoreApp. The bridge disables PebbleKit auto-selection
+and selects the exact `coredevices.coreapp` package automatically. Diagnostics should show that
+package under **Pebble/Core app**. Incoming Binder calls must resolve to the installed package UID;
+no separate signing-certificate enrollment is required.
+If Core attempted its first delivery while picker initialization was still in progress, wait for
+diagnostics to show CoreApp selected, then close and reopen the watchapp to
 replay the lifecycle open and start polling.
 
 CoreApp's basic watch, QEMU, locker, and PebbleKit functionality does not require production API
@@ -594,11 +584,11 @@ translation, an ARM target, or a CoreApp source build containing the target ABI.
 
 Close the watchapp first and keep it closed. Confirm in Locus that no command is still pending or
 transitioning. Only then clear the bridge application's storage or reinstall the bridge. Clearing
-storage removes the command journal, the approved CoreApp signer, the durable snapshot-epoch floor,
-and the profile-transfer serial floor. Relaunch the bridge, deliberately reenroll the exact CoreApp
-signer, and then reopen the watchapp to establish new receiver floors. Never reset bridge storage
+storage removes the command journal, the durable snapshot-epoch floor, and the profile-transfer
+serial floor. Relaunch the bridge and then reopen the watchapp to establish new receiver floors.
+Never reset bridge storage
 while the watchapp remains open: a delayed pre-reset snapshot or profile chunk can otherwise
-outrank the restarted bridge's new baseline. Those four safety stores are excluded from Android
+outrank the restarted bridge's new baseline. Those three safety stores are excluded from Android
 cloud backup and device transfer and therefore are not restored after uninstall/reinstall; ordinary
 refresh preferences may still be restored.
 

@@ -12,19 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -41,15 +35,12 @@ import app.locuspebble.bridge.core.withPebbleConnectionFailure
 import app.locuspebble.bridge.core.withPebbleSelection
 import app.locuspebble.bridge.locus.LocusGateway
 import app.locuspebble.bridge.pebble.TRUSTED_CORE_APP_PACKAGE
-import app.locuspebble.bridge.pebble.CoreAppSignerPolicy
-import app.locuspebble.bridge.pebble.CoreAppTrustKind
-import app.locuspebble.bridge.pebble.CoreAppTrustStatus
+import app.locuspebble.bridge.pebble.CoreAppConnectionKind
 import app.locuspebble.bridge.pebble.TrustedPebbleCompanionProvider
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.DefaultPebbleInfoRetriever
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -61,7 +52,6 @@ import java.text.DateFormat
 import java.util.Date
 
 class MainActivity : ComponentActivity() {
-    private val coreAppTrust = MutableStateFlow<CoreAppTrustStatus?>(null)
     private lateinit var refreshModePreference: RefreshModePreferenceState
     private val diagnosticsMutex = Mutex()
 
@@ -103,20 +93,18 @@ class MainActivity : ComponentActivity() {
             pebbleError = error.message ?: error.javaClass.simpleName
             false
         }
-        val trust = TrustedPebbleCompanionProvider.inspect(this@MainActivity)
-        coreAppTrust.value = trust
-        val identityTrusted = trusted && trust.trusted
-        val selected = TRUSTED_CORE_APP_PACKAGE.takeIf { identityTrusted }
-        if (!identityTrusted && pebbleError == null) {
-            pebbleError = when (trust.kind) {
-                CoreAppTrustKind.APPROVAL_REQUIRED -> "CoreApp signer approval is required"
-                CoreAppTrustKind.NOT_INSTALLED -> "CoreApp is not installed"
-                CoreAppTrustKind.INVALID_PACKAGE -> trust.detail ?: "CoreApp signing identity is invalid"
-                else -> "Trusted CoreApp could not be selected"
+        val connection = TrustedPebbleCompanionProvider.inspect(this@MainActivity)
+        val coreSelected = trusted && connection.available
+        val selected = TRUSTED_CORE_APP_PACKAGE.takeIf { coreSelected }
+        if (!coreSelected && pebbleError == null) {
+            pebbleError = when (connection.kind) {
+                CoreAppConnectionKind.NOT_INSTALLED -> "CoreApp is not installed"
+                CoreAppConnectionKind.NOT_SELECTED -> connection.detail ?: "CoreApp could not be selected"
+                CoreAppConnectionKind.SELECTED -> "CoreApp could not be selected"
             }
         }
         BridgeState.update { it.withPebbleSelection(selected) }
-        if (!identityTrusted) BridgeRuntime.resetForCompanionTrustLoss()
+        if (!coreSelected) BridgeRuntime.resetForCompanionTrustLoss()
         val snapshot = withContext(Dispatchers.IO) { LocusGateway(this@MainActivity).readSnapshot() }
         BridgeState.update {
             it.withDiagnosticsSnapshot(
@@ -162,7 +150,7 @@ class MainActivity : ComponentActivity() {
                     GuardedForeignQueryOutcome.PUBLISHED -> Unit
                     GuardedForeignQueryOutcome.STALE -> return@withLock
                     GuardedForeignQueryOutcome.UNTRUSTED ->
-                        error("CoreApp trust changed while querying connected Pebble watches")
+                        error("CoreApp selection changed while querying connected Pebble watches")
                     GuardedForeignQueryOutcome.FAILED ->
                         error("Timed out while querying connected Pebble watches")
                 }
@@ -178,7 +166,6 @@ class MainActivity : ComponentActivity() {
                     false
                 }
                 if (!stillTrusted) {
-                    coreAppTrust.value = TrustedPebbleCompanionProvider.inspect(this@MainActivity)
                     BridgeRuntime.resetForCompanionTrustLoss()
                 }
                 BridgeState.update { status ->
@@ -189,34 +176,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun approveCoreAppSigner(digest: String) {
-        lifecycleScope.launch {
-            val saved = TrustedPebbleCompanionProvider.approveCurrentSigner(this@MainActivity, digest)
-            if (!saved) {
-                BridgeState.update { it.copy(lastError = "CoreApp signer approval could not be saved") }
-                return@launch
-            }
-            refreshDiagnostics()
-        }
-    }
-
-    private fun clearCoreAppSignerApproval() {
-        lifecycleScope.launch {
-            val cleared = TrustedPebbleCompanionProvider.clearApprovedSigner(this@MainActivity)
-            if (!cleared) {
-                BridgeState.update { it.copy(lastError = "CoreApp signer approval could not be cleared") }
-                return@launch
-            }
-            refreshDiagnostics()
-        }
-    }
-
     @Composable
     private fun DiagnosticsScreen() {
         val status by BridgeState.status.collectAsState()
-        val trust by coreAppTrust.collectAsState()
         val refreshMode by refreshModePreference.selection.collectAsState()
-        var signerAwaitingConfirmation by remember { mutableStateOf<String?>(null) }
         Scaffold { padding ->
             Column(
                 Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
@@ -262,11 +225,6 @@ class MainActivity : ComponentActivity() {
                         status.lastError?.let { StatusLine("Last runtime error", it) }
                     }
                 }
-                CoreAppTrustCard(
-                    trust = trust,
-                    onApprove = { signerAwaitingConfirmation = it },
-                    onClearApproval = ::clearCoreAppSignerApproval,
-                )
                 Text("Refresh while watchapp is open", style = MaterialTheme.typography.titleMedium)
                 RefreshMode.entries.forEach { mode ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -288,32 +246,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        signerAwaitingConfirmation?.let { digest ->
-            AlertDialog(
-                onDismissRequest = { signerAwaitingConfirmation = null },
-                title = { Text("Trust this CoreApp build?") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Package: $TRUSTED_CORE_APP_PACKAGE")
-                        Text("SHA-256 signer:")
-                        Text(
-                            CoreAppSignerPolicy.displayDigest(digest),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text("Approve only if you built this CoreApp or independently verified this exact digest.")
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = {
-                        signerAwaitingConfirmation = null
-                        approveCoreAppSigner(digest)
-                    }) { Text("Trust exact signer") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { signerAwaitingConfirmation = null }) { Text("Cancel") }
-                },
-            )
-        }
     }
 
     private companion object {
@@ -323,41 +255,6 @@ class MainActivity : ComponentActivity() {
             maxWorkers = 2,
             threadNamePrefix = "pebble-info-query",
         )
-    }
-}
-
-@Composable
-private fun CoreAppTrustCard(
-    trust: CoreAppTrustStatus?,
-    onApprove: (String) -> Unit,
-    onClearApproval: () -> Unit,
-) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("CoreApp identity", style = MaterialTheme.typography.titleMedium)
-            StatusLine("Package", TRUSTED_CORE_APP_PACKAGE)
-            StatusLine(
-                "Trust",
-                when (trust?.kind) {
-                    CoreAppTrustKind.USER_APPROVED -> "Explicitly approved"
-                    CoreAppTrustKind.APPROVAL_REQUIRED -> "Approval required"
-                    CoreAppTrustKind.NOT_INSTALLED -> "Not installed"
-                    CoreAppTrustKind.INVALID_PACKAGE -> "Invalid signing identity"
-                    null -> "Checking"
-                },
-            )
-            trust?.currentSignerDigests?.forEach { digest ->
-                Text("Current signer SHA-256", style = MaterialTheme.typography.labelMedium)
-                Text(CoreAppSignerPolicy.displayDigest(digest), style = MaterialTheme.typography.bodySmall)
-            }
-            trust?.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            trust?.enrollmentCandidate?.let { digest ->
-                Button(onClick = { onApprove(digest) }) { Text("Trust this exact signer") }
-            }
-            if (trust?.approvedSignerDigest != null) {
-                TextButton(onClick = onClearApproval) { Text("Forget approved signer") }
-            }
-        }
     }
 }
 

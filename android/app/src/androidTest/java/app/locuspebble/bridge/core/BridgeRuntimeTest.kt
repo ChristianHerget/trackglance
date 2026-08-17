@@ -6,7 +6,7 @@ import app.locuspebble.bridge.locus.RecordingProfilesResult
 import app.locuspebble.bridge.pebble.PebbleDictionarySender
 import app.locuspebble.bridge.pebble.PebbleMessages
 import app.locuspebble.bridge.pebble.ReliablePebbleTransport
-import app.locuspebble.bridge.pebble.SerializedCoreTrustLeases
+import app.locuspebble.bridge.pebble.SerializedCoreSessionLeases
 import app.locuspebble.bridge.pebble.TrustAdmission
 import app.locuspebble.bridge.pebble.TrustLeaseResult
 import app.locuspebble.bridge.protocol.BridgeProtocol
@@ -34,7 +34,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeRuntimeTest {
-    @Test fun openingAndClosingMultipleWatchesPreservesTheActiveLifecycle() {
+    @Test fun openingAnotherWatchReplacesTheActiveLifecycle() {
         val sender = RecordingSender()
         val runtime = runtime(sender = sender)
         val watchA = WatchIdentifier("watch-a")
@@ -357,7 +357,7 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun commandAdmittedForSignerAIsCompletedFailedWhenSignerBWinsBeforeMutation() =
+    @Test fun commandFromAnExpiredConnectionSessionFailsBeforeMutation() =
         runBlocking {
             val currentGeneration = AtomicLong(1)
             val currentAdmission = { TrustAdmission(currentGeneration.get()) }
@@ -381,8 +381,8 @@ class BridgeRuntimeTest {
                 admissionCurrent = { it == currentAdmission() },
             )
             val watch = WatchIdentifier("watch")
-            val signerA = TrustAdmission(1)
-            val signerB = TrustAdmission(2)
+            val sessionA = TrustAdmission(1)
+            val sessionB = TrustAdmission(2)
             try {
                 val oldCommand = async {
                     runtime.handleCommand(
@@ -392,11 +392,11 @@ class BridgeRuntimeTest {
                         BridgeProtocol.Command.START,
                         "Hiking",
                         null,
-                        signerA,
+                        sessionA,
                     )
                 }
                 mutationGateReached.await()
-                currentGeneration.set(signerB.generation)
+                currentGeneration.set(sessionB.generation)
                 releaseMutationGate.complete(Unit)
 
                 assertFalse(oldCommand.await())
@@ -412,11 +412,11 @@ class BridgeRuntimeTest {
                         BridgeProtocol.Command.START,
                         "Hiking",
                         null,
-                        signerB,
+                        sessionB,
                     ),
                 )
                 assertEquals(0, locus.executions)
-                assertEquals(listOf(signerB, signerB), sender.calls.map { it.admission })
+                assertEquals(listOf(sessionB, sessionB), sender.calls.map { it.admission })
                 assertEquals(
                     listOf(
                         BridgeProtocol.MessageType.SNAPSHOT.wire,
@@ -436,7 +436,7 @@ class BridgeRuntimeTest {
         }
 
     @Test fun revocationWaitsOnlyForTheExactLocusActionNotConfirmationOrDelivery() = runBlocking {
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val currentGeneration = AtomicLong(1)
         val currentAdmission = { TrustAdmission(currentGeneration.get()) }
         val sender = AdmissionRecordingSender(currentAdmission, leases)
@@ -458,7 +458,7 @@ class BridgeRuntimeTest {
             },
             admissionCurrent = { it == currentAdmission() },
         )
-        val signerA = TrustAdmission(1)
+        val sessionA = TrustAdmission(1)
         try {
             val command = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                 runtime.handleCommand(
@@ -468,12 +468,12 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.START,
                     "Hiking",
                     null,
-                    signerA,
+                    sessionA,
                 )
             }
             withTimeout(5_000) { locus.actionStarted.await() }
             val revoke = async {
-                leases.mutateTrust {
+                leases.mutateSession {
                     currentGeneration.incrementAndGet()
                     runtime.companionTrustLost()
                 }
@@ -514,10 +514,10 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun queuedHeartRateSampleIsDroppedAcrossSignerApprovalTransition() = runBlocking {
+    @Test fun queuedHeartRateSampleIsDroppedAcrossConnectionReset() = runBlocking {
         val sender = RecordingSender()
         val locus = FakeLocus()
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val consumerDequeuedSample = CompletableDeferred<Unit>()
         val releaseConsumer = CompletableDeferred<Unit>()
         val consumerFinished = CompletableDeferred<Unit>()
@@ -538,8 +538,8 @@ class BridgeRuntimeTest {
             assertTrue(runtime.handleHeartRate(WatchIdentifier("watch"), 9, 1, 120, 1_000))
             consumerDequeuedSample.await()
 
-            // Successful approval uses this same inbound->outbound mutation boundary and reset.
-            leases.mutateTrust { runtime.companionTrustLost() }
+            // A connection reset uses this same inbound->outbound boundary.
+            leases.mutateSession { runtime.companionTrustLost() }
             releaseConsumer.complete(Unit)
             consumerFinished.await()
 
@@ -550,10 +550,10 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun queuedHeartRateSampleIsDroppedWhenTheDeferredSignerGuardIsNowFalse() = runBlocking {
+    @Test fun queuedHeartRateSampleIsDroppedWhenTheDeferredSelectionGuardIsNowFalse() = runBlocking {
         val sender = RecordingSender()
         val locus = FakeLocus()
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val consumerReachedGuard = CompletableDeferred<Unit>()
         val releaseGuard = CompletableDeferred<Unit>()
         val consumerFinished = CompletableDeferred<Unit>()
@@ -592,7 +592,7 @@ class BridgeRuntimeTest {
     @Test fun revocationWaitsForAnAdmittedHeartRateMutationToFinish() = runBlocking {
         val sender = RecordingSender()
         val locus = BlockingHeartRateLocus()
-        val leases = SerializedCoreTrustLeases()
+        val leases = SerializedCoreSessionLeases()
         val runtime = runtime(
             sender = sender,
             locus = locus,
@@ -606,7 +606,7 @@ class BridgeRuntimeTest {
             val revocationStarted = CompletableDeferred<Unit>()
             val revocation = async {
                 revocationStarted.complete(Unit)
-                leases.mutateTrust { runtime.companionTrustLost() }
+                leases.mutateSession { runtime.companionTrustLost() }
             }
             revocationStarted.await()
             yield()
@@ -623,7 +623,7 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun trustLossClearsTrackedWatchesSoARealReopenStartsPollingAgain() {
+    @Test fun selectionLossClearsTheActiveWatchSoARealReopenStartsPollingAgain() {
         val sender = RecordingSender()
         val runtime = runtime(sender = sender)
         val watch = WatchIdentifier("watch")
@@ -644,7 +644,7 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun trustLossCancelsOldPollingAndImmediateRefreshBeforeSignerBReopens() = runBlocking {
+    @Test fun connectionResetCancelsOldPollingBeforeTheNewSessionReopens() = runBlocking {
         val currentGeneration = AtomicLong(1)
         val currentAdmission = { TrustAdmission(currentGeneration.get()) }
         val sender = AdmissionRecordingSender(currentAdmission)
@@ -656,23 +656,23 @@ class BridgeRuntimeTest {
             ioDispatcher = Dispatchers.Default,
             admissionCurrent = { it == currentAdmission() },
         )
-        val signerA = TrustAdmission(1)
-        val signerB = TrustAdmission(2)
+        val sessionA = TrustAdmission(1)
+        val sessionB = TrustAdmission(2)
         try {
-            runtime.watchAppOpened(WatchIdentifier("watch-a"), signerA)
+            runtime.watchAppOpened(WatchIdentifier("watch-a"), sessionA)
             assertTrue(locus.firstReadStarted.await(5, TimeUnit.SECONDS))
             // This creates the separate immediate-refresh child while A's poll owns serialization.
-            runtime.watchAppOpened(WatchIdentifier("watch-a-2"), signerA)
+            runtime.watchAppOpened(WatchIdentifier("watch-a-2"), sessionA)
 
-            currentGeneration.set(signerB.generation)
+            currentGeneration.set(sessionB.generation)
             runtime.companionTrustLost()
-            runtime.watchAppOpened(WatchIdentifier("watch-b"), signerB)
+            runtime.watchAppOpened(WatchIdentifier("watch-b"), sessionB)
             locus.releaseFirstRead.countDown()
 
             withTimeout(5_000) {
                 while (sender.calls.isEmpty()) yield()
             }
-            assertEquals(listOf(signerB), sender.calls.map { it.admission }.distinct())
+            assertEquals(listOf(sessionB), sender.calls.map { it.admission }.distinct())
             assertEquals(
                 setOf(WatchIdentifier("watch-b")),
                 sender.calls.flatMap { it.watches }.toSet(),
@@ -683,7 +683,7 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun staleSnapshotPublicationCannotOverwriteSignerBDiagnostics() = runBlocking {
+    @Test fun staleSnapshotPublicationCannotOverwriteNewSessionDiagnostics() = runBlocking {
         val currentGeneration = AtomicLong(1)
         val currentAdmission = { TrustAdmission(currentGeneration.get()) }
         val sender = AdmissionRecordingSender(currentAdmission)
@@ -704,24 +704,24 @@ class BridgeRuntimeTest {
                 }
             },
         )
-        val signerA = TrustAdmission(1)
+        val sessionA = TrustAdmission(1)
         try {
             val staleRefresh = async {
-                runtime.refresh(listOf(WatchIdentifier("watch")), signerA)
+                runtime.refresh(WatchIdentifier("watch"), sessionA)
             }
             publicationReached.await()
             currentGeneration.incrementAndGet()
             BridgeState.update {
                 it.copy(
                     recordingState = BridgeProtocol.RecordingState.PAUSED,
-                    lastError = "signer-b-diagnostics",
+                    lastError = "new-session-diagnostics",
                 )
             }
             releasePublication.complete(Unit)
 
             assertFalse(staleRefresh.await())
             assertEquals(BridgeProtocol.RecordingState.PAUSED, BridgeState.status.value.recordingState)
-            assertEquals("signer-b-diagnostics", BridgeState.status.value.lastError)
+            assertEquals("new-session-diagnostics", BridgeState.status.value.lastError)
             assertTrue(sender.calls.isEmpty())
         } finally {
             releasePublication.complete(Unit)
@@ -809,16 +809,15 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun profileTransfersAreSerializedAndEachTransferHasOneTarget() = runBlocking {
+    @Test fun profileTransfersForTheActiveWatchAreSerialized() = runBlocking {
         val sender = RecordingSender(yieldDuringSend = true)
         val locus = FakeLocus(profiles = listOf("x".repeat(200)))
         val runtime = runtime(sender = sender, locus = locus)
-        val watchA = WatchIdentifier("watch-a")
-        val watchB = WatchIdentifier("watch-b")
+        val watch = WatchIdentifier("watch")
         try {
             coroutineScope {
-                launch { assertTrue(runtime.sendRecordingProfiles(watchA)) }
-                launch { assertTrue(runtime.sendRecordingProfiles(watchB)) }
+                launch { assertTrue(runtime.sendRecordingProfiles(watch)) }
+                launch { assertTrue(runtime.sendRecordingProfiles(watch)) }
             }
 
             val transferIds = sender.calls.map {
@@ -826,12 +825,7 @@ class BridgeRuntimeTest {
             }
             assertEquals(2, transferIds.distinct().size)
             assertEquals(2, transferIds.zipWithNext().count { (first, second) -> first != second } + 1)
-            transferIds.distinct().forEach { transferId ->
-                val targets = sender.calls.filter {
-                    PebbleMessages.signed32(it.dictionary, BridgeProtocol.Key.TRANSFER_ID) == transferId
-                }.flatMap { it.watches }.distinct()
-                assertEquals(1, targets.size)
-            }
+            assertTrue(sender.calls.all { it.watches == listOf(watch) })
         } finally {
             runtime.close()
         }
@@ -1366,12 +1360,12 @@ class BridgeRuntimeTest {
 
         override suspend fun send(
             dictionary: PebbleDictionary,
-            watches: List<WatchIdentifier>,
+            watch: WatchIdentifier,
             admission: TrustAdmission,
-        ): Map<WatchIdentifier, TransmissionResult> {
-            calls += Call(dictionary, watches)
+        ): TransmissionResult {
+            calls += Call(dictionary, listOf(watch))
             if (yieldDuringSend) yield()
-            return watches.associateWith { TransmissionResult.Success }
+            return TransmissionResult.Success
         }
 
         override fun close() = Unit
@@ -1379,7 +1373,7 @@ class BridgeRuntimeTest {
 
     private class AdmissionRecordingSender(
         private val currentAdmission: () -> TrustAdmission,
-        private val leases: SerializedCoreTrustLeases? = null,
+        private val leases: SerializedCoreSessionLeases? = null,
     ) : PebbleDictionarySender {
         data class Call(
             val dictionary: PebbleDictionary,
@@ -1391,15 +1385,15 @@ class BridgeRuntimeTest {
 
         override suspend fun send(
             dictionary: PebbleDictionary,
-            watches: List<WatchIdentifier>,
+            watch: WatchIdentifier,
             admission: TrustAdmission,
-        ): Map<WatchIdentifier, TransmissionResult>? {
+        ): TransmissionResult? {
             val deliver = {
                 if (admission != currentAdmission()) {
                     null
                 } else {
-                    calls += Call(dictionary, watches, admission)
-                    watches.associateWith { TransmissionResult.Success }
+                    calls += Call(dictionary, listOf(watch), admission)
+                    TransmissionResult.Success
                 }
             }
             return leases?.withOutbound(deliver) ?: deliver()
@@ -1421,9 +1415,9 @@ class BridgeRuntimeTest {
 
         override suspend fun send(
             dictionary: PebbleDictionary,
-            watches: List<WatchIdentifier>,
+            watch: WatchIdentifier,
             admission: TrustAdmission,
-        ): Map<WatchIdentifier, TransmissionResult> {
+        ): TransmissionResult? {
             val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
             if (type == BridgeProtocol.MessageType.SNAPSHOT.wire) {
@@ -1436,14 +1430,14 @@ class BridgeRuntimeTest {
                     delayedPreCommandEpoch = epoch
                     firstSnapshotAttemptStarted.complete(Unit)
                     releaseFirstSnapshotAttempt.await()
-                    return emptyMap()
+                    return null
                 }
-                if (snapshotAttempts == 2) return emptyMap()
+                if (snapshotAttempts == 2) return null
                 acceptedEpoch = epoch
             } else if (type == BridgeProtocol.MessageType.COMMAND_RESULT.wire) {
                 epochAcceptedBeforeResult = acceptedEpoch
             }
-            return watches.associateWith { TransmissionResult.Success }
+            return TransmissionResult.Success
         }
 
         fun deliverDelayedPreCommandSnapshot(): Boolean {
@@ -1462,15 +1456,15 @@ class BridgeRuntimeTest {
 
         override suspend fun send(
             dictionary: PebbleDictionary,
-            watches: List<WatchIdentifier>,
+            watch: WatchIdentifier,
             admission: TrustAdmission,
-        ): Map<WatchIdentifier, TransmissionResult> {
+        ): TransmissionResult? {
             val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
             return if (type == BridgeProtocol.MessageType.SNAPSHOT.wire) {
-                emptyMap()
+                null
             } else {
-                watches.associateWith { TransmissionResult.Success }
+                TransmissionResult.Success
             }
         }
 
@@ -1525,4 +1519,4 @@ private suspend fun BridgeRuntime.sendRecordingProfiles(watch: WatchIdentifier):
     sendRecordingProfiles(watch, TEST_ADMISSION)
 
 private suspend fun BridgeRuntime.refresh(watches: Collection<WatchIdentifier>): Boolean =
-    refresh(watches, TEST_ADMISSION)
+    refresh(watches.single(), TEST_ADMISSION)

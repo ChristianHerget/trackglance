@@ -25,7 +25,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Export permits Core binding; the service guard requires the approved signer and Core selection. -->
+        <!-- Export permits Core binding; the service verifies the selected CoreApp package and caller UID. -->
         <service
             android:name=".pebble.BridgePebbleListenerService"
             android:exported="true"

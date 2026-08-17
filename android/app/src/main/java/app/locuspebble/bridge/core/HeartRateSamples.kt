@@ -5,18 +5,16 @@ import app.locuspebble.bridge.protocol.BridgeProtocol
 /** Stateful validation for independent unsigned watch/session sequence streams. */
 class HeartRateSampleGate(
     private val maxAgeSeconds: Long = 30,
-    private val maxStreams: Int = 64,
 ) {
     private data class Stream(val watchId: String, val sessionId: Long, val trustGeneration: Long)
 
-    private val lastSequences = object : LinkedHashMap<Stream, Long>(maxStreams, 0.75f, true) {
+    private val lastSequences = object : LinkedHashMap<Stream, Long>(MAX_RECENT_STREAMS, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Stream, Long>): Boolean =
-            size > maxStreams
+            size > MAX_RECENT_STREAMS
     }
 
     init {
         require(maxAgeSeconds >= 0)
-        require(maxStreams > 0)
     }
 
     @Synchronized
@@ -36,5 +34,9 @@ class HeartRateSampleGate(
         if (sequence <= (lastSequences[stream] ?: -1L)) return false
         lastSequences[stream] = sequence
         return true
+    }
+
+    private companion object {
+        const val MAX_RECENT_STREAMS = 8
     }
 }

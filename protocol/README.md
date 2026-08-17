@@ -72,8 +72,8 @@ delivery. A result that follows any permitted retry schedule therefore arrives b
 expiry.
 
 Deleting bridge storage or uninstalling/reinstalling the bridge also deletes this durable sender
-floor. Close the watchapp before such a reset, keep it closed through bridge restart and signer
-reenrollment, then reopen it so both sides establish a coordinated new baseline. Ordinary process
+floor. Close the watchapp before such a reset, keep it closed through bridge restart, then reopen it
+so both sides establish a coordinated new baseline. Ordinary process
 restart or phone-clock correction needs no watchapp reopen while the durable store survives.
 
 Configuration is chunked as
