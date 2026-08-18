@@ -171,7 +171,7 @@ assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,androidTransferSerialHalfR
 assert.strictEqual(pkjs.LIMIT.transferSerialMask,0x7fffffff);
 assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,0x40000000);
 assert(androidRuntime.includes('profileTransferSerialStore.reserve()') &&
-    androidProfileSerial.includes('if (previous == null)') &&
+    androidProfileSerial.includes('if (previous == -1L)') &&
     androidProfileSerial.includes('0L') &&
     androidProfileSerial.includes('(previous + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK'),
   'Android profile transfers must reserve a dedicated zero-seeded durable +1 serial under the shared mask');
@@ -249,10 +249,9 @@ assert(protocol.includes('produce no completed profile-list transfer, preserving
   'protocol must document no-transfer cache preservation for profile source/validation failure');
 assert(protocol.includes('rejects every later snapshot with a lower delivery epoch even after') &&
     protocol.includes('equal delivery epochs remain valid') &&
-    protocol.includes('durable floor') &&
-    protocol.includes('Close the watchapp before such a reset') &&
-    protocol.includes('Ordinary process\nrestart or phone-clock correction needs no watchapp reopen'),
-  'protocol must document the lifetime floor, durable sender ordering, and coordinated reset');
+    protocol.includes('epoch floor\nis managed in-memory') &&
+    protocol.includes('process restart naturally establishes a new coordinated baseline with the watchapp'),
+  'protocol must document the lifetime floor and memory sender ordering');
 assert(protocol.includes('orders deliveries rather than dating the underlying Locus observation') &&
     protocol.includes('can be ahead of phone wall time') &&
     protocol.includes('actual Unix timestamp and is never a delivery-order stamp'),
