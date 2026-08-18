@@ -147,8 +147,8 @@ cd ..
 The outputs are:
 
 ```text
-android/app/build/outputs/apk/debug/app-debug.apk
-watchapp/build/watchapp.pbw
+android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
+watchapp/build/locuspebble-watch.pbw
 ```
 
 The final npm command verifies PBW targets, metadata, resources, and embedded PKJS. Check versions
@@ -157,9 +157,9 @@ and contents manually as needed before installation:
 ```sh
 ANDROID_SDK_ROOT=/absolute/path/to/Android/Sdk
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging \
-  android/app/build/outputs/apk/debug/app-debug.apk | head
-unzip -p watchapp/build/watchapp.pbw appinfo.json
-unzip -l watchapp/build/watchapp.pbw
+  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk | head
+unzip -p watchapp/build/locuspebble-watch.pbw appinfo.json
+unzip -l watchapp/build/locuspebble-watch.pbw
 ```
 
 The APK and PBW versions must match. The PBW must contain the embedded `pebble-js-app.js` and only
@@ -171,7 +171,7 @@ Kotlin, C, `watchapp/package.json`, and `protocol/README.md`.
 The Android target must run all three apps:
 
 1. CoreApp (`coredevices.coreapp`)
-2. Locus Pebble Bridge (`app.locuspebble.bridge`)
+2. Locus Pebble Bridge (`io.github.christianherget.locuspebble.bridge`)
 3. Locus Map 4 (`menion.android.locus`)
 
 ### Chromebook ARCVM
@@ -190,7 +190,7 @@ Always use an explicit serial if another emulator is present:
 ```sh
 adb -s "$ANDROID_SERIAL" shell getprop ro.product.cpu.abilist
 adb -s "$ANDROID_SERIAL" install -r \
-  android/app/build/outputs/apk/debug/app-debug.apk
+  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
 ```
 
 Install Locus Map from Google Play where possible. Launch it once, complete onboarding, grant the
@@ -246,7 +246,7 @@ Confirm installed packages and versions:
 ```sh
 adb -s "$ANDROID_SERIAL" shell dumpsys package coredevices.coreapp \
   | grep -E 'versionName=|versionCode='
-adb -s "$ANDROID_SERIAL" shell dumpsys package app.locuspebble.bridge \
+adb -s "$ANDROID_SERIAL" shell dumpsys package io.github.christianherget.locuspebble.bridge \
   | grep -E 'versionName=|versionCode='
 adb -s "$ANDROID_SERIAL" shell pm path menion.android.locus
 ```
@@ -364,7 +364,7 @@ window's keyboard for buttons. This is an important current limitation for unatt
 Build the PBW before this step. Copy it to Android storage:
 
 ```sh
-adb -s "$ANDROID_SERIAL" push watchapp/build/watchapp.pbw \
+adb -s "$ANDROID_SERIAL" push watchapp/build/locuspebble-watch.pbw \
   /sdcard/Download/locus-bridge.pbw
 ```
 
@@ -383,7 +383,7 @@ After launch, open the bridge diagnostics screen:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/.MainActivity
+  -n io.github.christianherget.locuspebble.bridge/.MainActivity
 ```
 
 Expected values are:
@@ -431,7 +431,7 @@ If settings says no profile response has arrived:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/.MainActivity
+  -n io.github.christianherget.locuspebble.bridge/.MainActivity
 adb -s "$ANDROID_SERIAL" logcat -d \
   | grep -E 'AppMessagePush|PROFILE|QemuTransport|PebbleProtocol'
 ```

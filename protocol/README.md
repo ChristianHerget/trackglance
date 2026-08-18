@@ -2,7 +2,7 @@
 
 The Android bridge, Pebble watchapp, and embedded PebbleKit JS use AppMessage dictionaries under
 UUID `51c8d7cf-4cb2-4ef8-98c9-641706feb250`. Version 3 is intentionally incompatible with v2;
-the `0.1.7` APK and PBW must be upgraded together. Receivers reject any other version.
+the `0.1.8` APK and PBW must be upgraded together. Receivers reject any other version.
 
 All statistics use signed 32-bit integer SI wire units. `-2147483648` means unavailable; the watch
 renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units remain metric.
@@ -27,7 +27,7 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
 | 30–33 | chunk index/count/data/transfer ID | zero-based index, total, at most 80 UTF-8 bytes, 31-bit serial ID `0..2147483647` |
 | 34 | Locus mode | reserved |
-| 35 | release version | exact APK/PBW release string, currently `0.1.7` |
+| 35 | release version | exact APK/PBW release string, currently `0.1.8` |
 | 36 | waypoint name | confirmed dictation for command `5`; nonblank UTF-8, at most 120 bytes |
 | 37 | current heart rate | BPM; Locus-derived in snapshots, watch-derived only in type `8` |
 | 38 | heart-rate sequence | unsigned, increasing within the watch session |
@@ -231,7 +231,7 @@ the bridge polls Locus for about 1.5 seconds and returns the resulting snapshot.
 shows only ephemeral last-watch BPM, forwarding time, and current Locus BPM; no HR history is stored
 or logged.
 
-The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.7
+The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.8
 ignores incoming values and always emits `0`; formerly protected defaults migrate to ordinary
 profiles without changing their name, mapping, metrics, order, or active watch selection. Display names are
 local user data and may be localized only when a fresh configuration is created. Exact Locus names

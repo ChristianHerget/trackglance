@@ -1,7 +1,7 @@
 /* Offline configuration for CoreApp. This file intentionally has no network dependencies. */
 (function (root) {
   'use strict';
-  var V=3, RELEASE='0.1.7', CACHE='locusProfiles.v3', CONFIG='config', CONFIG_PENDING='configPending.v3', CONFIG_NOTICE='configNotice.v3', CONFIG_TRANSFER_SERIAL='configTransferSerial.v3', PROFILE_TRANSFER_FLOOR='profileTransferFloor.v3', DURABLE_TRANSFER_GENERATION=1;
+  var V=3, RELEASE='0.1.8', CACHE='locusProfiles.v3', CONFIG='config', CONFIG_PENDING='configPending.v3', CONFIG_NOTICE='configNotice.v3', CONFIG_TRANSFER_SERIAL='configTransferSerial.v3', PROFILE_TRANSFER_FLOOR='profileTransferFloor.v3', DURABLE_TRANSFER_GENERATION=1;
   var SERIAL_MASK=0x7fffffff,SERIAL_HALF_RANGE=0x40000000;
   var LIMIT={profiles:8,metrics:6,displayNameCodePoints:20,displayNameBytes:80,locusNameBytes:255,idBytes:39,configBytes:4095,profileListBytes:8191,chunkBytes:80,profileChunks:103,transferSerialMask:SERIAL_MASK,transferSerialHalfRange:SERIAL_HALF_RANGE,sendAttempts:3,ackTimeoutMillis:10000};
   var K={v:0,type:1,result:4,time:6,session:7,index:30,count:31,data:32,id:33,release:35,hr:37,sequence:38,generation:39};

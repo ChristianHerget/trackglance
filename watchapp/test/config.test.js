@@ -246,9 +246,9 @@ acknowledgements.register(42,outcome => ackOutcomes.push(outcome));
 acknowledgements.transport(42,true);
 [...ackTimers.values()][0]();
 assert.deepStrictEqual(ackOutcomes[1],{kind:'timeout',id:42});
-assert.deepStrictEqual(config.configResultMessage({0:3,1:9,35:'0.1.7',33:5,4:7}),{id:5,result:7});
+assert.deepStrictEqual(config.configResultMessage({0:3,1:9,35:'0.1.8',33:5,4:7}),{id:5,result:7});
 assert.strictEqual(config.configResultMessage({0:3,1:9,35:'0.1.6',33:5,4:7}),null);
-assert.strictEqual(config.configResultMessage({0:3,1:9,35:'0.1.7',33:5,4:'7'}),null);
+assert.strictEqual(config.configResultMessage({0:3,1:9,35:'0.1.8',33:5,4:'7'}),null);
 
 const names = ['Walking','Cycling'];
 const pageUrl = config.page(config.defaults, names, 'en', 'fresh', true);
@@ -355,9 +355,9 @@ assert(config.add(foldedRename,foldedRename.profiles[0]));
 assert.strictEqual(foldedRename.profiles[2].name,'Σ 2','copy naming detects shared-fold duplicates');
 assert.strictEqual(new Set(one.profiles.map(p=>p.id)).size,8);
 
-assert(config.validHeartRateMessage({0:3,1:8,35:'0.1.7',7:1,38:0,6:1000,37:123}));
-assert(!config.validHeartRateMessage({0:2,1:8,35:'0.1.7',7:1,38:0,6:1000,37:123}));
-assert(!config.validHeartRateMessage({0:3,1:8,35:'0.1.7',7:1,38:0,6:1000,37:251}));
+assert(config.validHeartRateMessage({0:3,1:8,35:'0.1.8',7:1,38:0,6:1000,37:123}));
+assert(!config.validHeartRateMessage({0:2,1:8,35:'0.1.8',7:1,38:0,6:1000,37:123}));
+assert(!config.validHeartRateMessage({0:3,1:8,35:'0.1.8',7:1,38:0,6:1000,37:251}));
 
 // Exercise the actual Pebble lifecycle, including asynchronous AppMessage callbacks.
 const handlers = {}, storage = {}, sent = {}, fakeTimers = new Map();
@@ -393,7 +393,7 @@ for(let i=0;i<startupChunkCount;i++){
 }
 assert.strictEqual(sent[startupChunkCount].message[1],7,
   'the startup profile request waits for the complete configuration transfer');
-handlers.appmessage({payload:{0:3,1:9,35:'0.1.7',33:startupTransferId,4:0}});
+handlers.appmessage({payload:{0:3,1:9,35:'0.1.8',33:startupTransferId,4:0}});
 sent[startupChunkCount].ok();
 
 global.openedSettingsURL = null;
@@ -402,7 +402,7 @@ handlers.showConfiguration();
 assert.strictEqual(global.openedSettingsURL,null,
   'a cache without exact protocol and release metadata is ignored while awaiting a fresh response');
 sent[sentCount-1].ok();
-handlers.appmessage({payload:{0:3,1:6,4:0,35:'0.1.7',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
+handlers.appmessage({payload:{0:3,1:6,4:0,35:'0.1.8',33:77,30:0,31:1,32:'Wandern\nRadfahren\nLaufen'}});
 assert(global.openedSettingsURL && global.openedSettingsURL.startsWith('data:text/html'),
   'the first settings click opens as soon as a complete fresh response arrives');
 let lifecycleHtml = decodeURIComponent(global.openedSettingsURL.split(',').slice(1).join(','));
@@ -410,7 +410,7 @@ assert(lifecycleHtml.includes('Wandern'));
 assert(noticeText(global.openedSettingsURL).includes('Locus-Profile aktualisiert'));
 
 global.openedSettingsURL = null;
-handlers.appmessage({payload:{PROTOCOL_VERSION:3,MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.7',TRANSFER_ID:79,
+handlers.appmessage({payload:{PROTOCOL_VERSION:3,MESSAGE_TYPE:6,RESULT:0,APP_VERSION:'0.1.8',TRANSFER_ID:79,
   CHUNK_INDEX:0,CHUNK_COUNT:1,CHUNK_DATA:'Spazieren\nMountainbike'}});
 handlers.showConfiguration();
 assert(decodeURIComponent(global.openedSettingsURL).includes('Mountainbike'),
@@ -419,7 +419,7 @@ assert(noticeText(global.openedSettingsURL).includes('Zuletzt gespeicherte Locus
   'an in-memory response is demoted to stale until the current settings refresh completes');
 sent[sentCount-1].ok();
 
-handlers.appmessage({payload:{0:3,1:6,4:3,35:'0.1.7',33:80,30:0,31:1,32:''}});
+handlers.appmessage({payload:{0:3,1:6,4:3,35:'0.1.8',33:80,30:0,31:1,32:''}});
 assert.deepStrictEqual(JSON.parse(storage['locusProfiles.v3']).names,[],
   'a complete empty result atomically replaces stale cached names');
 global.openedSettingsURL = null;
@@ -436,7 +436,7 @@ lifecycleHtml=decodeURIComponent(global.openedSettingsURL);
 assert(noticeText(global.openedSettingsURL).toLowerCase().includes('inkompatibel'));
 sent[sentCount-1].ok();
 
-handlers.appmessage({payload:{0:3,1:6,4:0,35:'0.1.7',33:82,30:0,31:1,32:'Wandern'}});
+handlers.appmessage({payload:{0:3,1:6,4:0,35:'0.1.8',33:82,30:0,31:1,32:'Wandern'}});
 global.openedSettingsURL = null;
 handlers.showConfiguration();
 lifecycleHtml=decodeURIComponent(global.openedSettingsURL);
@@ -448,7 +448,7 @@ function candidateNamed(name){const value=config.parse(storage.config);value.pro
 function closeWith(value){handlers.webviewclosed({response:encodeURIComponent(JSON.stringify(value))});}
 function finishConfigAt(start){const count=sent[start].message[31],id=sent[start].message[33],parts=[];for(let i=0;i<count;i++){assert.strictEqual(sent[start+i].message[33],id);parts.push(sent[start+i].message[32]);sent[start+i].ok();}return {id,wire:parts.join(''),next:start+count};}
 function exhaustFinalFrameAt(start){const count=sent[start].message[31],id=sent[start].message[33],parts=[];for(let i=0;i<count-1;i++){assert.strictEqual(sent[start+i].message[33],id);parts.push(sent[start+i].message[32]);sent[start+i].ok();}const final=start+count-1;parts.push(sent[final].message[32]);sent[final].fail();sent[final+1].fail();sent[final+2].fail();return {id,wire:parts.join(''),next:final+3};}
-function configAck(id,result){handlers.appmessage({payload:{0:3,1:9,35:'0.1.7',33:id,4:result}});}
+function configAck(id,result){handlers.appmessage({payload:{0:3,1:9,35:'0.1.8',33:id,4:result}});}
 function fireAckTimeout(){const entry=[...fakeTimers.entries()].find(([,timer])=>timer.delay===10000);assert(entry,'an ACK deadline must be armed only after transport completion');fakeTimers.delete(entry[0]);entry[1].callback();}
 
 const committedBeforeSave=storage.config;
@@ -779,10 +779,10 @@ sent[finalAckReconciled.next].ok();
 function wireNamed(name){return config.serialize(candidateNamed(name));}
 function reloadLifecycle(){delete require.cache[require.resolve('../src/pkjs/index.js')];require('../src/pkjs/index.js');}
 
-// Pending records written by the original 0.1.7 queue had no uncertainty fields even after an
+// Pending records written by the original 0.1.8 queue had no uncertainty fields even after an
 // ambiguous transport or application timeout. They must be migrated conservatively.
 const legacyAmbiguousWire=wireNamed('Legacy ambiguous');
-storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.7',items:[{
+storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.8',items:[{
   token:'legacy-ambiguous',wire:legacyAmbiguousWire,
 }]});
 reloadLifecycle();
@@ -812,7 +812,7 @@ const releaseRetry=finishConfigAt(recoveryStart);
 assert(releaseRetry.wire.includes('Release recovery'),
   'startup retries a parseable prior-release pending wire before committed settings');
 migratedPending=JSON.parse(storage['configPending.v3']);
-assert.strictEqual(migratedPending.release,'0.1.7');
+assert.strictEqual(migratedPending.release,'0.1.8');
 assert.strictEqual(migratedPending.format,2);
 configAck(releaseRetry.id,9);
 assert(JSON.parse(storage['configPending.v3']).items[0].wire.includes('Release recovery'));
@@ -835,7 +835,7 @@ assert.strictEqual(storage['configNotice.v3'],'uncertain');
 sent[recoveryStart].ok();
 
 const tamperedWire=wireNamed('Tampered lineage');
-const tamperedLineage=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+const tamperedLineage=JSON.stringify({protocol:3,release:'0.1.8',format:2,items:[{
   token:'tampered-lineage',wire:tamperedWire,uncertain:true,selfUncertain:true,
   fallbackWires:[tamperedWire],
 }]});
@@ -849,7 +849,7 @@ assert.strictEqual(storage['configPending.v3'],tamperedLineage);
 sent[recoveryStart].ok();
 
 const invariantA=wireNamed('Invariant A'),invariantB=wireNamed('Invariant B'),invariantC=wireNamed('Invariant C');
-const brokenTwoItemLineage=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+const brokenTwoItemLineage=JSON.stringify({protocol:3,release:'0.1.8',format:2,items:[{
   token:'invariant-b',wire:invariantB,uncertain:true,selfUncertain:true,fallbackWires:[invariantA],
 },{
   token:'invariant-c',wire:invariantC,uncertain:true,selfUncertain:false,
@@ -868,7 +868,7 @@ sent[recoveryStart].ok();
 // predecessor merely to accept another save.
 const boundedWires=[];
 for(let i=0;i<8;i++)boundedWires.push(wireNamed('Bounded '+i));
-const boundedState={protocol:3,release:'0.1.7',format:2,items:[{
+const boundedState={protocol:3,release:'0.1.8',format:2,items:[{
   token:'bounded-state',wire:boundedWires[0],uncertain:true,selfUncertain:true,
   fallbackWires:boundedWires.slice(1),
 }]};
@@ -891,7 +891,7 @@ assert.strictEqual(storage['configPending.v3'],undefined);
 // Preserve the complete A/B/C predecessor chain. If C and then B are deterministically invalid,
 // A remains the only possible applied configuration and is reconciled rather than forgotten.
 const nestedA=wireNamed('Nested A'),nestedB=wireNamed('Nested B');
-storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.7',format:2,items:[{
+storage['configPending.v3']=JSON.stringify({protocol:3,release:'0.1.8',format:2,items:[{
   token:'nested-b',wire:nestedB,uncertain:true,selfUncertain:true,fallbackWires:[nestedA],
 }]});
 reloadLifecycle();

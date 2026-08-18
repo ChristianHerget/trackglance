@@ -26,7 +26,7 @@ coordinated new snapshot and profile-transfer ordering baseline.
 - `docs/end-to-end-testing.md` — complete installation, acceptance-test, troubleshooting, and
   containerization guide.
 
-The Android application ID is `app.locuspebble.bridge`; the PBW companion metadata points to that
+The Android application ID is `io.github.christianherget.locuspebble.bridge`; the PBW companion metadata points to that
 package and this repository as the project/download page. A fork that changes the ID must update
 both values. There is no published GitHub release yet, so the metadata does not claim a working
 latest-release artifact URL.
@@ -57,7 +57,7 @@ verification data.
 
 Artifacts:
 
-- `android/app/build/outputs/apk/debug/app-debug.apk`
-- `watchapp/build/watchapp.pbw`
+- `android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk`
+- `watchapp/build/locuspebble-watch.pbw`
 
 Licensed under Apache-2.0.
