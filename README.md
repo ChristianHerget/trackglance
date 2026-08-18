@@ -22,6 +22,7 @@ coordinated new snapshot and profile-transfer ordering baseline.
 - `watchapp` — native C Pebble Time 2 (`emery`) and Round 2 (`gabbro`) application.
 - `protocol` — stable AppMessage v3 wire contract.
 - `docs/development.md` — Chromebook, ARCVM, Core, and QEMU setup.
+- `docs/design-decisions.md` — log of architectural choices regarding Locus API integration and background execution.
 - `docs/end-to-end-testing.md` — complete installation, acceptance-test, troubleshooting, and
   containerization guide.
 
