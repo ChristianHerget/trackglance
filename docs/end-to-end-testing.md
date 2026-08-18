@@ -580,17 +580,9 @@ translation, an ARM target, or a CoreApp source build containing the target ABI.
 - Distinguish a fresh response from a stale cached response.
 - Look for a complete, single-transfer profile chunk sequence.
 
-### Command safety or snapshot-ordering storage is blocked
+### Command state after bridge process restart
 
-Close the watchapp first and keep it closed. Confirm in Locus that no command is still pending or
-transitioning. Only then clear the bridge application's storage or reinstall the bridge. Clearing
-storage removes the command journal, the durable snapshot-epoch floor, and the profile-transfer
-serial floor. Relaunch the bridge and then reopen the watchapp to establish new receiver floors.
-Never reset bridge storage
-while the watchapp remains open: a delayed pre-reset snapshot or profile chunk can otherwise
-outrank the restarted bridge's new baseline. Those three safety stores are excluded from Android
-cloud backup and device transfer and therefore are not restored after uninstall/reinstall; ordinary
-refresh preferences may still be restored.
+The command deduplication journal, snapshot-ordering epochs, and profile-transfer serials are stored in-memory in the Android bridge process. If the Android process is forcefully killed or crashes, this state is lost. Upon restarting the process, the bridge establishes a new epoch baseline seeded from the system clock. Any command that was pending or retried while the bridge was down may be executed by the fresh bridge without deduplication. Ordinary refresh preferences remain eligible for Android cloud backup and device transfer.
 
 ### ARCVM shows `PlaceholderActivity`
 

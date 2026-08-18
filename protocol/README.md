@@ -47,11 +47,10 @@ This snapshot field orders deliveries rather than dating the underlying Locus ob
 it advances synthetically, it can be ahead of phone wall time. In a type `8` heart-rate message,
 key `6` instead remains the watch sample's actual Unix timestamp and is never a delivery-order stamp.
 
-Before issuing any snapshot request, the bridge durably reserves a delivery epoch equal to the
-greater of the observed phone time and one more than the last reserved epoch. The durable floor
-survives bridge process restarts and makes separate deliveries strictly increasing even within one
-second or after a backward phone-clock correction. A failed or ambiguous durable commit authorizes
-no request; the next attempt reloads the store and reserves again.
+Before issuing any snapshot request, the bridge reserves a delivery epoch equal to the
+greater of the observed phone time and one more than the last reserved epoch. This epoch floor
+is managed in-memory, so a bridge process restart naturally establishes a new baseline from
+the system clock.
 
 After a state-changing command, the bridge reserves the command's barrier epoch before journaling or
 mutating Locus. Because Locus command broadcasts do not acknowledge application, a newly executed OK
@@ -71,10 +70,8 @@ and the command-result delivery, including all three ten-second attempts and ret
 delivery. A result that follows any permitted retry schedule therefore arrives before correlation
 expiry.
 
-Deleting bridge storage or uninstalling/reinstalling the bridge also deletes this durable sender
-floor. Close the watchapp before such a reset, keep it closed through bridge restart, then reopen it
-so both sides establish a coordinated new baseline. Ordinary process
-restart or phone-clock correction needs no watchapp reopen while the durable store survives.
+Because the sender floor is in-memory, it is lost if the Android bridge process restarts. A
+process restart naturally establishes a new coordinated baseline with the watchapp.
 
 Configuration is chunked as
 `theme|legacy-selected-index|watch-HR-to-Locus (0/1)|heart-rate-interval-seconds`, followed by one newline-separated profile
@@ -188,12 +185,11 @@ length, and dual whole-payload checksums; a same-ID retry whose bytes differ is 
 changing the completed floor. A payload becomes visible only after every chunk is present and the
 joined byte and field limits pass validation.
 
-Android durably reserves a profile-list serial from a dedicated, wall-clock-independent counter
-before it emits chunk 0, and the watch durably reserves a new relay serial before making the
-validated list sendable to PKJS. Both counters advance modulo `2^31`, keep abandoned reservations as
-gaps, start at zero when absent, and fail closed on an ambiguous durable write. Their marker-driven
-generation transition makes that initial zero safe even when a still-open receiver retains an
-arbitrary legacy floor; later phone-clock corrections do not affect either counter.
+Android reserves an in-memory profile-list serial from a dedicated counter before it emits
+chunk 0, and the watch durably reserves a new relay serial before making the validated list
+sendable to PKJS. Both counters advance modulo `2^31`, keep abandoned reservations as gaps,
+and start at zero when absent. The Android counter's in-memory nature means process restarts
+will re-initialize the counter.
 The watch uses a dedicated relay counter rather than deriving IDs from its session counter, because
 one watch session can relay more than one list. PKJS also persists its completed profile-list floor,
 so a JS restart cannot make a delayed older watch relay replace its cache. A failed or unconfirmed

@@ -25,7 +25,7 @@ The bridge disables PebbleKit auto-selection and explicitly selects the installe
 `coredevices.coreapp` package. Incoming Binder calls must resolve to that package and its installed
 UID; Android itself enforces package-name uniqueness and signature-compatible updates. There is no
 separate signer enrollment step. The Android diagnostics screen reports CoreApp selection, Locus, watch
-connection, recording state, refresh mode, command-journal health, and the last bridge error.
+connection, recording state, refresh mode, and the last bridge error.
 
 ## Toolchain
 
@@ -49,16 +49,12 @@ closes. Adaptive mode sends an immediate snapshot, polls every two seconds for 1
 opening or a command, and then every ten seconds. Fixed five- and ten-second modes are available
 from the Android diagnostics screen.
 
-Snapshot delivery epochs are reserved durably before every outbound request and continue increasing
-across bridge process restarts and backward phone-clock corrections. Before clearing bridge storage
-or reinstalling it, close the watchapp and keep it closed through the reset and bridge restart;
-reopen it only afterward to establish a coordinated new epoch baseline.
+Snapshot delivery epochs and profile transfer serials are managed in-memory and re-seeded from the
+system clock upon bridge process restart. The command deduplication journal is also an in-memory
+cache for the duration of the process. Because deduplication and ordering states are in-memory, a
+bridge process restart naturally establishes a new baseline with the watch.
 Locus command broadcasts have no acknowledgement, so the bridge polls newly executed recording-state
 changes before it sends an OK result; an unconfirmed transition returns FAILED with the latest state.
-The command journal, snapshot-epoch store, and profile-transfer serial store are
-excluded from both Android cloud backup and device transfer so an uninstall/reinstall cannot
-silently restore stale safety state;
-ordinary bridge preferences remain eligible for backup.
 
 ## QEMU/Core integration
 

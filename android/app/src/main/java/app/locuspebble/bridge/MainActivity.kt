@@ -218,9 +218,6 @@ class MainActivity : ComponentActivity() {
                             DateFormat.getTimeInstance().format(Date(it))
                         } ?: "Never")
                         StatusLine("Current Locus HR", status.currentLocusHeartRate?.let { "$it bpm" } ?: "Unavailable")
-                        status.commandJournalError?.let {
-                            Text("Command safety: $it", color = MaterialTheme.colorScheme.error)
-                        }
                         status.diagnosticsError?.let { StatusLine("Diagnostics", it) }
                         status.lastError?.let { StatusLine("Last runtime error", it) }
                     }

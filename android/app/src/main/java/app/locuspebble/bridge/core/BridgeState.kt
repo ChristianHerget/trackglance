@@ -18,7 +18,7 @@ data class BridgeStatus(
     val lastWatchHeartRate: Int? = null,
     val lastHeartRateForwardedEpochMillis: Long? = null,
     val currentLocusHeartRate: Int? = null,
-    val commandJournalError: String? = null,
+    
     val diagnosticsError: String? = null,
     val lastError: String? = null,
 )

@@ -74,12 +74,11 @@ class BridgeRuntime internal constructor(
     )
     private var updateJob: Job? = null
     private var heartRateJob: Job? = null
-    @Volatile private var snapshotEpochStorageError: String? = null
-
+    
     @Volatile private var transitioningUntil = 0L
 
     init {
-        updateCommandJournalStatus()
+        
         synchronized(lifecycleLock) { ensureHeartRateConsumerLocked() }
     }
 
@@ -245,7 +244,7 @@ class BridgeRuntime internal constructor(
             mutate = {
                 commandMutex.withLock {
                     val begun = withContext(ioDispatcher) { commandJournal.begin(key, fingerprint) }
-                    updateCommandJournalStatus()
+                    
                     when (begun) {
                         is CommandJournal.BeginResult.Completed -> CommandMutation(begun.result)
                         is CommandJournal.BeginResult.Execute -> {
@@ -261,7 +260,7 @@ class BridgeRuntime internal constructor(
                             val completed = withContext(ioDispatcher) {
                                 commandJournal.complete(begun.key, confirmed.result)
                             }
-                            updateCommandJournalStatus()
+                            
                             if (completed) {
                                 confirmed
                             } else {
@@ -270,7 +269,7 @@ class BridgeRuntime internal constructor(
                         }
                         CommandJournal.BeginResult.Collision,
                         CommandJournal.BeginResult.Pending,
-                        CommandJournal.BeginResult.StorageFailure,
+                        
                         -> CommandMutation(BridgeProtocol.Result.FAILED)
                     }
                 }
@@ -289,7 +288,7 @@ class BridgeRuntime internal constructor(
         )
         if (!delivered) publishIfCurrent(admission) {
             reportError(
-                snapshotEpochStorageError ?: "Could not deliver the command result to the source watch",
+                "Could not deliver the command result to the source watch",
             )
         }
         return delivered
@@ -408,10 +407,6 @@ class BridgeRuntime internal constructor(
             }
         ) return@withLock false
         val transferId = reserveProfileTransferId()
-        if (transferId == null) {
-            publishIfCurrent(admission) { reportError(PROFILE_TRANSFER_EPOCH_STORAGE_MESSAGE) }
-            return@withLock false
-        }
         val messages = PebbleMessages.profileListChunks(transfer, transferId)
         messages.forEach { message ->
             if (!isActiveOrUntracked(AdmittedWatch(watch, admission)) ||
@@ -444,7 +439,7 @@ class BridgeRuntime internal constructor(
         val admission = targets.singleAdmissionOrNull()
         if (!delivered && admission != null) {
             publishIfCurrent(admission) {
-                reportError(snapshotEpochStorageError ?: failureMessage)
+                reportError(failureMessage)
             }
         }
         return delivered
@@ -474,28 +469,18 @@ class BridgeRuntime internal constructor(
     ): BridgeProtocol.Snapshot? {
         val admission = targets.singleAdmissionOrNull() ?: return null
         val snapshot = readSnapshot(admission)
-        val next = reserveSnapshotEpoch(snapshot.sampledAtEpochSeconds, admission) ?: return null
+        val next = reserveSnapshotEpoch(snapshot.sampledAtEpochSeconds, admission)
         return snapshot.copy(sampledAtEpochSeconds = next)
     }
 
     private suspend fun reserveSnapshotEpoch(
         observedEpochSeconds: Long,
         admission: TrustAdmission? = null,
-    ): Long? {
-        val next = snapshotEpochStore.reserve(observedEpochSeconds) ?: run {
-            snapshotEpochStorageError = SNAPSHOT_EPOCH_STORAGE_MESSAGE
-            if (admission == null) {
-                reportError(SNAPSHOT_EPOCH_STORAGE_MESSAGE)
-            } else {
-                publishIfCurrent(admission) { reportError(SNAPSHOT_EPOCH_STORAGE_MESSAGE) }
-            }
-            return null
-        }
-        snapshotEpochStorageError = null
-        return next
+    ): Long {
+        return snapshotEpochStore.reserve(observedEpochSeconds)
     }
 
-    private suspend fun reserveProfileTransferId(): Int? {
+    private suspend fun reserveProfileTransferId(): Int {
         // Profile and snapshot ordering use independent stores. Never overwrite the snapshot
         // failure latch here: a concurrent profile reservation must not hide the actionable reason
         // that a command barrier or ordinary snapshot failed closed.
@@ -549,11 +534,6 @@ class BridgeRuntime internal constructor(
 
     private fun reportError(message: String) = BridgeState.update { it.copy(lastError = message) }
 
-    private fun updateCommandJournalStatus() = BridgeState.update { status ->
-        status.copy(
-            commandJournalError = (commandJournal.health() as? CommandJournal.Health.Blocked)?.message,
-        )
-    }
 
     private fun ensureHeartRateConsumerLocked() {
         if (heartRateJob?.isActive == true) return
@@ -597,13 +577,7 @@ class BridgeRuntime internal constructor(
         private const val COMMAND_CONFIRMATION_POLL_MILLIS = 100L
         private const val COMMAND_CONFIRMATION_MAX_POLLS = 15
         private const val POLL_FAILURE_DELAY_MILLIS = 1_000L
-        private const val SNAPSHOT_EPOCH_STORAGE_MESSAGE =
-            "Snapshot ordering history could not be durably advanced, so no snapshot or command result was sent. " +
-                "Check free storage and retry; if this persists, close the watchapp before clearing bridge storage."
-        private const val PROFILE_TRANSFER_EPOCH_STORAGE_MESSAGE =
-            "Profile ordering history could not be durably advanced, so no profile list was sent. " +
-                "Check free storage and retry; if this persists, close the watchapp before clearing bridge storage."
-
+                
         @Volatile private var instance: BridgeRuntime? = null
 
         fun get(context: Context): BridgeRuntime = instance ?: synchronized(this) {
@@ -623,9 +597,9 @@ class BridgeRuntime internal constructor(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             locus = LocusGateway(context),
             transport = ReliablePebbleTransport(DefaultPebbleDictionarySender(context)),
-            commandJournal = CommandJournal(SharedPreferencesCommandJournalStorage(context)),
-            snapshotEpochStore = SnapshotDeliveryEpochStore.sharedPreferences(context),
-            profileTransferSerialStore = ProfileTransferSerialStore.sharedPreferences(context),
+            commandJournal = CommandJournal(),
+            snapshotEpochStore = SnapshotDeliveryEpochStore(),
+            profileTransferSerialStore = ProfileTransferSerialStore(),
             refreshMode = { Preferences.refreshMode(context) },
             trustedMutationGate = { admission, block ->
                 TrustedPebbleCompanionProvider.withInboundAdmission(context, admission, block)
