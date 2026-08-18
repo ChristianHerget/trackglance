@@ -18,24 +18,29 @@ If both `arc:5555` and `emulator-5554` appear, use an explicit `-s` selector. AD
 errors inside a managed coding sandbox do not imply an ARCVM configuration problem.
 
 Install Locus Map 4 from Google Play. Install a current CoreApp build compatible with PebbleKit
-Android 2, then install `watchapp/build/watchapp.pbw` through it. QEMU testing requires CoreApp's
-direct transport from `coredevices/mobileapp` commit `38fd4c6` or later.
-The Android diagnostics screen reports Locus, Pebble/Core selection, watch connection, recording
-state, refresh mode, and the last bridge error.
+Android 2, then install `watchapp/build/watchapp.pbw` through it. The reproducible QEMU setup uses
+CoreApp's direct transport from the pinned `coredevices/mobileapp` commit
+`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`.
+The bridge disables PebbleKit auto-selection and explicitly selects the installed
+`coredevices.coreapp` package. Incoming Binder calls must resolve to that package and its installed
+UID; Android itself enforces package-name uniqueness and signature-compatible updates. There is no
+separate signer enrollment step. The Android diagnostics screen reports CoreApp selection, Locus, watch
+connection, recording state, refresh mode, and the last bridge error.
 
 ## Toolchain
 
 ```sh
 sudo apt install openjdk-17-jdk-headless python3-pip python3-venv nodejs npm \
-  libsdl1.2debian libfdt1
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install pebble-tool --python 3.13
-pebble sdk install latest
+  libsdl2-2.0-0 libasound2 libpulse0 libx11-6 libfdt1
+curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
+uv tool install 'pebble-tool==5.0.39' --python 3.13
+pebble sdk install 4.33.1
+pebble sdk activate 4.33.1
 ```
 
 Use Android Studio to install Platform 36 and Build Tools 36.0.0. Create an untracked
 `local.properties` containing `sdk.dir=/absolute/path/to/Android/Sdk` when Android Studio has not
-already done so.
+already done so. Node.js 18 or newer is required for the watchapp verification suite.
 
 ## Update lifecycle
 
@@ -43,6 +48,13 @@ The PebbleKit bound service starts polling when the watchapp opens and stops it 
 closes. Adaptive mode sends an immediate snapshot, polls every two seconds for 15 seconds after
 opening or a command, and then every ten seconds. Fixed five- and ten-second modes are available
 from the Android diagnostics screen.
+
+Snapshot delivery epochs and profile transfer serials are managed in-memory and re-seeded from the
+system clock upon bridge process restart. The command deduplication journal is also an in-memory
+cache for the duration of the process. Because deduplication and ordering states are in-memory, a
+bridge process restart naturally establishes a new baseline with the watch.
+Locus command broadcasts have no acknowledgement, so the bridge polls newly executed recording-state
+changes before it sends an OK result; an unconfirmed transition returns FAILED with the latest state.
 
 ## QEMU/Core integration
 
@@ -68,9 +80,19 @@ remain a later hardware smoke test.
 Normal verification compiles the instrumentation test but does not change Locus data:
 
 ```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
-  :android:app:compileDebugAndroidTestKotlin
+./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
+./gradlew :android:app:compileDebugAndroidTestKotlin
+cd watchapp
+npm ci
+npm test
+pebble clean
+pebble build
+npm run verify:pbw
 ```
+
+`verifyPebbleTargets` checks stack/scheduler invariants plus cross-language protocol and packaging
+metadata. `verify:pbw` must run after `pebble build`; it inspects the generated archive rather than
+assuming package declarations were honored.
 
 The real Locus contract test is deliberately opt-in. It requires an idle Locus Map installation,
 creates a short recording using Locus's active profile, and saves the recording. It refuses to run

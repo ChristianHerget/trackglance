@@ -4,21 +4,22 @@ plugins {
 }
 
 android {
-    namespace = "app.locuspebble.bridge"
+    namespace = "io.github.christianherget.locuspebble.bridge"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.locuspebble.bridge"
+        applicationId = "io.github.christianherget.locuspebble.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 9
+        versionName = "0.1.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -53,3 +54,4 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+base { archivesName.set("locuspebble-bridge") }

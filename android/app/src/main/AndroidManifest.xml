@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <queries>
         <package android:name="menion.android.locus" />
         <package android:name="menion.android.locus.pro" />
@@ -7,21 +8,32 @@
     </queries>
 
     <application
+        android:name=".BridgeApplication"
         android:allowBackup="true"
-        android:label="Locus Pebble Bridge"
+        android:icon="@mipmap/ic_launcher"
+        android:label="LocusPebble Bridge"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.LocusPebbleBridge">
         <activity
             android:name=".MainActivity"
+            android:label="LocusPebble"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Register as a Locus add-on -->
+            <intent-filter>
+                <action android:name="locus.api.android.INTENT_ITEM_MAIN_FUNCTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+        <!-- Export permits Core binding; the service verifies the selected CoreApp package and caller UID. -->
         <service
             android:name=".pebble.BridgePebbleListenerService"
-            android:exported="true">
+            android:exported="true"
+            tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="io.rebble.pebblekit2.RECEIVE_DATA_FROM_WATCH" />
             </intent-filter>

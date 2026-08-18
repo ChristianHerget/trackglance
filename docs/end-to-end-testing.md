@@ -17,7 +17,7 @@ repository / build host
   |-- Node.js + Pebble SDK -----------> watchapp PBW (C + embedded PKJS)
   |-- PebbleOS QEMU :12344 <--- TCP ---> CoreApp on Android
   |                                      |
-  |                                      | PebbleKit Android broadcasts
+  |                                      | PebbleKit Android bound service
   |                                      v
   +--- ADB --------------------------> Locus Bridge APK
                                          |
@@ -29,13 +29,14 @@ repository / build host
 The end-to-end path for a command is:
 
 ```text
-watch button -> watchapp C -> AppMessage -> CoreApp -> embedded PKJS
-             -> Android bridge -> Locus API -> Locus recording state
-             -> Android bridge -> PKJS -> AppMessage -> watchapp dashboard
+watch button -> watchapp C -> AppMessage -> CoreApp -> Android bridge -> Locus API
+             -> Android bridge -> CoreApp -> AppMessage -> watchapp dashboard
 ```
 
-All layers are required. A successful C build, a successful APK build, or even a successful
-AppMessage acknowledgement proves only one part of the path.
+CoreApp also hosts the embedded PKJS settings process and delivers AppMessages to it in parallel;
+PKJS is not an intermediate hop in the watch-to-Android command path. All runtime layers are
+required. A successful C build, a successful APK build, or even a successful AppMessage
+acknowledgement proves only one part of the path.
 
 ## Known-good baseline
 
@@ -49,9 +50,9 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.1.7 |
+| Bridge and watchapp | 0.1.8 |
 | Wire protocol | v3 |
-| CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6` or later |
+| CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
 
 Pin tool versions in automation. An SDK directory named `latest`, a moving Git branch, or an
@@ -110,8 +111,8 @@ do not delete it merely because a build or network connection was interrupted.
 Install `uv`, Pebble Tool, and a pinned Pebble SDK:
 
 ```sh
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install pebble-tool --python 3.13
+curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
+uv tool install 'pebble-tool==5.0.39' --python 3.13
 pebble sdk install 4.33.1
 pebble sdk activate 4.33.1
 pebble --version
@@ -139,24 +140,26 @@ npm ci
 npm test
 pebble clean
 pebble build
+npm run verify:pbw
 cd ..
 ```
 
 The outputs are:
 
 ```text
-android/app/build/outputs/apk/debug/app-debug.apk
-watchapp/build/watchapp.pbw
+android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
+watchapp/build/locuspebble-watch.pbw
 ```
 
-Check versions and PBW contents before installation:
+The final npm command verifies PBW targets, metadata, resources, and embedded PKJS. Check versions
+and contents manually as needed before installation:
 
 ```sh
 ANDROID_SDK_ROOT=/absolute/path/to/Android/Sdk
 "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging \
-  android/app/build/outputs/apk/debug/app-debug.apk | head
-unzip -p watchapp/build/watchapp.pbw appinfo.json
-unzip -l watchapp/build/watchapp.pbw
+  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk | head
+unzip -p watchapp/build/locuspebble-watch.pbw appinfo.json
+unzip -l watchapp/build/locuspebble-watch.pbw
 ```
 
 The APK and PBW versions must match. The PBW must contain the embedded `pebble-js-app.js` and only
@@ -168,7 +171,7 @@ Kotlin, C, `watchapp/package.json`, and `protocol/README.md`.
 The Android target must run all three apps:
 
 1. CoreApp (`coredevices.coreapp`)
-2. Locus Pebble Bridge (`app.locuspebble.bridge`)
+2. Locus Pebble Bridge (`io.github.christianherget.locuspebble.bridge`)
 3. Locus Map 4 (`menion.android.locus`)
 
 ### Chromebook ARCVM
@@ -187,7 +190,7 @@ Always use an explicit serial if another emulator is present:
 ```sh
 adb -s "$ANDROID_SERIAL" shell getprop ro.product.cpu.abilist
 adb -s "$ANDROID_SERIAL" install -r \
-  android/app/build/outputs/apk/debug/app-debug.apk
+  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
 ```
 
 Install Locus Map from Google Play where possible. Launch it once, complete onboarding, grant the
@@ -209,12 +212,14 @@ cannot install an ARM-only APK. In that case, use a compatible ARM Android targe
 from source for the required ABI.
 
 CoreApp's direct QEMU transport is present in
-[`coredevices/mobileapp`](https://github.com/coredevices/mobileapp) commit `38fd4c6` and later. To
-build it from source:
+[`coredevices/mobileapp`](https://github.com/coredevices/mobileapp) commit
+`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`. To reproduce the verified source build, check out that
+exact revision:
 
 ```sh
 git clone https://github.com/coredevices/mobileapp.git coreapp
 cd coreapp
+git checkout --detach 38fd4c6892599d6a02b4b3ca0b3fd518a51d6170
 cp androidApp/src/google-services-dummy.json androidApp/src/google-services.json
 printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
 ./gradlew :androidApp:assembleDebug
@@ -222,6 +227,14 @@ adb -s "$ANDROID_SERIAL" install -r \
   androidApp/build/outputs/apk/debug/androidApp-debug.apk
 cd ..
 ```
+
+Open **Locus Pebble Bridge** after installing CoreApp. The bridge disables PebbleKit auto-selection
+and selects the exact `coredevices.coreapp` package automatically. Diagnostics should show that
+package under **Pebble/Core app**. Incoming Binder calls must resolve to the installed package UID;
+no separate signing-certificate enrollment is required.
+If Core attempted its first delivery while picker initialization was still in progress, wait for
+diagnostics to show CoreApp selected, then close and reopen the watchapp to
+replay the lifecycle open and start polling.
 
 CoreApp's basic watch, QEMU, locker, and PebbleKit functionality does not require production API
 tokens. Some account, bug-reporting, transcription, and online services do. Keep any such tokens,
@@ -233,7 +246,7 @@ Confirm installed packages and versions:
 ```sh
 adb -s "$ANDROID_SERIAL" shell dumpsys package coredevices.coreapp \
   | grep -E 'versionName=|versionCode='
-adb -s "$ANDROID_SERIAL" shell dumpsys package app.locuspebble.bridge \
+adb -s "$ANDROID_SERIAL" shell dumpsys package io.github.christianherget.locuspebble.bridge \
   | grep -E 'versionName=|versionCode='
 adb -s "$ANDROID_SERIAL" shell pm path menion.android.locus
 ```
@@ -351,7 +364,7 @@ window's keyboard for buttons. This is an important current limitation for unatt
 Build the PBW before this step. Copy it to Android storage:
 
 ```sh
-adb -s "$ANDROID_SERIAL" push watchapp/build/watchapp.pbw \
+adb -s "$ANDROID_SERIAL" push watchapp/build/locuspebble-watch.pbw \
   /sdcard/Download/locus-bridge.pbw
 ```
 
@@ -370,7 +383,7 @@ After launch, open the bridge diagnostics screen:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/.MainActivity
+  -n io.github.christianherget.locuspebble.bridge/.MainActivity
 ```
 
 Expected values are:
@@ -395,9 +408,12 @@ The delivered activity may be reported as
 
 ## 7. Configure profiles and verify settings
 
-Open the watchapp settings from CoreApp while the watchapp is running. The first opening may show
-cached data while the profile query completes. A healthy fresh response changes the notice to
-**Locus profiles updated**.
+Open the watchapp settings from CoreApp while the watchapp is running. With a valid same-version
+cache, the page opens immediately with a stale-data notice while a refresh is queued. Without a
+valid cache, it waits for a fresh response for up to 500 ms and then opens with either fresh data or
+an unavailable notice. A response received after a page is already open is stored atomically for
+the next opening; the data URL cannot update the already-open page. A complete empty response also
+replaces the old cache and is shown explicitly instead of retaining stale profile names.
 
 Verify all of the following:
 
@@ -415,7 +431,7 @@ If settings says no profile response has arrived:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/.MainActivity
+  -n io.github.christianherget.locuspebble.bridge/.MainActivity
 adb -s "$ANDROID_SERIAL" logcat -d \
   | grep -E 'AppMessagePush|PROFILE|QemuTransport|PebbleProtocol'
 ```
@@ -452,9 +468,14 @@ test recording should be left running or stopped and saved.
    ```
 
 The command dictionary must contain protocol v3, message type 2, command 1, a command ID, a session
-ID, the matching release version, and the exact Locus profile name. The result dictionary must use
-message type 3 with result 0. Finally, the bridge diagnostics must report **Recording: Recording**.
-An OK command result without the later recording state is not a complete pass.
+ID, the matching release version, and the exact Locus profile name. Before the result dictionary, the
+bridge must successfully deliver a message-type-1 snapshot whose state is **Recording** and whose
+snapshot delivery epoch is strictly newer than every snapshot delivery issued before the command.
+This value is a durable ordering stamp and may be ahead of wall time; it is not the Locus observation
+timestamp. Only then may
+it send message type 3 with result 0. Confirm that no older snapshot is accepted afterward and that
+the bridge diagnostics and watch remain **Recording**. An OK result without that prior authoritative
+state snapshot is not a complete pass.
 
 Large snapshot dictionaries can exceed Android logcat's per-line display limit. When the recording
 state tuple is truncated, use the bridge diagnostics or watch dashboard as the authoritative
@@ -559,6 +580,10 @@ translation, an ARM target, or a CoreApp source build containing the target ABI.
 - Distinguish a fresh response from a stale cached response.
 - Look for a complete, single-transfer profile chunk sequence.
 
+### Command state after bridge process restart
+
+The command deduplication journal, snapshot-ordering epochs, and profile-transfer serials are stored in-memory in the Android bridge process. If the Android process is forcefully killed or crashes, this state is lost. Upon restarting the process, the bridge establishes a new epoch baseline seeded from the system clock. Any command that was pending or retried while the bridge was down may be executed by the fresh bridge without deduplication. Ordinary refresh preferences remain eligible for Android cloud backup and device transfer.
+
 ### ARCVM shows `PlaceholderActivity`
 
 Refocus the intended app explicitly. For CoreApp:
@@ -616,7 +641,7 @@ The first container milestone should run these commands without Android or GUI a
 ```sh
 ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
   :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
-cd watchapp && npm ci && npm test && pebble clean && pebble build
+cd watchapp && npm ci && npm test && pebble clean && pebble build && npm run verify:pbw
 ```
 
 ### Phase 2: QEMU service
