@@ -39,6 +39,7 @@ import app.locuspebble.bridge.pebble.CoreAppConnectionKind
 import app.locuspebble.bridge.pebble.TrustedPebbleCompanionProvider
 import app.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.DefaultPebbleInfoRetriever
+import io.rebble.pebblekit2.client.DefaultPebbleSender
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -70,6 +71,19 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 runPeriodicDiagnostics(::refreshDiagnostics)
+            }
+        }
+        if (intent?.action == "locus.api.android.INTENT_ITEM_MAIN_FUNCTION") {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val watches = DefaultPebbleInfoRetriever(applicationContext).getConnectedWatches().first()
+                    if (watches.isNotEmpty()) {
+                        val identifiers = watches.map { it.id }
+                        DefaultPebbleSender(applicationContext).startAppOnTheWatch(BridgeProtocol.APP_UUID, identifiers)
+                    }
+                } catch (e: Exception) {
+                    // Ignore communication errors
+                }
             }
         }
     }

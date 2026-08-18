@@ -22,6 +22,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Register as a Locus add-on -->
+            <intent-filter>
+                <action android:name="locus.api.android.INTENT_ITEM_MAIN_FUNCTION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <!-- Export permits Core binding; the service verifies the selected CoreApp package and caller UID. -->
         <service
