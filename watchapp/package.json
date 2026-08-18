@@ -2,7 +2,7 @@
   "name": "locus-pebble-bridge",
   "description": "Locus Map recording controls and live statistics for Pebble Time 2 and Round 2.",
   "author": "Christian Herget",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "license": "Apache-2.0",
   "repository": {

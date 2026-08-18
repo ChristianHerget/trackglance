@@ -50,7 +50,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.1.7 |
+| Bridge and watchapp | 0.1.8 |
 | Wire protocol | v3 |
 | CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
