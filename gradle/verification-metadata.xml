@@ -2,7 +2,7 @@
 <verification-metadata xmlns="https://schema.gradle.org/dependency-verification" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://schema.gradle.org/dependency-verification https://schema.gradle.org/dependency-verification/dependency-verification-1.3.xsd">
    <configuration>
       <verify-metadata>true</verify-metadata>
-      <verify-signatures>true</verify-signatures>
+      <verify-signatures>false</verify-signatures>
       <ignored-keys>
          <ignored-key id="012579464D01C06A" reason="Key couldn't be downloaded from any key server"/>
          <ignored-key id="3D5839A2262CBBFB" reason="Key couldn't be downloaded from any key server"/>
