@@ -2,7 +2,7 @@
 
 The Android bridge, Pebble watchapp, and embedded PebbleKit JS use AppMessage dictionaries under
 UUID `51c8d7cf-4cb2-4ef8-98c9-641706feb250`. Version 3 is intentionally incompatible with v2;
-the `0.1.8` APK and PBW must be upgraded together. Receivers reject any other version.
+the `0.1.9` APK and PBW must be upgraded together. Receivers reject any other version.
 
 All statistics use signed 32-bit integer SI wire units. `-2147483648` means unavailable; the watch
 renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units remain metric.
@@ -27,7 +27,7 @@ renders it as `—`. Time and IDs use unsigned 32-bit values where noted. Units 
 | 23–29 | average/max HR, average/max cadence, average/max power, energy | bpm, rpm, watts, kcal |
 | 30–33 | chunk index/count/data/transfer ID | zero-based index, total, at most 80 UTF-8 bytes, 31-bit serial ID `0..2147483647` |
 | 34 | Locus mode | reserved |
-| 35 | release version | exact APK/PBW release string, currently `0.1.8` |
+| 35 | release version | exact APK/PBW release string, currently `0.1.9` |
 | 36 | waypoint name | confirmed dictation for command `5`; nonblank UTF-8, at most 120 bytes |
 | 37 | current heart rate | BPM; Locus-derived in snapshots, watch-derived only in type `8` |
 | 38 | heart-rate sequence | unsigned, increasing within the watch session |
@@ -153,6 +153,10 @@ watch validates and caches only a complete transfer, then relays a complete cach
 JS. The complete list is at most 8191 bytes and 103 chunks; every name obeys the 255-byte field rules
 and exact duplicates are invalid. Profile-list chunks use result `0` for a non-empty query and `3`
 for an authoritative empty list, so an empty Locus result is distinguishable from no relay response.
+After complete reassembly and the cache write, the watch emits type `10` with the Android transfer ID
+and result `0` or `3`. A cache-write failure instead reports storage failure `9`. Android accepts the
+result only for its current transfer, which lets debug automation distinguish source-side delivery
+from watch-side reassembly and persistence without changing protocol version 3.
 
 All envelope fields use their documented integer or string tuple types; decimal strings are not
 accepted as integers. A durable sender places transfer-generation marker `1` on every chunk. Before
@@ -231,7 +235,7 @@ the bridge polls Locus for about 1.5 seconds and returns the resulting snapshot.
 shows only ephemeral last-watch BPM, forwarding time, and current Locus BPM; no HR history is stored
 or logged.
 
-The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.8
+The serialized protection field remains present for protocol-v3 compatibility. Version 0.1.9
 ignores incoming values and always emits `0`; formerly protected defaults migrate to ordinary
 profiles without changing their name, mapping, metrics, order, or active watch selection. Display names are
 local user data and may be localized only when a fresh configuration is created. Exact Locus names

@@ -1,5 +1,8 @@
 package io.github.christianherget.locuspebble.bridge.locus
 
+import android.content.Context
+import android.content.Intent
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -30,8 +33,15 @@ class LocusEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         assumeTrue("Real Locus test was not explicitly enabled", arguments.getString("runLocusIntegration") == "true")
         gateway = LocusGateway(ApplicationProvider.getApplicationContext())
-        assumeTrue("Locus Map is unavailable", gateway.readSnapshot().state != BridgeProtocol.RecordingState.UNAVAILABLE)
-        assumeTrue("Refusing to modify an existing recording", gateway.readSnapshot().state == BridgeProtocol.RecordingState.STOPPED)
+        assertTrue(
+            "Locus Map is unavailable",
+            gateway.readSnapshot().state != BridgeProtocol.RecordingState.UNAVAILABLE,
+        )
+        assertEquals(
+            "Refusing to modify an existing recording",
+            BridgeProtocol.RecordingState.STOPPED,
+            gateway.readSnapshot().state,
+        )
     }
 
     @After fun stopRecordingIfTestFailedMidSequence() {
@@ -44,11 +54,12 @@ class LocusEndToEndTest {
         val profileName = (gateway.recordingProfiles() as? RecordingProfilesResult.Success)
             ?.names
             ?.firstOrNull()
-        assumeTrue("Locus has no recording profile", profileName != null)
+        assertTrue("Locus has no recording profile", profileName != null)
+        foregroundLocus()
         assertEquals(
             "Locus rejected named Start",
             BridgeProtocol.Result.OK,
-            gateway.execute(BridgeProtocol.Command.START, profileName),
+            gateway.execute(BridgeProtocol.Command.START, profileName!!),
         )
         testStartedRecording = true
         assertTrue("Locus did not enter recording state", awaitState(BridgeProtocol.RecordingState.RECORDING))
@@ -83,6 +94,34 @@ class LocusEndToEndTest {
         assertEquals("Locus rejected $command", BridgeProtocol.Result.OK, gateway.execute(command))
     }
 
+    private fun foregroundLocus() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(LOCUS_PACKAGE)
+        assertTrue("Locus has no launch activity", launchIntent != null)
+        context.startActivity(launchIntent!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+
+        val deadline = SystemClock.elapsedRealtime() + 15_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (shell("dumpsys activity activities").lineSequence().any {
+                    "topResumedActivity=" in it && "$LOCUS_PACKAGE/" in it
+                }
+            ) {
+                // Activity resume precedes full map/recording-engine readiness on a cold, slower
+                // emulator. Preserve the observed launch-wait-intent compatibility sequence.
+                Thread.sleep(LOCUS_FOREGROUND_SETTLE_MILLIS)
+                return
+            }
+            Thread.sleep(250)
+        }
+        throw AssertionError("Locus did not reach the foreground before Start")
+    }
+
+    private fun shell(command: String): String {
+        val descriptor = InstrumentationRegistry.getInstrumentation()
+            .uiAutomation.executeShellCommand(command)
+        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
+    }
+
     private fun pauseForObservation() {
         val delay = InstrumentationRegistry.getArguments()
             .getString("observationDelayMillis")?.toLongOrNull() ?: 0L
@@ -98,12 +137,17 @@ class LocusEndToEndTest {
         return gateway.readSnapshot().state == expected
     }
 
-    private fun awaitHeartRate(expected: Int, timeoutMillis: Long = 5_000): Boolean {
+    private fun awaitHeartRate(expected: Int, timeoutMillis: Long = 15_000): Boolean {
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         while (SystemClock.elapsedRealtime() < deadline) {
             if (gateway.readSnapshot().currentHeartRate == expected) return true
             Thread.sleep(100)
         }
         return gateway.readSnapshot().currentHeartRate == expected
+    }
+
+    private companion object {
+        const val LOCUS_PACKAGE = "menion.android.locus"
+        const val LOCUS_FOREGROUND_SETTLE_MILLIS = 10_000L
     }
 }

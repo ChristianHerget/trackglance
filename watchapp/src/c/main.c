@@ -1,12 +1,14 @@
 #include <pebble.h>
 
+#include "app_message_handler.h"
 #include "persistent_blob.h"
+#include "ui_metrics.h"
 #include "watch_build_hash.auto.h"
 #include "watch_config.h"
 #include "watch_state.h"
 
 #define PROTOCOL_VERSION 3
-#define RELEASE_VERSION "0.1.8"
+#define RELEASE_VERSION "0.1.9"
 #define MAX_SLOTS WATCH_MAX_SLOTS
 #define MAX_PROFILES WATCH_MAX_PROFILES
 #define NAME_SIZE WATCH_PROFILE_NAME_SIZE
@@ -28,7 +30,7 @@
 #define PROFILE_TRANSFER_TIMEOUT_SECONDS 45
 #define COMMAND_RESULT_TIMEOUT_SECONDS 120
 #define SNAPSHOT_STALE_SECONDS 30
-#define UNAVAILABLE INT32_MIN
+#define UNAVAILABLE UI_METRIC_UNAVAILABLE
 
 #define PERSIST_CONFIG_LEGACY 100
 #define PERSIST_PENDING_CONFIG_LEGACY 101
@@ -39,9 +41,6 @@
 #define PERSIST_CONFIG_META 200
 #define PERSIST_PENDING_CONFIG_META 201
 #define PERSIST_PROFILE_LIST_META 202
-#define PERSIST_CONFIG_META_BACKUP 203
-#define PERSIST_PENDING_CONFIG_META_BACKUP 204
-#define PERSIST_PROFILE_LIST_META_BACKUP 205
 
 enum {
   MSG_SNAPSHOT = 1,
@@ -84,57 +83,8 @@ enum {
   RESULT_STORAGE_FAILED = 9,
 };
 
-enum {
-  METRIC_ELAPSED = 1,
-  METRIC_MOVING_TIME = 2,
-  METRIC_DISTANCE = 3,
-  METRIC_MOVING_DISTANCE = 4,
-  METRIC_CURRENT_SPEED = 5,
-  METRIC_AVERAGE_SPEED = 6,
-  METRIC_MAX_SPEED = 7,
-  METRIC_CURRENT_PACE = 8,
-  METRIC_AVERAGE_PACE = 9,
-  METRIC_ALTITUDE = 10,
-  METRIC_ASCENT = 11,
-  METRIC_DESCENT = 12,
-  METRIC_VERTICAL_SPEED = 13,
-  METRIC_SLOPE = 14,
-  METRIC_AVG_HR = 15,
-  METRIC_MAX_HR = 16,
-  METRIC_AVG_CADENCE = 17,
-  METRIC_MAX_CADENCE = 18,
-  METRIC_AVG_POWER = 19,
-  METRIC_MAX_POWER = 20,
-  METRIC_ENERGY = 21,
-  METRIC_CURRENT_HR = 22,
-};
-
 typedef WatchProfile Profile;
-
-typedef struct {
-  int state;
-  uint32_t sample_epoch;
-  uint32_t elapsed;
-  int32_t moving_time;
-  int32_t distance;
-  int32_t moving_distance;
-  int32_t current_speed;
-  int32_t average_speed;
-  int32_t max_speed;
-  int32_t altitude;
-  int32_t ascent;
-  int32_t descent;
-  int32_t vertical_speed;
-  int32_t slope;
-  int32_t avg_hr;
-  int32_t max_hr;
-  int32_t current_hr;
-  int32_t avg_cadence;
-  int32_t max_cadence;
-  int32_t avg_power;
-  int32_t max_power;
-  int32_t energy;
-} Snapshot;
+typedef UiMetricSnapshot Snapshot;
 
 typedef struct {
   int type;
@@ -161,21 +111,21 @@ typedef enum {
 } OutboundKind;
 
 static const PersistentBlob s_config_blob = {
-  .metadata_key = {PERSIST_CONFIG_META, PERSIST_CONFIG_META_BACKUP},
+  .record_key = PERSIST_CONFIG_META,
   .legacy_key = PERSIST_CONFIG_LEGACY,
-  .bank_base = {1000, 1020},
+  .chunk_base = 1000,
   .max_chunks = 16,
 };
 static const PersistentBlob s_pending_config_blob = {
-  .metadata_key = {PERSIST_PENDING_CONFIG_META, PERSIST_PENDING_CONFIG_META_BACKUP},
+  .record_key = PERSIST_PENDING_CONFIG_META,
   .legacy_key = PERSIST_PENDING_CONFIG_LEGACY,
-  .bank_base = {1040, 1060},
+  .chunk_base = 1040,
   .max_chunks = 16,
 };
 static const PersistentBlob s_profile_list_blob = {
-  .metadata_key = {PERSIST_PROFILE_LIST_META, PERSIST_PROFILE_LIST_META_BACKUP},
+  .record_key = PERSIST_PROFILE_LIST_META,
   .legacy_key = PERSIST_PROFILE_LIST_LEGACY,
-  .bank_base = {1080, 1120},
+  .chunk_base = 1080,
   .max_chunks = 32,
 };
 
@@ -248,6 +198,7 @@ static WatchProfileTransfer s_profile_transfer;
 static bool s_profile_durable_generation_seen;
 static bool s_profile_pending_ready;
 static int s_profile_pending_result = RESULT_FAILED;
+static int32_t s_profile_pending_id = -1;
 
 static ControlMessage s_control_queue[CONTROL_QUEUE_SIZE];
 static uint8_t s_control_head;
@@ -313,89 +264,6 @@ static void show_notice(const char *message, int seconds) {
   const time_t now = time(NULL);
   s_notice_until = now + seconds;
   render();
-}
-
-static bool tuple_signed_value(const Tuple *tuple, int32_t *output) {
-  if (!tuple || !output || tuple->type != TUPLE_INT) return false;
-  if (tuple->length == 1) {
-    *output = tuple->value->int8;
-    return true;
-  }
-  if (tuple->length == 2) {
-    int16_t value;
-    memcpy(&value, &tuple->value->int16, sizeof(value));
-    *output = value;
-    return true;
-  }
-  if (tuple->length == 4) {
-    memcpy(output, &tuple->value->int32, sizeof(*output));
-    return true;
-  }
-  return false;
-}
-
-static bool tuple_unsigned_value(const Tuple *tuple, uint32_t *output) {
-  if (!tuple || !output || tuple->type != TUPLE_UINT) return false;
-  if (tuple->length == 1) {
-    *output = tuple->value->uint8;
-    return true;
-  }
-  if (tuple->length == 2) {
-    uint16_t value;
-    memcpy(&value, &tuple->value->uint16, sizeof(value));
-    *output = value;
-    return true;
-  }
-  if (tuple->length == 4) {
-    memcpy(output, &tuple->value->uint32, sizeof(*output));
-    return true;
-  }
-  return false;
-}
-
-static bool dictionary_int32(DictionaryIterator *iterator, uint32_t key, int32_t *output) {
-  Tuple *tuple = iterator ? dict_find(iterator, key) : NULL;
-  if (tuple_signed_value(tuple, output)) return true;
-  uint32_t value;
-  if (!tuple_unsigned_value(tuple, &value) || value > INT32_MAX) return false;
-  *output = (int32_t)value;
-  return true;
-}
-
-// 0 is an absent legacy marker, 1 is the current durable generation, and -1 is malformed.
-static int transfer_generation(DictionaryIterator *iterator) {
-  if (!iterator || !dict_find(iterator, MESSAGE_KEY_TRANSFER_GENERATION)) return 0;
-  int32_t generation = 0;
-  return dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_GENERATION, &generation) &&
-      generation == DURABLE_TRANSFER_GENERATION ? 1 : -1;
-}
-
-static bool dictionary_uint32(DictionaryIterator *iterator, uint32_t key, uint32_t *output) {
-  Tuple *tuple = iterator ? dict_find(iterator, key) : NULL;
-  if (tuple_unsigned_value(tuple, output)) return true;
-  int32_t value;
-  if (!tuple_signed_value(tuple, &value) || value < 0) return false;
-  *output = (uint32_t)value;
-  return true;
-}
-
-static bool dictionary_cstring(
-    DictionaryIterator *iterator,
-    uint32_t key,
-    size_t max_bytes,
-    const char **output,
-    size_t *length) {
-  Tuple *tuple = iterator ? dict_find(iterator, key) : NULL;
-  if (!tuple || tuple->type != TUPLE_CSTRING || tuple->length < 1 ||
-      (size_t)tuple->length > max_bytes + 1) {
-    return false;
-  }
-  const char *value = tuple->value->cstring;
-  const char *terminator = memchr(value, '\0', tuple->length);
-  if (terminator != value + tuple->length - 1) return false;
-  if (output) *output = value;
-  if (length) *length = tuple->length - 1;
-  return true;
 }
 
 static bool read_persisted_string(uint32_t key, char *output, size_t output_size) {
@@ -519,16 +387,13 @@ static bool prepare_pending_config_for_direct_apply(void) {
     return cleanup_pending_config("Invalid pending configuration cleanup failed");
   }
 
-  // A queued result made this configuration the confirmed baseline. Promote it before
-  // deleting the pending copy so every persistence prefix retains either this value or
-  // the incoming replacement. If cleanup fails, installing it also keeps RAM and the
-  // active blob aligned while a retry prevents a later restart from rolling back.
+  // A queued result is the recovery baseline until the incoming replacement is durable.
   if (!store_active_config(s_pending_chunks)) {
     show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
     return false;
   }
   install_config(&s_parsed_config, true);
-  return cleanup_pending_config("Promoted pending configuration cleanup failed");
+  return true;
 }
 
 static void apply_pending_config_if_stopped(void) {
@@ -598,138 +463,11 @@ static void apply_theme(void) {
 }
 
 static const char *metric_label(int metric) {
-  switch (metric) {
-    case METRIC_ELAPSED: return tr("Elapsed", "Gesamtzeit");
-    case METRIC_MOVING_TIME: return tr("Moving", "Bewegungszeit");
-    case METRIC_DISTANCE: return tr("Distance", "Strecke");
-    case METRIC_MOVING_DISTANCE: return tr("Move dist", "Bewegungsstr.");
-    case METRIC_CURRENT_SPEED: return tr("Speed", "Tempo");
-    case METRIC_AVERAGE_SPEED: return tr("Average", "Durchschnitt");
-    case METRIC_MAX_SPEED: return tr("Max speed", "Max. Tempo");
-    case METRIC_CURRENT_PACE: return tr("Pace", "Pace");
-    case METRIC_AVERAGE_PACE: return tr("Avg pace", "Ø Pace");
-    case METRIC_ALTITUDE: return tr("Altitude", "Höhe");
-    case METRIC_ASCENT: return tr("Ascent", "Anstieg");
-    case METRIC_DESCENT: return tr("Descent", "Abstieg");
-    case METRIC_VERTICAL_SPEED: return tr("Vertical", "Vertikal");
-    case METRIC_SLOPE: return tr("Slope", "Steigung");
-    case METRIC_AVG_HR: return tr("Avg HR", "Ø Puls");
-    case METRIC_MAX_HR: return tr("Max HR", "Max. Puls");
-    case METRIC_AVG_CADENCE: return tr("Avg cadence", "Ø Frequenz");
-    case METRIC_MAX_CADENCE: return tr("Max cadence", "Max. Frequenz");
-    case METRIC_AVG_POWER: return tr("Avg power", "Ø Leistung");
-    case METRIC_MAX_POWER: return tr("Max power", "Max. Leistung");
-    case METRIC_ENERGY: return tr("Energy", "Energie");
-    case METRIC_CURRENT_HR: return tr("Current HR", "Aktueller Puls");
-    default: return "";
-  }
-}
-
-static int32_t metric_value(int metric) {
-  switch (metric) {
-    case METRIC_MOVING_TIME: return s_snapshot.moving_time;
-    case METRIC_DISTANCE: return s_snapshot.distance;
-    case METRIC_MOVING_DISTANCE: return s_snapshot.moving_distance;
-    case METRIC_CURRENT_SPEED:
-    case METRIC_CURRENT_PACE: return s_snapshot.current_speed;
-    case METRIC_AVERAGE_SPEED:
-    case METRIC_AVERAGE_PACE: return s_snapshot.average_speed;
-    case METRIC_MAX_SPEED: return s_snapshot.max_speed;
-    case METRIC_ALTITUDE: return s_snapshot.altitude;
-    case METRIC_ASCENT: return s_snapshot.ascent;
-    case METRIC_DESCENT: return s_snapshot.descent;
-    case METRIC_VERTICAL_SPEED: return s_snapshot.vertical_speed;
-    case METRIC_SLOPE: return s_snapshot.slope;
-    case METRIC_AVG_HR: return s_snapshot.avg_hr;
-    case METRIC_MAX_HR: return s_snapshot.max_hr;
-    case METRIC_AVG_CADENCE: return s_snapshot.avg_cadence;
-    case METRIC_MAX_CADENCE: return s_snapshot.max_cadence;
-    case METRIC_AVG_POWER: return s_snapshot.avg_power;
-    case METRIC_MAX_POWER: return s_snapshot.max_power;
-    case METRIC_ENERGY: return s_snapshot.energy;
-    case METRIC_CURRENT_HR: return s_snapshot.current_hr;
-    default: return UNAVAILABLE;
-  }
-}
-
-static uint32_t magnitude(int32_t value) {
-  return value < 0 ? (uint32_t)(-(int64_t)value) : (uint32_t)value;
-}
-
-static void format_fixed(
-    char *output,
-    size_t size,
-    int32_t value,
-    uint32_t scale,
-    uint8_t digits,
-    const char *suffix) {
-  const uint32_t absolute = magnitude(value);
-  uint32_t divisor = 1;
-  for (uint8_t i = 0; i < digits; i++) divisor *= 10;
-  const uint32_t fraction = (absolute % scale) * divisor / scale;
-  if (digits == 1) {
-    snprintf(output, size, "%s%lu.%01lu%s", value < 0 ? "-" : "",
-             (unsigned long)(absolute / scale), (unsigned long)fraction, suffix);
-  } else {
-    snprintf(output, size, "%s%lu.%02lu%s", value < 0 ? "-" : "",
-             (unsigned long)(absolute / scale), (unsigned long)fraction, suffix);
-  }
-}
-
-static void format_time(char *output, size_t size, uint32_t seconds) {
-  snprintf(output, size, "%02lu:%02lu:%02lu",
-           (unsigned long)(seconds / 3600),
-           (unsigned long)((seconds / 60) % 60),
-           (unsigned long)(seconds % 60));
-}
-
-static bool nonnegative_metric(int metric) {
-  return metric == METRIC_MOVING_TIME ||
-      (metric >= METRIC_DISTANCE && metric <= METRIC_AVERAGE_PACE) ||
-      metric == METRIC_ASCENT || metric == METRIC_DESCENT ||
-      (metric >= METRIC_AVG_HR && metric <= METRIC_CURRENT_HR);
+  return ui_metric_label(metric, s_german);
 }
 
 static void format_metric(char *output, size_t size, int metric, uint32_t elapsed) {
-  if (metric == METRIC_ELAPSED) {
-    format_time(output, size, elapsed);
-    return;
-  }
-  const int32_t value = metric_value(metric);
-  if (value == UNAVAILABLE || (nonnegative_metric(metric) && value < 0)) {
-    copy_text(output, size, "—");
-    return;
-  }
-  if (metric == METRIC_MOVING_TIME) {
-    format_time(output, size, (uint32_t)value);
-  } else if (metric == METRIC_DISTANCE || metric == METRIC_MOVING_DISTANCE) {
-    format_fixed(output, size, value, 1000, 2, " km");
-  } else if (metric >= METRIC_CURRENT_SPEED && metric <= METRIC_MAX_SPEED) {
-    const int32_t tenths_kph = (int32_t)(((int64_t)value * 36) / 100);
-    format_fixed(output, size, tenths_kph, 10, 1, " km/h");
-  } else if (metric == METRIC_CURRENT_PACE || metric == METRIC_AVERAGE_PACE) {
-    if (value <= 0) {
-      copy_text(output, size, "—");
-    } else {
-      const int seconds = 100000 / value;
-      snprintf(output, size, "%d:%02d /km", seconds / 60, seconds % 60);
-    }
-  } else if (metric >= METRIC_ALTITUDE && metric <= METRIC_DESCENT) {
-    format_fixed(output, size, value, 10, 1, " m");
-  } else if (metric == METRIC_VERTICAL_SPEED) {
-    format_fixed(output, size, value, 100, 2, " m/s");
-  } else if (metric == METRIC_SLOPE) {
-    format_fixed(output, size, value, 10, 1, "%");
-  } else if (metric == METRIC_AVG_HR || metric == METRIC_MAX_HR ||
-             metric == METRIC_CURRENT_HR) {
-    snprintf(output, size, "%ld bpm", (long)value);
-  } else if (metric == METRIC_AVG_CADENCE || metric == METRIC_MAX_CADENCE) {
-    snprintf(output, size, "%ld rpm", (long)value);
-  } else if (metric == METRIC_AVG_POWER || metric == METRIC_MAX_POWER) {
-    snprintf(output, size, "%ld W", (long)value);
-  } else {
-    snprintf(output, size, "%ld kcal", (long)value);
-  }
+  ui_metric_format(output, size, metric, &s_snapshot, elapsed);
 }
 
 static void layout_slots(void) {
@@ -1212,17 +950,20 @@ static void relay_pending_profile_list(void) {
       (s_profile_pending_result == RESULT_OK) != (length > 0) ||
       !watch_profile_list_valid(s_profile_chunks, length)) {
     s_profile_pending_ready = false;
+    s_profile_pending_id = -1;
     reset_profile_transfer();
     show_notice(tr("Invalid profile list", "Ungültige Profilliste"), 4);
     enqueue_deferred_profile_request();
     return;
   }
 
-  if (!persistent_blob_write(&s_profile_list_blob, s_profile_chunks, length)) {
+  const bool persisted = persistent_blob_write(&s_profile_list_blob, s_profile_chunks, length);
+  if (!persisted) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Profile list cache could not be persisted");
   }
   s_relay_result = s_profile_pending_result;
   s_profile_pending_ready = false;
+  s_profile_pending_id = -1;
   reset_profile_transfer();
   relay_profile_list();
   if (s_relay_count) {
@@ -1234,6 +975,7 @@ static void relay_pending_profile_list(void) {
 
 static void complete_profile_transfer(void) {
   s_profile_pending_result = s_profile_transfer.result;
+  s_profile_pending_id = s_profile_transfer.id;
   s_profile_pending_ready = true;
   s_profile_transfer.id = -1;
   relay_pending_profile_list();
@@ -1246,19 +988,19 @@ static void accept_profile_chunk(DictionaryIterator *iterator) {
   int32_t result;
   const char *data;
   size_t length;
-  const int generation = transfer_generation(iterator);
+  const int generation = app_message_transfer_generation(iterator, DURABLE_TRANSFER_GENERATION);
   if (generation < 0 || (s_profile_durable_generation_seen && generation != 1)) return;
   if (s_relay_count || s_profile_pending_ready) {
     s_request_profiles_after_relay = true;
     return;
   }
-  if (!dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_RESULT, &result) ||
+  if (!app_message_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
+  if (!app_message_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
+      !app_message_int32(iterator, MESSAGE_KEY_RESULT, &result) ||
       count < 1 || count > PROFILE_MAX_CHUNKS || index < 0 || index >= count ||
       (result != RESULT_OK && result != RESULT_FAILED) ||
-      !dictionary_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, PROFILE_CHUNK_BYTES, &data, &length)) {
+      !app_message_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, PROFILE_CHUNK_BYTES, &data, &length)) {
     if (id == s_profile_transfer.id) {
       reset_profile_transfer();
       enqueue_deferred_profile_request();
@@ -1312,13 +1054,13 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   int32_t count;
   const char *data;
   size_t length;
-  const int generation = transfer_generation(iterator);
+  const int generation = app_message_transfer_generation(iterator, DURABLE_TRANSFER_GENERATION);
   if (generation < 0 || (s_config_durable_generation_seen && generation != 1)) return;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
+  if (!app_message_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
+  if (!app_message_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
       count < 1 || count > CONFIG_MAX_CHUNKS || index < 0 || index >= count ||
-      !dictionary_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, CONFIG_CHUNK_BYTES, &data, &length)) {
+      !app_message_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, CONFIG_CHUNK_BYTES, &data, &length)) {
     if (generation == 1 && !s_config_durable_generation_seen) return;
     if (id == s_config_transfer.id) reset_config_transfer();
     return;
@@ -1373,6 +1115,10 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
         show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
       } else if (store_active_config(s_chunks)) {
         install_config(&s_parsed_config, true);
+        if (persistent_blob_exists(&s_pending_config_blob) &&
+            !cleanup_pending_config("Replaced configuration but pending cleanup failed")) {
+          result = RESULT_STORAGE_FAILED;
+        }
       } else {
         result = RESULT_STORAGE_FAILED;
         show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
@@ -1778,69 +1524,9 @@ static void update_health_subscription(void) {
   }
 }
 
-static bool nonnegative_wire_value(int32_t value) {
-  return value == UNAVAILABLE || value >= 0;
-}
-
-static bool snapshot_values_valid(const Snapshot *snapshot) {
-  return snapshot && snapshot->state >= STATE_STOPPED && snapshot->state <= STATE_UNAVAILABLE &&
-      nonnegative_wire_value(snapshot->moving_time) &&
-      nonnegative_wire_value(snapshot->distance) &&
-      nonnegative_wire_value(snapshot->moving_distance) &&
-      nonnegative_wire_value(snapshot->current_speed) &&
-      nonnegative_wire_value(snapshot->average_speed) &&
-      nonnegative_wire_value(snapshot->max_speed) &&
-      nonnegative_wire_value(snapshot->ascent) &&
-      nonnegative_wire_value(snapshot->descent) &&
-      nonnegative_wire_value(snapshot->avg_hr) &&
-      nonnegative_wire_value(snapshot->max_hr) &&
-      nonnegative_wire_value(snapshot->current_hr) &&
-      nonnegative_wire_value(snapshot->avg_cadence) &&
-      nonnegative_wire_value(snapshot->max_cadence) &&
-      nonnegative_wire_value(snapshot->avg_power) &&
-      nonnegative_wire_value(snapshot->max_power) &&
-      nonnegative_wire_value(snapshot->energy);
-}
-
-static bool parse_snapshot(DictionaryIterator *iterator, Snapshot *output) {
-  if (!iterator || !output) return false;
-  Snapshot snapshot = {0};
-  int32_t state;
-  int32_t unit_system;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_RECORDING_STATE, &state) ||
-      !dictionary_uint32(iterator, MESSAGE_KEY_SAMPLE_EPOCH_SECONDS, &snapshot.sample_epoch) ||
-      !dictionary_uint32(iterator, MESSAGE_KEY_ELAPSED_SECONDS, &snapshot.elapsed) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MOVING_SECONDS, &snapshot.moving_time) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_DISTANCE_METRES, &snapshot.distance) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_METRES, &snapshot.moving_distance) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_CMPS, &snapshot.current_speed) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_CMPS, &snapshot.average_speed) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MAX_SPEED_CMPS, &snapshot.max_speed) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_ALTITUDE_DECIMETRES, &snapshot.altitude) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_ASCENT_DECIMETRES, &snapshot.ascent) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_DESCENT_DECIMETRES, &snapshot.descent) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_CMPS, &snapshot.vertical_speed) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_SLOPE_TENTHS_PERCENT, &snapshot.slope) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_AVERAGE_HEART_RATE, &snapshot.avg_hr) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MAX_HEART_RATE, &snapshot.max_hr) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_CURRENT_HEART_RATE, &snapshot.current_hr) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_AVERAGE_CADENCE, &snapshot.avg_cadence) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MAX_CADENCE, &snapshot.max_cadence) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_AVERAGE_POWER, &snapshot.avg_power) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_MAX_POWER, &snapshot.max_power) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_ENERGY_KCAL, &snapshot.energy) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_UNIT_SYSTEM, &unit_system)) {
-    return false;
-  }
-  snapshot.state = state;
-  if (unit_system != 0 || !snapshot_values_valid(&snapshot)) return false;
-  *output = snapshot;
-  return true;
-}
-
 static void accept_snapshot(DictionaryIterator *iterator) {
   Snapshot candidate;
-  if (!parse_snapshot(iterator, &candidate)) {
+  if (!app_message_snapshot(iterator, &candidate)) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Rejected incomplete or invalid snapshot");
     return;
   }
@@ -1867,9 +1553,9 @@ static void accept_command_result(DictionaryIterator *iterator) {
   uint32_t session_id;
   uint32_t command_id;
   int32_t result;
-  if (!dictionary_uint32(iterator, MESSAGE_KEY_SESSION_ID, &session_id) ||
-      !dictionary_uint32(iterator, MESSAGE_KEY_COMMAND_ID, &command_id) ||
-      !dictionary_int32(iterator, MESSAGE_KEY_RESULT, &result) ||
+  if (!app_message_uint32(iterator, MESSAGE_KEY_SESSION_ID, &session_id) ||
+      !app_message_uint32(iterator, MESSAGE_KEY_COMMAND_ID, &command_id) ||
+      !app_message_int32(iterator, MESSAGE_KEY_RESULT, &result) ||
       result < RESULT_OK || result > RESULT_INVALID_WAYPOINT_NAME ||
       session_id != s_session_id) {
     return;
@@ -1900,14 +1586,14 @@ static void accept_command_result(DictionaryIterator *iterator) {
 
 static void inbox(DictionaryIterator *iterator, void *context) {
   int32_t version;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_PROTOCOL_VERSION, &version) ||
+  if (!app_message_int32(iterator, MESSAGE_KEY_PROTOCOL_VERSION, &version) ||
       version != PROTOCOL_VERSION) {
     show_notice(tr("Protocol mismatch", "Protokoll nicht kompatibel"), 6);
     return;
   }
   const char *release;
   size_t release_length;
-  if (!dictionary_cstring(
+  if (!app_message_cstring(
           iterator, MESSAGE_KEY_APP_VERSION, sizeof(RELEASE_VERSION) - 1,
           &release, &release_length) ||
       release_length != sizeof(RELEASE_VERSION) - 1 ||
@@ -1916,7 +1602,7 @@ static void inbox(DictionaryIterator *iterator, void *context) {
     return;
   }
   int32_t type;
-  if (!dictionary_int32(iterator, MESSAGE_KEY_MESSAGE_TYPE, &type)) return;
+  if (!app_message_int32(iterator, MESSAGE_KEY_MESSAGE_TYPE, &type)) return;
   if (type == MSG_CONFIG_CHUNK) {
     accept_config_chunk(iterator);
   } else if (type == MSG_PROFILE_LIST_CHUNK) {

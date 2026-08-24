@@ -2,7 +2,7 @@
   "name": "locuspebble-watch",
   "description": "An unofficial bridge between Pebble and Locus Map",
   "author": "Christian Herget",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -76,7 +76,7 @@
       "android": {
         "url": "https://github.com/ChristianHerget/pebble-locus-map",
         "apps": [
-          {"package": "io.github.christianherget.locuspebble.bridge"}
+          {"package": "app.locuspebble.bridge"}
         ]
       }
     }

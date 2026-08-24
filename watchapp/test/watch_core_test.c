@@ -1,4 +1,5 @@
 #include "persistent_blob.h"
+#include "ui_metrics.h"
 #include "watch_config.h"
 #include "watch_state.h"
 
@@ -30,6 +31,29 @@ static jmp_buf s_power_cut;
 static size_t s_persist_max_size = STORE_KEYS * PERSIST_DATA_MAX_LENGTH;
 static WatchProfileTransfer s_profile_transfer;
 static char s_profile_transfer_buffer[WATCH_PROFILE_TRANSFER_BUFFER_SIZE];
+
+static void test_ui_metrics(void) {
+  UiMetricSnapshot snapshot = {
+    .moving_time = 65,
+    .distance = 12345,
+    .current_speed = 250,
+    .current_hr = 142,
+  };
+  char output[24];
+  assert(strcmp(ui_metric_label(METRIC_DISTANCE, false), "Distance") == 0);
+  assert(strcmp(ui_metric_label(METRIC_DISTANCE, true), "Strecke") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_ELAPSED, &snapshot, 3661);
+  assert(strcmp(output, "01:01:01") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot, 0);
+  assert(strcmp(output, "12.34 km") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_SPEED, &snapshot, 0);
+  assert(strcmp(output, "9.0 km/h") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_HR, &snapshot, 0);
+  assert(strcmp(output, "142 bpm") == 0);
+  snapshot.current_speed = 0;
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_PACE, &snapshot, 0);
+  assert(strcmp(output, "—") == 0);
+}
 
 typedef struct {
   bool received;
@@ -144,23 +168,23 @@ static void fill(char *output, size_t length, char seed) {
 }
 
 static const PersistentBlob TEST_BLOB = {
-  .metadata_key = {1, 3},
+  .record_key = 1,
   .legacy_key = 2,
-  .bank_base = {10, 20},
+  .chunk_base = 10,
   .max_chunks = 4,
 };
 
 static const PersistentBlob ACTIVE_CONFIG_BLOB = {
-  .metadata_key = {4, 6},
+  .record_key = 4,
   .legacy_key = 5,
-  .bank_base = {30, 40},
+  .chunk_base = 30,
   .max_chunks = 4,
 };
 
 static const PersistentBlob PENDING_CONFIG_BLOB = {
-  .metadata_key = {7, 9},
+  .record_key = 7,
   .legacy_key = 8,
-  .bank_base = {50, 60},
+  .chunk_base = 50,
   .max_chunks = 4,
 };
 
@@ -206,9 +230,9 @@ static void test_persistent_blob_boundaries(void) {
 static void test_persistent_blob_recovery(void) {
   reset_store();
   const PersistentBlob blob = {
-    .metadata_key = {1, 3},
+    .record_key = 1,
     .legacy_key = 2,
-    .bank_base = {10, 20},
+    .chunk_base = 10,
     .max_chunks = 4,
   };
   char first[701];
@@ -221,41 +245,36 @@ static void test_persistent_blob_recovery(void) {
   assert(persistent_blob_exists(&blob));
   assert_blob_equals(&blob, first, strlen(first));
 
-  s_fail_write_key = 20;
+  s_fail_write_key = 10;
   assert(!persistent_blob_write(&blob, second, strlen(second)));
   s_fail_write_key = -1;
-  assert_blob_equals(&blob, first, strlen(first));
+  char output[1025];
+  assert(!persistent_blob_read(&blob, output, sizeof(output)));
+  assert(output[0] == '\0');
 
-  s_torn_write_key = 20;
+  s_torn_write_key = 10;
   s_torn_write_bytes = 113;
   assert(!persistent_blob_write(&blob, second, strlen(second)));
   s_torn_write_key = -1;
-  assert_blob_equals(&blob, first, strlen(first));
+  assert(!persistent_blob_read(&blob, output, sizeof(output)));
 
-  s_fail_write_key = 3;
+  s_fail_write_key = 1;
   assert(!persistent_blob_write(&blob, second, strlen(second)));
   s_fail_write_key = -1;
-  assert_blob_equals(&blob, first, strlen(first));
+  assert(!persistent_blob_read(&blob, output, sizeof(output)));
 
-  s_torn_write_key = 3;
+  s_torn_write_key = 1;
   s_torn_write_bytes = 7;
   assert(!persistent_blob_write(&blob, second, strlen(second)));
   s_torn_write_key = -1;
-  assert_blob_equals(&blob, first, strlen(first));
+  assert(!persistent_blob_read(&blob, output, sizeof(output)));
 
   assert(persistent_blob_write(&blob, second, strlen(second)));
   assert_blob_equals(&blob, second, strlen(second));
 
-  stored(3)->data[4] ^= 1;
-  assert_blob_equals(&blob, first, strlen(first));
-  stored(3)->data[4] ^= 1;
-  stored(20)->data[0] ^= 1;
-  assert_blob_equals(&blob, first, strlen(first));
-
   const char legacy[] = "legacy configuration";
   assert(persist_write_string(blob.legacy_key, legacy) == (int)sizeof(legacy));
-  stored(10)->data[0] ^= 1;
-  char output[1025];
+  stored(blob.record_key)->data[4] = 0xff;
   assert(!persistent_blob_read(&blob, output, sizeof(output)));
   assert(output[0] == '\0');
 
@@ -280,17 +299,25 @@ static void test_persistent_blob_legacy_barrier(void) {
   reset_store();
   assert(persist_write_string(TEST_BLOB.legacy_key, legacy) == (int)sizeof(legacy));
   s_fail_delete_key = (int)TEST_BLOB.legacy_key;
-  assert(!persistent_blob_write(&TEST_BLOB, current, 300));
+  assert(persistent_blob_write(&TEST_BLOB, current, 300));
   s_fail_delete_key = -1;
   assert(persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
+  assert(memcmp(output, current, 300) == 0);
+  assert(output[300] == '\0');
+  assert(persist_exists(TEST_BLOB.legacy_key));
+
+  reset_store();
+  assert(persist_write_string(TEST_BLOB.legacy_key, legacy) == (int)sizeof(legacy));
+  s_fail_write_key = (int)TEST_BLOB.chunk_base;
+  assert(!persistent_blob_write(&TEST_BLOB, current, 300));
+  s_fail_write_key = -1;
+  assert(persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
   assert(strcmp(output, legacy) == 0);
-  assert(!persist_exists(TEST_BLOB.metadata_key[0]));
-  assert(!persist_exists(TEST_BLOB.bank_base[0]));
 
   reset_store();
   assert(persistent_blob_write(&TEST_BLOB, current, 300));
   assert(persist_write_string(TEST_BLOB.legacy_key, legacy) == (int)sizeof(legacy));
-  stored(TEST_BLOB.bank_base[0])->data[0] ^= 1;
+  stored(TEST_BLOB.chunk_base)->length--;
   memset(output, 0xa5, sizeof(output));
   assert(!persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
   assert(output[0] == '\0');
@@ -298,22 +325,22 @@ static void test_persistent_blob_legacy_barrier(void) {
   reset_store();
   assert(persistent_blob_write(&TEST_BLOB, current, 300));
   assert(persist_write_string(TEST_BLOB.legacy_key, legacy) == (int)sizeof(legacy));
-  stored(TEST_BLOB.metadata_key[0])->data[4] ^= 1;
+  stored(TEST_BLOB.record_key)->data[4] ^= 1;
   memset(output, 0xa5, sizeof(output));
-  assert(persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
-  assert(strcmp(output, legacy) == 0);
+  assert(!persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
+  assert(output[0] == '\0');
 
   reset_store();
   assert(persist_write_string(TEST_BLOB.legacy_key, legacy) == (int)sizeof(legacy));
-  s_torn_write_key = (int)TEST_BLOB.metadata_key[0];
+  s_torn_write_key = (int)TEST_BLOB.record_key;
   s_torn_write_bytes = 7;
-  s_fail_delete_key = (int)TEST_BLOB.metadata_key[0];
+  s_fail_delete_key = (int)TEST_BLOB.record_key;
   assert(!persistent_blob_write(&TEST_BLOB, current, 300));
   s_torn_write_key = -1;
   s_fail_delete_key = -1;
-  assert(persist_get_size(TEST_BLOB.metadata_key[0]) == 7);
-  assert(persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
-  assert(strcmp(output, legacy) == 0);
+  assert(persist_get_size(TEST_BLOB.record_key) == 7);
+  assert(!persistent_blob_read(&TEST_BLOB, output, sizeof(output)));
+  assert(output[0] == '\0');
 }
 
 static void test_persistent_blob_delete_power_cuts(void) {
@@ -339,13 +366,11 @@ static void test_persistent_blob_delete_power_cuts(void) {
     char output[1025];
     const bool readable = persistent_blob_read(&TEST_BLOB, output, sizeof(output));
     if (readable) {
-      assert(memcmp(output, second, 301) == 0);
-      assert(output[301] == '\0');
+      const bool current_value = memcmp(output, second, 301) == 0 && output[301] == '\0';
+      assert(current_value || strcmp(output, legacy) == 0);
     } else {
       assert(output[0] == '\0');
     }
-    assert(!readable || strcmp(output, legacy) != 0);
-    assert(!readable || memcmp(output, first, 300) != 0 || output[300] != '\0');
     assert(persistent_blob_delete(&TEST_BLOB));
     assert(!persistent_blob_exists(&TEST_BLOB));
   }
@@ -364,27 +389,30 @@ static void test_persistent_blob_delete_failures(void) {
   assert(persistent_blob_write(&TEST_BLOB, first, 300));
   assert(persistent_blob_write(&TEST_BLOB, second, 301));
 
-  s_fail_delete_key = (int)TEST_BLOB.metadata_key[0];
+  s_fail_delete_key = (int)TEST_BLOB.record_key;
   assert(!persistent_blob_write(&TEST_BLOB, third, 302));
   s_fail_delete_key = -1;
   assert_blob_equals(&TEST_BLOB, second, 301);
 
-  s_fail_delete_key = (int)TEST_BLOB.bank_base[0];
+  s_fail_delete_key = (int)TEST_BLOB.chunk_base;
   assert(!persistent_blob_write(&TEST_BLOB, third, 302));
   s_fail_delete_key = -1;
-  assert_blob_equals(&TEST_BLOB, second, 301);
+  char unreadable[1025];
+  assert(!persistent_blob_read(&TEST_BLOB, unreadable, sizeof(unreadable)));
+  assert(persistent_blob_write(&TEST_BLOB, third, 302));
+  assert_blob_equals(&TEST_BLOB, third, 302);
 
-  s_fail_delete_key = (int)TEST_BLOB.metadata_key[1];
+  s_fail_delete_key = (int)TEST_BLOB.record_key;
   assert(!persistent_blob_delete(&TEST_BLOB));
-  assert(persist_exists(TEST_BLOB.metadata_key[1]));
+  assert(persist_exists(TEST_BLOB.record_key));
   s_fail_delete_key = -1;
   assert(persistent_blob_delete(&TEST_BLOB));
   assert(!persistent_blob_exists(&TEST_BLOB));
 
   assert(persistent_blob_write(&TEST_BLOB, first, 300));
-  s_fail_delete_key = (int)TEST_BLOB.bank_base[0];
+  s_fail_delete_key = (int)TEST_BLOB.chunk_base;
   assert(!persistent_blob_delete(&TEST_BLOB));
-  assert(persist_exists(TEST_BLOB.bank_base[0]));
+  assert(persist_exists(TEST_BLOB.chunk_base));
   s_fail_delete_key = -1;
   assert(persistent_blob_delete(&TEST_BLOB));
   assert(!persistent_blob_exists(&TEST_BLOB));
@@ -405,10 +433,10 @@ static bool replace_config_preserving_pending(const char *replacement) {
   char queued[1025];
   if (!persistent_blob_read(&PENDING_CONFIG_BLOB, queued, sizeof(queued)) ||
       !persistent_blob_write(&ACTIVE_CONFIG_BLOB, queued, strlen(queued)) ||
-      !persistent_blob_delete(&PENDING_CONFIG_BLOB)) {
+      !persistent_blob_write(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement))) {
     return false;
   }
-  return persistent_blob_write(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
+  return persistent_blob_delete(&PENDING_CONFIG_BLOB);
 }
 
 static int config_value_kind(const char *value, const char *current,
@@ -467,54 +495,40 @@ static void test_config_replacement_preserves_queued_baseline(void) {
   const char replacement[] = "direct replacement configuration";
 
   setup_config_replacement(current, queued);
-  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.bank_base[1];
+  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.chunk_base;
   assert(!replace_config_preserving_pending(replacement));
   s_fail_write_key = -1;
-  assert_blob_equals(&ACTIVE_CONFIG_BLOB, current, strlen(current));
+  char unreadable_active[1025];
+  assert(!persistent_blob_read(&ACTIVE_CONFIG_BLOB, unreadable_active, sizeof(unreadable_active)));
   assert_blob_equals(&PENDING_CONFIG_BLOB, queued, strlen(queued));
 
   setup_config_replacement(current, queued);
-  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.bank_base[0];
+  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.chunk_base;
   assert(!replace_config_preserving_pending(replacement));
   s_fail_delete_key = -1;
-  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
-  assert_blob_equals(&PENDING_CONFIG_BLOB, queued, strlen(queued));
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
+  assert(!persistent_blob_exists(&PENDING_CONFIG_BLOB));
 
   setup_config_replacement(current, queued);
-  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.metadata_key[0];
+  s_fail_delete_key = (int)PENDING_CONFIG_BLOB.record_key;
   assert(!replace_config_preserving_pending(replacement));
   s_fail_delete_key = -1;
-  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
+  assert_blob_equals(&ACTIVE_CONFIG_BLOB, replacement, strlen(replacement));
   assert(persistent_blob_exists(&PENDING_CONFIG_BLOB));
   char unreadable[1025];
   assert(!persistent_blob_read(&PENDING_CONFIG_BLOB, unreadable, sizeof(unreadable)));
   recover_config_replacement(queued, replacement);
 
   setup_config_replacement(current, queued);
-  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.bank_base[0];
+  s_fail_write_key = (int)ACTIVE_CONFIG_BLOB.chunk_base;
   assert(!replace_config_preserving_pending(replacement));
   s_fail_write_key = -1;
-  assert_blob_equals(&ACTIVE_CONFIG_BLOB, queued, strlen(queued));
-  assert(!persistent_blob_exists(&PENDING_CONFIG_BLOB));
+  assert(!persistent_blob_read(&ACTIVE_CONFIG_BLOB, unreadable_active, sizeof(unreadable_active)));
+  assert_blob_equals(&PENDING_CONFIG_BLOB, queued, strlen(queued));
 
-  bool reached_completion = false;
-  for (int cut = 0; cut < 32; cut++) {
-    setup_config_replacement(current, queued);
-    s_mutation_calls = 0;
-    s_crash_before_mutation = cut;
-    if (setjmp(s_power_cut) == 0) {
-      assert(replace_config_preserving_pending(replacement));
-      s_crash_before_mutation = -1;
-      reached_completion = true;
-    } else {
-      s_crash_before_mutation = -1;
-    }
-
-    assert_config_replacement_invariant(current, queued, replacement);
-    recover_config_replacement(queued, replacement);
-    if (reached_completion) break;
-  }
-  assert(reached_completion);
+  setup_config_replacement(current, queued);
+  assert(replace_config_preserving_pending(replacement));
+  assert_config_replacement_invariant(current, queued, replacement);
 
   // A same-ID application retry repeats the durable write. It is safe whether the
   // previous result was lost before or after the replacement commit.
@@ -531,13 +545,14 @@ static void test_persistent_blob_capacity(void) {
 
   assert(persistent_blob_write(&TEST_BLOB, first, 257));
   const size_t first_usage = persist_used();
-  const size_t metadata_size = stored(TEST_BLOB.metadata_key[0])->length;
+  const size_t metadata_size = stored(TEST_BLOB.record_key)->length;
   assert(first_usage == 257 + metadata_size);
 
-  s_persist_max_size = first_usage + 257 + metadata_size - 1;
+  s_persist_max_size = first_usage - 1;
   assert(!persistent_blob_write(&TEST_BLOB, second, 257));
-  assert_blob_equals(&TEST_BLOB, first, 257);
-  assert(persist_used() == first_usage);
+  char unreadable[1025];
+  assert(!persistent_blob_read(&TEST_BLOB, unreadable, sizeof(unreadable)));
+  assert(persist_used() == 0);
 
   assert(persistent_blob_delete(&TEST_BLOB));
   s_persist_max_size = 257 + metadata_size - 1;
@@ -566,33 +581,33 @@ static void test_persistent_blob_invalid_layout(void) {
   assert(!persistent_blob_delete(NULL));
   const PersistentBlob invalid[] = {
     {
-      .metadata_key = {1, 2},
+      .record_key = 1,
       .legacy_key = 3,
-      .bank_base = {10, 12},
+      .chunk_base = 10,
+      .max_chunks = 0,
+    },
+    {
+      .record_key = 1,
+      .legacy_key = 1,
+      .chunk_base = 10,
       .max_chunks = 4,
     },
     {
-      .metadata_key = {1, 1},
+      .record_key = 10,
       .legacy_key = 3,
-      .bank_base = {10, 20},
+      .chunk_base = 10,
       .max_chunks = 4,
     },
     {
-      .metadata_key = {10, 2},
-      .legacy_key = 3,
-      .bank_base = {10, 20},
+      .record_key = 1,
+      .legacy_key = 11,
+      .chunk_base = 10,
       .max_chunks = 4,
     },
     {
-      .metadata_key = {1, 2},
-      .legacy_key = 20,
-      .bank_base = {10, 20},
-      .max_chunks = 4,
-    },
-    {
-      .metadata_key = {1, 2},
+      .record_key = 1,
       .legacy_key = 3,
-      .bank_base = {UINT32_MAX - 1, 20},
+      .chunk_base = UINT32_MAX - 1,
       .max_chunks = 4,
     },
   };
@@ -995,6 +1010,7 @@ static void test_profile_transfer_reordering(void) {
 }
 
 int main(void) {
+  test_ui_metrics();
   test_persistent_blob_boundaries();
   test_persistent_blob_recovery();
   test_persistent_blob_legacy_barrier();

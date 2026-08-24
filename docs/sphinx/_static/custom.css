@@ -1,0 +1,177 @@
+/* LocusPebble Bridge Brand Guidelines CSS */
+@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Roboto:wght@400;700&display=swap');
+
+/* Typography fallbacks: 
+   Ameratorint (Serif) -> Merriweather
+   Highlight sohem (Sans-serif) -> Roboto 
+*/
+body {
+    font-family: 'Highlight sohem', Roboto, sans-serif;
+    background-color: #FAFAFA;
+    color: #263238; /* Deep Slate */
+}
+
+h1, h2, h3, h4, h5, h6, .wy-nav-side .wy-side-nav-search>a {
+    font-family: 'Ameratorint', Merriweather, serif;
+    color: #263238;
+}
+
+/* Links and accents */
+a {
+    color: #55C467; /* Vibrant Green */
+}
+a:hover {
+    color: #2196F3; /* Cool Blue */
+}
+
+/* Sphinx RTD Theme overrides */
+.wy-nav-side {
+    background-color: #263238; /* Deep Slate */
+}
+.wy-nav-side .wy-side-nav-search {
+    background-color: #263238;
+}
+.wy-menu-vertical a {
+    color: #FAFAFA;
+}
+.wy-menu-vertical a:hover {
+    background-color: #78909C; /* Neutral Pebble Grey */
+}
+.wy-menu-vertical a:active {
+    background-color: #55C467; 
+}
+.wy-nav-content {
+    background-color: #FAFAFA;
+}
+.rst-content h1, .rst-content h2, .rst-content h3 {
+    color: #263238;
+}
+.btn-neutral {
+    background-color: #55C467;
+    color: #FFFFFF;
+}
+.btn-neutral:hover {
+    background-color: #2196F3;
+}
+
+.watch-hero {
+    margin: 2rem auto 2.5rem;
+    text-align: center;
+}
+
+.watch-hero__strap {
+    display: inline-flex;
+    position: relative;
+    padding: 78px 28px;
+    justify-content: center;
+    background: linear-gradient(90deg, transparent 25%, #202326 25%, #353a3e 50%, #202326 75%, transparent 75%);
+}
+
+.watch-hero__strap::before,
+.watch-hero__strap::after {
+    position: absolute;
+    left: 25%;
+    width: 50%;
+    height: 2px;
+    content: "";
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.watch-hero__strap::before {
+    top: 44px;
+}
+
+.watch-hero__strap::after {
+    bottom: 44px;
+}
+
+.watch-hero__case {
+    position: relative;
+    z-index: 1;
+    padding: 13px;
+    background: linear-gradient(145deg, #737b80, #25292c 38%, #111315 72%, #555d62);
+    box-shadow: 0 18px 30px rgba(38, 50, 56, 0.3), inset 0 0 0 2px #0c0d0e;
+}
+
+.watch-hero__case img {
+    display: block;
+    margin: 0;
+    border: 2px solid #080909;
+}
+
+.watch-hero--emery .watch-hero__case {
+    border-radius: 27px;
+}
+
+.watch-hero--emery .watch-hero__case img {
+    width: 200px;
+    border-radius: 13px;
+}
+
+.watch-hero--gabbro .watch-hero__strap {
+    padding-top: 64px;
+    padding-bottom: 64px;
+}
+
+.watch-hero--gabbro .watch-hero__case,
+.watch-hero--gabbro .watch-hero__case img {
+    border-radius: 50%;
+}
+
+.watch-hero--gabbro .watch-hero__case img {
+    width: 260px;
+}
+
+.watch-hero__button {
+    position: absolute;
+    width: 7px;
+    height: 28px;
+    border: 1px solid #090a0b;
+    background: linear-gradient(90deg, #101214, #34393d);
+}
+
+.watch-hero__button--left {
+    top: calc(50% - 14px);
+    left: -7px;
+    border-radius: 4px 0 0 4px;
+}
+
+.watch-hero__button--right-top,
+.watch-hero__button--right-middle,
+.watch-hero__button--right-bottom {
+    right: -7px;
+    border-radius: 0 4px 4px 0;
+}
+
+.watch-hero__button--right-top {
+    top: 20%;
+}
+
+.watch-hero__button--right-middle {
+    top: calc(50% - 14px);
+}
+
+.watch-hero__button--right-bottom {
+    bottom: 20%;
+}
+
+.watch-hero--gabbro .watch-hero__button--right-top,
+.watch-hero--gabbro .watch-hero__button--right-bottom {
+    right: 16px;
+}
+
+.watch-hero--gabbro .watch-hero__button--right-top {
+    top: 54px;
+    transform: rotate(-32deg);
+}
+
+.watch-hero--gabbro .watch-hero__button--right-bottom {
+    bottom: 54px;
+    transform: rotate(32deg);
+}
+
+.watch-hero p {
+    margin: 0.75rem 0 0;
+    color: #546e7a;
+    font-size: 0.9rem;
+}

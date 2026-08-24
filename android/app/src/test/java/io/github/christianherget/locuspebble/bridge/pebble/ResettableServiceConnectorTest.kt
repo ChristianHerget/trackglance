@@ -2,10 +2,12 @@ package io.github.christianherget.locuspebble.bridge.pebble
 
 import io.github.christianherget.locuspebble.bridge.core.BoundedAbandonableCallExecutor
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -103,13 +105,18 @@ class ResettableServiceConnectorTest {
 
     @Test fun cancelledConnectionAttemptIsResetBeforeTheNextSend() = runBlocking {
         val attempts = mutableListOf<FakeBindingAttempt>()
+        val firstBindStarted = CompletableDeferred<Unit>()
         val workers = BoundedAbandonableCallExecutor(1, "binding-cancel-test")
         val connector = ResettableServiceConnector(
             bindingFactory = ServiceBindingFactory {
                 val number = attempts.size + 1
                 FakeBindingAttempt(
                     startBlock = { callbacks ->
-                        if (number > 1) callbacks.connected("recovered")
+                        if (number > 1) {
+                            callbacks.connected("recovered")
+                        } else {
+                            firstBindStarted.complete(Unit)
+                        }
                         true
                     },
                 ).also(attempts::add)
@@ -120,6 +127,9 @@ class ResettableServiceConnectorTest {
         )
         try {
             val first = async(start = CoroutineStart.UNDISPATCHED) { connector.getOrConnect() }
+            firstBindStarted.await()
+            // Let getOrConnect finish the bounded start call and suspend on the connection result.
+            yield()
             first.cancelAndJoin()
             assertEquals(1, attempts.first().closeCount)
 

@@ -4,7 +4,11 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/c/main.c'), 'utf8');
+const source = fs.readdirSync(path.join(__dirname, '../src/c'))
+  .filter(name => name.endsWith('.c'))
+  .sort()
+  .map(name => fs.readFileSync(path.join(__dirname, '../src/c', name), 'utf8'))
+  .join('\n');
 const configHeader = fs.readFileSync(path.join(__dirname, '../src/c/watch_config.h'), 'utf8');
 const watchConfigSource = configHeader +
   fs.readFileSync(path.join(__dirname, '../src/c/watch_config.c'), 'utf8');
@@ -269,6 +273,8 @@ assert(bodies.control_enqueue.includes(
   'normal controls must preserve the active configuration result reservation');
 assert(bodies.control_enqueue_config_result.includes('s_config_result_slot_reserved=false;'),
   'completing a configuration must atomically consume its reserved result slot');
+assert(!source.includes('MSG_PROFILE_LIST_RESULT'),
+  'profile persistence must not add a production acknowledgement used only by automation');
 assert(bodies.accept_config_chunk.includes('result=RESULT_INVALID_CONFIG') &&
     bodies.accept_config_chunk.includes('result=RESULT_CONFIG_QUEUED') &&
     bodies.accept_config_chunk.includes('result=RESULT_STORAGE_FAILED') &&
@@ -285,10 +291,9 @@ const pendingParse = pendingPreparation.indexOf(
   'parse_config_buffer(s_config_work,&s_parsed_config)');
 const pendingPromotion = pendingPreparation.indexOf('store_active_config(s_pending_chunks)');
 const pendingInstall = pendingPreparation.indexOf('install_config(&s_parsed_config,true)');
-const pendingCleanup = pendingPreparation.lastIndexOf('cleanup_pending_config(');
 assert(pendingRead >= 0 && pendingParse > pendingRead && pendingPromotion > pendingParse &&
-    pendingInstall > pendingPromotion && pendingCleanup > pendingInstall,
-  'a readable queued baseline must be validated, promoted, and installed before cleanup');
+    pendingInstall > pendingPromotion,
+  'a readable queued baseline must be validated, promoted, and installed as recovery state');
 assert(pendingPreparation.includes(
   'if(s_pending_cleanup_required){returncleanup_pending_config(') &&
     pendingPreparation.includes(
@@ -303,9 +308,12 @@ assert(!bodies.apply_pending_config_if_stopped.includes(
 const directPreparation = bodies.accept_config_chunk.indexOf(
   'prepare_pending_config_for_direct_apply()');
 const directReplacement = bodies.accept_config_chunk.indexOf('store_active_config(s_chunks)');
+const directCleanup = bodies.accept_config_chunk.indexOf(
+  'cleanup_pending_config("Replacedconfigurationbutpendingcleanupfailed")');
 assert(directPreparation >= 0 && directReplacement > directPreparation &&
+    directCleanup > directReplacement &&
     !bodies.accept_config_chunk.includes('persistent_blob_delete(&s_pending_config_blob)'),
-  'direct apply must reconcile pending state before transactionally storing the replacement');
+  'direct apply must retain queued recovery until the replacement is stored');
 assert(bodies.accept_config_chunk.endsWith('reset_config_transfer();send_next();'),
   'a completed transfer must reset before a same-ID application retry can start');
 assert(bodies.accept_config_chunk.includes(
@@ -410,16 +418,16 @@ const requiredSnapshotKeys = [
   'MAX_CADENCE', 'AVERAGE_POWER', 'MAX_POWER', 'ENERGY_KCAL', 'UNIT_SYSTEM',
 ];
 for (const key of requiredSnapshotKeys) {
-  assert(bodies.parse_snapshot.includes(`MESSAGE_KEY_${key}`),
+  assert(bodies.app_message_snapshot.includes(`MESSAGE_KEY_${key}`),
     `snapshot parsing must require ${key}`);
 }
-const snapshotValidation = bodies.parse_snapshot.indexOf(
+const snapshotValidation = bodies.app_message_snapshot.indexOf(
   'if(unit_system!=0||!snapshot_values_valid(&snapshot))returnfalse;');
-const snapshotPublish = bodies.parse_snapshot.indexOf('*output=snapshot;');
+const snapshotPublish = bodies.app_message_snapshot.indexOf('*output=snapshot;');
 assert(snapshotValidation >= 0 && snapshotPublish > snapshotValidation,
   'a complete metric snapshot must validate before being published to the caller');
 assert(bodies.accept_snapshot.includes('Snapshotcandidate;') &&
-    bodies.accept_snapshot.includes('if(!parse_snapshot(iterator,&candidate))') &&
+    bodies.accept_snapshot.includes('if(!app_message_snapshot(iterator,&candidate))') &&
     bodies.accept_snapshot.includes('s_snapshot=candidate;'),
   'snapshot reception must parse into a temporary and replace state atomically');
 assert(stateBodies.watch_snapshot_epoch_allowed.includes(

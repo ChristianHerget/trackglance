@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeProtocolTest {
-    @Test fun configResultExtensionKeepsCrossLanguageWireValuesStable() {
+    @Test fun resultExtensionsKeepCrossLanguageWireValuesStable() {
         assertEquals(9, BridgeProtocol.MessageType.CONFIG_RESULT.wire)
         assertEquals(7, BridgeProtocol.Result.CONFIG_QUEUED.wire)
         assertEquals(8, BridgeProtocol.Result.INVALID_CONFIG.wire)

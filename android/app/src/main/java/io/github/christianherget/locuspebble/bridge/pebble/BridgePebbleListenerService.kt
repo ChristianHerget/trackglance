@@ -10,18 +10,20 @@ import io.github.christianherget.locuspebble.bridge.core.BridgeRuntime
 import io.github.christianherget.locuspebble.bridge.core.BridgeState
 import io.github.christianherget.locuspebble.bridge.core.loadOffMain
 import io.github.christianherget.locuspebble.bridge.protocol.BridgeProtocol
+import io.rebble.pebblekit2.PebbleKitBundleKeys
 import io.rebble.pebblekit2.client.BasePebbleListenerService
 import io.rebble.pebblekit2.common.SendDataCallback
 import io.rebble.pebblekit2.common.UniversalRequestResponse
 import io.rebble.pebblekit2.common.model.PebbleDictionary
+import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
 import io.rebble.pebblekit2.common.model.ReceiveResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
+import io.rebble.pebblekit2.common.model.mapFromBundle
+import io.rebble.pebblekit2.common.model.toBundle
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 class BridgePebbleListenerService : BasePebbleListenerService() {
     private val companionPin by lazy {
@@ -44,7 +46,6 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
     }
 
     override fun onBind(intent: Intent?): IBinder {
-        val delegate = UniversalRequestResponse.Stub.asInterface(super.onBind(intent))
         return object : UniversalRequestResponse.Stub() {
             override fun request(data: Bundle, callback: SendDataCallback) {
                 val callingUid = Binder.getCallingUid()
@@ -57,70 +58,90 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
                     return
                 }
 
-                // This bounded wait runs only on an already authenticated Binder-pool thread. It
-                // preserves Binder.getCallingUid() for PebbleKit's nested caller-package check and
-                // is deliberately not used from Application/Service main-thread startup.
-                val ready = runCatching {
-                    runBlocking {
+                val request = Bundle(data)
+                coroutineScope.launch {
+                    val ready = try {
                         companionPin.ensureTrustedBounded() && trustedCompanion.isTrusted()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        false
                     }
-                }.getOrDefault(false)
-                if (!ready || !callback.asBinder().isBinderAlive ||
-                    !TrustedPebbleCompanionProvider.isTrustedCallingUid(
-                        this@BridgePebbleListenerService,
-                        callingUid,
-                    )
-                ) {
-                    BridgeRuntime.resetForCompanionTrustLoss()
-                    // Trusted Core will time out/retry; a now-revoked callback is no longer safe to call.
-                    return
-                }
-                val admission = runCatching {
-                    runBlocking {
-                        TrustedPebbleCompanionProvider.captureTrustedAdmission(
+                    if (!ready || !callback.asBinder().isBinderAlive ||
+                        !TrustedPebbleCompanionProvider.isTrustedCallingUid(
                             this@BridgePebbleListenerService,
+                            callingUid,
                         )
+                    ) {
+                        BridgeRuntime.resetForCompanionTrustLoss()
+                        return@launch
                     }
-                }.getOrNull() ?: return
-                val originalWatchId = data.getString(KEY_WATCH_ID) ?: return
-                val authenticatedData = Bundle(data).apply {
-                    putString(
-                        KEY_WATCH_ID,
-                        AuthenticatedIngressEnvelope.encode(originalWatchId, admission),
+                    val admission = TrustedPebbleCompanionProvider.captureTrustedAdmission(
+                        this@BridgePebbleListenerService,
+                    ) ?: return@launch
+                    val result = handleAdmittedRequest(request, admission)
+                    val delivered = AtomicBoolean(false)
+                    CALLBACK_DELIVERY.deliver(
+                        stillAuthorized = {
+                            !delivered.get() &&
+                                TrustedPebbleCompanionProvider.isAdmissionCurrent(admission) &&
+                                TrustedPebbleCompanionProvider.isTrustedCallingUid(
+                                    this@BridgePebbleListenerService,
+                                    callingUid,
+                                ) && callback.asBinder().isBinderAlive
+                        },
+                        callback = {
+                            if (delivered.compareAndSet(false, true)) callback.onResult(result)
+                        },
                     )
                 }
-                val delivered = AtomicBoolean(false)
-                val boundedCallback = object : SendDataCallback.Stub() {
-                    override fun onResult(result: Bundle) {
-                        if (!delivered.compareAndSet(false, true)) return
-                        val callbackResult = Bundle(result)
-                        CALLBACK_DELIVERY.deliver(
-                            stillAuthorized = {
-                                TrustedPebbleCompanionProvider.isAdmissionCurrent(admission) &&
-                                    TrustedPebbleCompanionProvider.isTrustedCallingUid(
-                                        this@BridgePebbleListenerService,
-                                        callingUid,
-                                    ) &&
-                                    callback.asBinder().isBinderAlive
-                            },
-                            callback = { callback.onResult(callbackResult) },
-                        )
-                    }
-                }
-                delegate.request(authenticatedData, boundedCallback)
             }
         }
     }
 
-    override suspend fun onMessageReceived(
+    private suspend fun handleAdmittedRequest(
+        request: Bundle,
+        admission: TrustAdmission,
+    ): Bundle {
+        val watchappUUID = request.getString(PebbleKitBundleKeys.KEY_WATCHAPP_UUID)
+            ?.let { encoded -> runCatching { UUID.fromString(encoded) }.getOrNull() }
+            ?: return Bundle()
+        val watch = request.getString(PebbleKitBundleKeys.KEY_WATCH_ID)
+            ?.takeIf(BridgeProtocol::validWatchId)
+            ?.let(::WatchIdentifier)
+            ?: return Bundle()
+        val ingress = AuthenticatedWatchIngress(watch, admission)
+        return when (request.getString(PebbleKitBundleKeys.KEY_ACTION)) {
+            PebbleKitBundleKeys.ACTION_RECEIVE_DATA_FROM_WATCH -> {
+                val dictionary = PebbleDictionaryItem.mapFromBundle(
+                    request.getBundle(PebbleKitBundleKeys.KEY_DATA_DICTIONARY) ?: Bundle(),
+                )
+                Bundle().apply {
+                    putBundle(
+                        PebbleKitBundleKeys.KEY_TRANSMISSION_RESULTS,
+                        onAdmittedMessageReceived(watchappUUID, dictionary, ingress).toBundle(),
+                    )
+                }
+            }
+            PebbleKitBundleKeys.ACTION_APP_OPENED -> {
+                onAdmittedAppOpened(watchappUUID, ingress)
+                Bundle()
+            }
+            PebbleKitBundleKeys.ACTION_APP_CLOSED -> {
+                onAdmittedAppClosed(watchappUUID, ingress)
+                Bundle()
+            }
+            else -> Bundle()
+        }
+    }
+
+    private suspend fun onAdmittedMessageReceived(
         watchappUUID: UUID,
         data: PebbleDictionary,
-        watch: WatchIdentifier,
+        ingress: AuthenticatedWatchIngress,
     ): ReceiveResult = try {
-        val ingress = AuthenticatedIngressEnvelope.decode(watch) ?: return ReceiveResult.Nack
         lifecycleCallbacks.serialize {
-            // BridgeRuntime's first construction loads the command journal and epoch floor. Keep
-            // that storage off PebbleKit's MainScope and outside the revocation lease.
+            // Keep runtime construction off PebbleKit's MainScope and outside the revocation lease.
             val runtime = loadOffMain {
                 BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
             }
@@ -239,49 +260,49 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         return if (delivered) ReceiveResult.Ack else ReceiveResult.Nack
     }
 
-    override fun onAppOpened(watchappUUID: UUID, watch: WatchIdentifier) {
-        val ingress = AuthenticatedIngressEnvelope.decode(watch) ?: return
+    private suspend fun onAdmittedAppOpened(
+        watchappUUID: UUID,
+        ingress: AuthenticatedWatchIngress,
+    ) {
         if (watchappUUID != BridgeProtocol.APP_UUID ||
             !BridgeProtocol.validWatchId(ingress.watch.value)
         ) return
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                lifecycleCallbacks.serialize {
-                    val runtime = loadOffMain {
-                        BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
-                    }
-                    runAdmittedInbound(ingress.admission, Unit) {
-                        runtime.watchAppOpened(ingress.watch, ingress.admission)
-                    }
+        try {
+            lifecycleCallbacks.serialize {
+                val runtime = loadOffMain {
+                    BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
+                runAdmittedInbound(ingress.admission, Unit) {
+                    runtime.watchAppOpened(ingress.watch, ingress.admission)
+                }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
         }
     }
 
-    override fun onAppClosed(watchappUUID: UUID, watch: WatchIdentifier) {
-        val ingress = AuthenticatedIngressEnvelope.decode(watch) ?: return
+    private suspend fun onAdmittedAppClosed(
+        watchappUUID: UUID,
+        ingress: AuthenticatedWatchIngress,
+    ) {
         if (watchappUUID != BridgeProtocol.APP_UUID ||
             !BridgeProtocol.validWatchId(ingress.watch.value)
         ) return
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                lifecycleCallbacks.serialize {
-                    val runtime = loadOffMain {
-                        BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
-                    }
-                    runAdmittedInbound(ingress.admission, Unit) {
-                        runtime.watchAppClosed(ingress.watch, ingress.admission)
-                    }
+        try {
+            lifecycleCallbacks.serialize {
+                val runtime = loadOffMain {
+                    BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
+                runAdmittedInbound(ingress.admission, Unit) {
+                    runtime.watchAppClosed(ingress.watch, ingress.admission)
+                }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            BridgeState.update { it.copy(lastError = error.message ?: error.javaClass.simpleName) }
         }
     }
 
@@ -311,7 +332,6 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
     }
 
     private companion object {
-        const val KEY_WATCH_ID = "WATCH_ID"
         val CALLBACK_DELIVERY = BoundedCallbackDelivery(
             BoundedAbandonableCallExecutor(
                 maxWorkers = 2,

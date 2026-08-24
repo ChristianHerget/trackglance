@@ -9,6 +9,11 @@ android/app/build/
 android/build/
 watchapp/build/
 watchapp/node_modules/
+docs/node_modules/
 watchapp/.lock-waf_*
 *.pbw
 *.pbl
+venv/
+__pycache__/
+*.py[cod]
+docs/sphinx/_build/

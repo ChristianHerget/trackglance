@@ -2,6 +2,10 @@
 
 For the complete installation, QEMU/CoreApp setup, end-to-end acceptance procedure, troubleshooting,
 and containerization roadmap, see [End-to-end development and testing](end-to-end-testing.md).
+For the automated rootless Android 12L environment, see [Podman test environment](podman-testing.md).
+
+The bridge supports API 24 and newer. Android 12L/API 32 is the sole automated acceptance runtime,
+not the product installation minimum. Platform 36 remains the compile and target SDK.
 
 ## Chromebook Linux and ARCVM
 
@@ -11,14 +15,14 @@ terminal. This does not require full ChromeOS Developer Mode.
 ```sh
 adb connect arc
 adb devices -l
-adb -s arc:5555 install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb -s arc:5555 install -r android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
 ```
 
 If both `arc:5555` and `emulator-5554` appear, use an explicit `-s` selector. ADB daemon socket
 errors inside a managed coding sandbox do not imply an ARCVM configuration problem.
 
 Install Locus Map 4 from Google Play. Install a current CoreApp build compatible with PebbleKit
-Android 2, then install `watchapp/build/watchapp.pbw` through it. The reproducible QEMU setup uses
+Android 2, then install `watchapp/build/watchapp.pbw` through it. The version-pinned QEMU setup uses
 CoreApp's direct transport from the pinned `coredevices/mobileapp` commit
 `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`.
 The bridge disables PebbleKit auto-selection and explicitly selects the installed
@@ -29,18 +33,20 @@ connection, recording state, refresh mode, and the last bridge error.
 
 ## Toolchain
 
+Keep the toolchain in the repository's development container. Install Docker, or rootless Podman
+as a Docker-compatible fallback, but do not install Android, Java, Node, Python/Pebble, or Pebble
+SDK tooling in the user profile:
+
 ```sh
-sudo apt install openjdk-17-jdk-headless python3-pip python3-venv nodejs npm \
-  libsdl2-2.0-0 libasound2 libpulse0 libx11-6 libfdt1
-curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
-uv tool install 'pebble-tool==5.0.39' --python 3.13
-pebble sdk install 4.33.1
-pebble sdk activate 4.33.1
+./tools/podman-test doctor static
+./tools/podman-test build-static
+./tools/podman-test dev bash
 ```
 
-Use Android Studio to install Platform 36 and Build Tools 36.0.0. Create an untracked
-`local.properties` containing `sdk.dir=/absolute/path/to/Android/Sdk` when Android Studio has not
-already done so. Node.js 18 or newer is required for the watchapp verification suite.
+The image contains the exact Android, Gradle/JDK, Node, Python, uv, Pebble Tool, and Pebble SDK
+versions. `build-static` may use the network; later container runs reuse engine and Gradle/npm
+caches. Docker is selected when present. Set `DEV_CONTAINER_ENGINE=podman` explicitly on this
+repository's rootless Podman environment.
 
 ## Update lifecycle
 
@@ -80,19 +86,35 @@ remain a later hardware smoke test.
 Normal verification compiles the instrumentation test but does not change Locus data:
 
 ```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
-./gradlew :android:app:compileDebugAndroidTestKotlin
-cd watchapp
-npm ci
-npm test
-pebble clean
-pebble build
-npm run verify:pbw
+./tools/podman-test static
+./tools/podman-test documentation
+./tools/podman-test release-check
 ```
 
 `verifyPebbleTargets` checks stack/scheduler invariants plus cross-language protocol and packaging
-metadata. `verify:pbw` must run after `pebble build`; it inspects the generated archive rather than
-assuming package declarations were honored.
+metadata without launching emulators, installing packages, or changing tracked files.
+`documentation` validates the committed screenshots without regenerating them.
+Run `./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally updating images; that
+maintenance task may launch Pebble QEMU and install the pinned browser tooling. Both documentation
+tasks are explicit and are not dependencies of routine code verification.
+`verify:pbw` must run after `pebble build`; it inspects the generated archive rather than assuming
+package declarations were honored.
+
+The independent public static entry point is `./tools/podman-test static`. It builds or uses the
+development image and never checks for KVM, emulator
+images, Locus APKs, golden state, or acceptance-host RAM/disk. Dependency updates should be
+intentional and reviewed:
+
+```sh
+./tools/podman-test dev ./gradlew --write-locks --write-verification-metadata sha256 \
+  verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
+```
+
+The first resolution may use the network; a populated cache can subsequently run the lightweight
+Gradle tasks with `--offline`. CI mirrors this split: public static checks and documentation are
+separate. Full KVM acceptance is manual: an ephemeral GitHub-hosted Docker job downloads the pinned
+public Locus fixture and bootstraps from scratch, while the protected self-hosted job remains the
+fallback.
 
 The real Locus contract test is deliberately opt-in. It requires an idle Locus Map installation,
 creates a short recording using Locus's active profile, and saves the recording. It refuses to run
@@ -100,9 +122,9 @@ if a recording is already active:
 
 ```sh
 adb connect arc
-ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
+./tools/podman-test dev bash -c 'ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true \
-  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000
+  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000'
 ```
 
 The test waits for and asserts every observable state transition: start, pause, resume, and stop.

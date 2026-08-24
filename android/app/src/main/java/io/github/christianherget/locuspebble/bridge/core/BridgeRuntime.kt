@@ -28,8 +28,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class BridgeRuntime internal constructor(
@@ -37,8 +35,6 @@ class BridgeRuntime internal constructor(
     private val locus: LocusBridgeGateway,
     private val transport: ReliablePebbleTransport,
     private val commandJournal: CommandJournal,
-    private val snapshotEpochStore: SnapshotDeliveryEpochStore,
-    private val profileTransferSerialStore: ProfileTransferSerialStore,
     private val refreshMode: () -> RefreshMode,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
@@ -57,11 +53,9 @@ class BridgeRuntime internal constructor(
     private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
     private val lifecycleLock = Any()
     private val childJobs = mutableSetOf<Job>()
-    private val commandMutex = Mutex()
-    private val profileTransferMutex = Mutex()
     private val heartRateGate = HeartRateSampleGate()
     private val heartRateSamples = Channel<HeartRateSample>(Channel.CONFLATED)
-    private val snapshotDelivery = SerializedSnapshotDelivery<AdmittedWatch, BridgeProtocol.Snapshot>(
+    private val operations = BridgeOperationCoordinator<AdmittedWatch, BridgeProtocol.Snapshot>(
         read = ::readSnapshotForDelivery,
         updateStatus = { snapshot, targets ->
             targets.singleAdmissionOrNull()?.let { admission ->
@@ -238,14 +232,13 @@ class BridgeRuntime internal constructor(
             waypointName.takeIf { command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE },
         )
         val target = AdmittedWatch(watch, admission)
-        val delivered = snapshotDelivery.reserveThenMutateAndDeliverSnapshot(
+        val delivered = operations.mutateAndDeliver(
             targets = listOf(target),
-            reserve = { reserveSnapshotEpoch(wallMillis() / 1_000L, admission) },
+            observedEpochSeconds = wallMillis() / 1_000L,
             mutate = {
-                commandMutex.withLock {
-                    val begun = withContext(ioDispatcher) { commandJournal.begin(key, fingerprint) }
+                val begun = withContext(ioDispatcher) { commandJournal.begin(key, fingerprint) }
                     
-                    when (begun) {
+                    val mutation = when (begun) {
                         is CommandJournal.BeginResult.Completed -> CommandMutation(begun.result)
                         is CommandJournal.BeginResult.Execute -> {
                             transitioningUntil = monotonicMillis() + TRANSITION_REFRESH_MILLIS
@@ -272,7 +265,18 @@ class BridgeRuntime internal constructor(
                         
                         -> CommandMutation(BridgeProtocol.Result.FAILED)
                     }
-                }
+                    publishIfCurrent(admission) {
+                        BridgeState.update {
+                            it.copy(
+                                lastCommand = command,
+                                lastCommandResult = mutation.result,
+                                lastWaypointName = waypointName.takeIf {
+                                    command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE
+                                },
+                            )
+                        }
+                    }
+                mutation
             },
             readAfterMutation = { epoch, mutation ->
                 (mutation.latestSnapshot ?: readSnapshot(admission)).copy(sampledAtEpochSeconds = epoch)
@@ -284,7 +288,6 @@ class BridgeRuntime internal constructor(
                     admission,
                 )
             },
-            reservationFailed = { false },
         )
         if (!delivered) publishIfCurrent(admission) {
             reportError(
@@ -357,7 +360,7 @@ class BridgeRuntime internal constructor(
     suspend fun sendRecordingProfiles(
         watch: WatchIdentifier,
         admission: TrustAdmission,
-    ): Boolean = profileTransferMutex.withLock {
+    ): Boolean = operations.serialized {
         val query = try {
             withContext(ioDispatcher) { locus.recordingProfiles() }
         } catch (error: CancellationException) {
@@ -378,7 +381,7 @@ class BridgeRuntime internal constructor(
                         )
                     }
                 }
-                return@withLock false
+                return@serialized false
             }
         }
         val transfer = BridgeProtocol.profileTransfer(names)
@@ -391,7 +394,7 @@ class BridgeRuntime internal constructor(
                     )
                 }
             }
-            return@withLock false
+            return@serialized false
         }
         if (!publishIfCurrent(admission) {
                 BridgeState.update {
@@ -405,7 +408,7 @@ class BridgeRuntime internal constructor(
                     )
                 }
             }
-        ) return@withLock false
+        ) return@serialized false
         val transferId = reserveProfileTransferId()
         val messages = PebbleMessages.profileListChunks(transfer, transferId)
         messages.forEach { message ->
@@ -415,7 +418,7 @@ class BridgeRuntime internal constructor(
                 publishIfCurrent(admission) {
                     reportError("Could not deliver a complete profile list to the source watch")
                 }
-                return@withLock false
+                return@serialized false
             }
         }
         true
@@ -435,7 +438,7 @@ class BridgeRuntime internal constructor(
         targets: Collection<AdmittedWatch>,
         failureMessage: String,
     ): Boolean {
-        val delivered = snapshotDelivery.deliver(targets)
+        val delivered = operations.deliver(targets)
         val admission = targets.singleAdmissionOrNull()
         if (!delivered && admission != null) {
             publishIfCurrent(admission) {
@@ -477,14 +480,7 @@ class BridgeRuntime internal constructor(
         observedEpochSeconds: Long,
         admission: TrustAdmission? = null,
     ): Long {
-        return snapshotEpochStore.reserve(observedEpochSeconds)
-    }
-
-    private suspend fun reserveProfileTransferId(): Int {
-        // Profile and snapshot ordering use independent stores. Never overwrite the snapshot
-        // failure latch here: a concurrent profile reservation must not hide the actionable reason
-        // that a command barrier or ordinary snapshot failed closed.
-        return profileTransferSerialStore.reserve()
+        return operations.reserveSnapshotEpoch(observedEpochSeconds)
     }
 
     private suspend fun sendToAdmittedTargets(
@@ -505,6 +501,7 @@ class BridgeRuntime internal constructor(
         it.copy(
             locusAvailable = snapshot.state != BridgeProtocol.RecordingState.UNAVAILABLE,
             recordingState = snapshot.state,
+            activeLocusProfile = snapshot.locusProfileName,
             lastUpdateEpochMillis = wallMillis(),
             currentLocusHeartRate = snapshot.currentHeartRate,
             lastError = if (snapshot.state == BridgeProtocol.RecordingState.UNAVAILABLE) {
@@ -598,8 +595,6 @@ class BridgeRuntime internal constructor(
             locus = LocusGateway(context),
             transport = ReliablePebbleTransport(DefaultPebbleDictionarySender(context)),
             commandJournal = CommandJournal(),
-            snapshotEpochStore = SnapshotDeliveryEpochStore(),
-            profileTransferSerialStore = ProfileTransferSerialStore(),
             refreshMode = { Preferences.refreshMode(context) },
             trustedMutationGate = { admission, block ->
                 TrustedPebbleCompanionProvider.withInboundAdmission(context, admission, block)

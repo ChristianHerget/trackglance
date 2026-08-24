@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="210mm"
+   height="297mm"
+   viewBox="0 0 210 297"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   sodipodi:docname="Zeichnung.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="1.1676764"
+     inkscape:cx="396.51395"
+     inkscape:cy="444.04424"
+     inkscape:window-width="1368"
+     inkscape:window-height="1074"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <linearGradient
+       id="badge_grad"
+       x1="0%"
+       y1="0%"
+       x2="100%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#0a4b3b"
+         id="stop2" />
+      <stop
+         offset="100%"
+         stop-color="#042a21"
+         id="stop3" />
+    </linearGradient>
+    <linearGradient
+       id="pin_grad"
+       x1="0%"
+       y1="0%"
+       x2="100%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#f97316"
+         id="stop4" />
+      <stop
+         offset="100%"
+         stop-color="#ef4444"
+         id="stop5" />
+    </linearGradient>
+    <linearGradient
+       id="trail_grad"
+       x1="0%"
+       y1="0%"
+       x2="100%"
+       y2="0%">
+      <stop
+         offset="0%"
+         stop-color="#10b981"
+         stop-opacity="0.3"
+         id="stop6" />
+      <stop
+         offset="50%"
+         stop-color="#38bdf8"
+         id="stop7" />
+      <stop
+         offset="100%"
+         stop-color="#10b981"
+         stop-opacity="0.3"
+         id="stop8" />
+    </linearGradient>
+    <radialGradient
+       id="dial_bg"
+       cx="50%"
+       cy="50%"
+       r="50%">
+      <stop
+         offset="0%"
+         stop-color="#08382c"
+         id="stop9" />
+      <stop
+         offset="70%"
+         stop-color="#04221b"
+         id="stop10" />
+      <stop
+         offset="100%"
+         stop-color="#01130e"
+         id="stop11" />
+    </radialGradient>
+    <linearGradient
+       id="pin_coral"
+       x1="0%"
+       y1="0%"
+       x2="100%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#fb7185"
+         id="stop12" />
+      <stop
+         offset="100%"
+         stop-color="#e11d48"
+         id="stop13" />
+    </linearGradient>
+    <linearGradient
+       id="pebble_grad"
+       x1="25%"
+       y1="15%"
+       x2="80%"
+       y2="90%">
+      <stop
+         offset="0%"
+         stop-color="#e2e8f0"
+         id="stop14" />
+      <stop
+         offset="40%"
+         stop-color="#94a3b8"
+         id="stop15" />
+      <stop
+         offset="80%"
+         stop-color="#64748b"
+         id="stop16" />
+      <stop
+         offset="100%"
+         stop-color="#475569"
+         id="stop17" />
+    </linearGradient>
+    <linearGradient
+       id="green_pin_grad"
+       x1="0%"
+       y1="0%"
+       x2="100%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#10b981"
+         id="stop18" />
+      <stop
+         offset="100%"
+         stop-color="#059669"
+         id="stop19" />
+    </linearGradient>
+    <clipPath
+       id="pebble_clip">
+      <path
+         d="M 82 66 C 92 60, 118 61, 126 70 C 133 78, 131 95, 122 104 C 113 113, 93 115, 84 108 C 75 101, 73 72, 82 66 Z"
+         id="path19" />
+    </clipPath>
+  </defs>
+  <g
+     inkscape:label="Ebene 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <g
+       id="logo_root">
+      <rect
+         id="presentation_card"
+         x="35"
+         y="18"
+         width="140"
+         height="198"
+         rx="16"
+         fill="#f8fafc"
+         stroke="#e2e8f0"
+         stroke-width="1" />
+      <g
+         id="mark_container">
+        <rect
+           id="badge_bg"
+           x="60"
+           y="36"
+           width="90"
+           height="90"
+           rx="22"
+           fill="#1e293b"
+           stroke="#334155"
+           stroke-width="1.2" />
+        <path
+           id="pebble_shadow"
+           d="M 83 69 C 93 63, 119 64, 127 73 C 134 81, 132 98, 123 107 C 114 116, 94 118, 85 111 C 76 104, 74 75, 83 69 Z"
+           fill="#0f172a"
+           opacity="0.55" />
+        <path
+           id="pebble_body"
+           d="M 82 66 C 92 60, 118 61, 126 70 C 133 78, 131 95, 122 104 C 113 113, 93 115, 84 108 C 75 101, 73 72, 82 66 Z"
+           fill="url(#pebble_grad)"
+           stroke="#cbd5e1"
+           stroke-width="0.6" />
+        <g
+           id="map_grid"
+           clip-path="url(#pebble_clip)">
+          <path
+             id="topo_shade_1"
+             d="M 75 75 Q 95 65 115 72 Q 130 78 135 95 Q 125 115 100 112 Q 75 110 75 90 Z"
+             fill="#ffffff"
+             fill-opacity="0.05" />
+          <path
+             id="topo_shade_2"
+             d="M 85 70 Q 105 63 125 68 Q 130 85 120 102 Q 102 106 88 98 Q 80 88 85 70 Z"
+             fill="#ffffff"
+             fill-opacity="0.08" />
+          <path
+             id="topo_shade_3"
+             d="M 102 62 Q 120 58 126 68 Q 128 78 122 86 Q 110 88 105 78 Z"
+             fill="#ffffff"
+             fill-opacity="0.14" />
+          <path
+             id="topo_c1"
+             d="M 76 74 C 88 66, 102 68, 114 62 C 124 57, 130 70, 131 82 C 132 94, 126 106, 115 110 C 104 114, 88 112, 80 102 C 72 92, 72 80, 76 74 Z"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.55"
+             opacity="0.65" />
+          <path
+             id="topo_c2"
+             d="M 82 76 C 92 70, 106 70, 116 66 C 124 63, 126 74, 126 84 C 126 94, 120 102, 110 104 C 100 106, 88 104, 84 96 C 80 88, 78 80, 82 76 Z"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.65"
+             opacity="0.75" />
+          <path
+             id="topo_c3"
+             d="M 90 75 C 98 70, 110 68, 118 67 C 123 67, 124 76, 122 84 C 120 90, 114 96, 106 97 C 98 98, 90 94, 88 87 C 86 80, 87 77, 90 75 Z"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.95"
+             opacity="0.9" />
+          <path
+             id="topo_c4"
+             d="M 100 72 C 106 67, 114 65, 118 66 C 121 68, 121 75, 119 80 C 117 84, 112 87, 107 86 C 102 85, 98 80, 100 72 Z"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.95" />
+          <polygon
+             id="peak_marker"
+             points="116.8,62.5 118.2,64.8 115.4,64.8"
+             fill="#ffffff"
+             opacity="0.9" />
+          <text
+             id="elevation_label"
+             x="120"
+             y="64.8"
+             font-family="monospace, sans-serif"
+             font-size="2.4"
+             font-weight="bold"
+             fill="#ffffff"
+             opacity="0.85">842m</text>
+          <path
+             id="grid_coords_lat"
+             d="M 68 76 L 140 76 M 68 89 L 140 89 M 68 102 L 140 102"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.45"
+             stroke-dasharray="1.5,1.5"
+             opacity="0.4" />
+          <path
+             id="grid_coords_long"
+             d="M 90 50 L 90 125 M 105 50 L 105 125 M 120 50 L 120 125"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.45"
+             stroke-dasharray="1.5,1.5"
+             opacity="0.4" />
+          <path
+             id="cross_1"
+             d="M 103.5 89 L 106.5 89 M 105 87.5 L 105 90.5"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.7" />
+          <path
+             id="cross_2"
+             d="M 88.5 89 L 91.5 89 M 90 87.5 L 90 90.5"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.6" />
+          <path
+             id="cross_3"
+             d="M 118.5 89 L 121.5 89 M 120 87.5 L 120 90.5"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.6" />
+          <path
+             id="cross_4"
+             d="M 103.5 76 L 106.5 76 M 105 74.5 L 105 77.5"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.6" />
+          <path
+             id="cross_5"
+             d="M 88.5 76 L 91.5 76 M 90 74.5 L 90 77.5"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             opacity="0.6" />
+          <path
+             id="hiking_trail"
+             d="M 82 104 C 88 100, 92 105, 96 98 C 100 91, 92 86, 99 80 C 104 75, 110 76, 116.8 66.8"
+             fill="none"
+             stroke="#38bdf8"
+             stroke-width="1.2"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             stroke-dasharray="2.2,1.2"
+             opacity="0.95" />
+          <circle
+             id="trail_pt1"
+             cx="82"
+             cy="104"
+             r="1.2"
+             fill="#38bdf8"
+             stroke="#0f172a"
+             stroke-width="0.4" />
+          <circle
+             id="trail_pt2"
+             cx="96"
+             cy="98"
+             r="1.0"
+             fill="#ffffff"
+             stroke="#38bdf8"
+             stroke-width="0.5" />
+          <circle
+             id="trail_pt3"
+             cx="99"
+             cy="80"
+             r="1.0"
+             fill="#ffffff"
+             stroke="#38bdf8"
+             stroke-width="0.5" />
+          <g
+             id="compass_rose"
+             transform="translate(80, 72) scale(0.65)">
+            <polygon
+               points="0,-6 2,0 0,-1.5 -2,0"
+               fill="#38bdf8"
+               id="polygon24" />
+            <polygon
+               points="0,6 2,0 0,1.5 -2,0"
+               fill="#cbd5e1"
+               opacity="0.6"
+               id="polygon25" />
+            <text
+               x="0"
+               y="-7.5"
+               font-family="system-ui, sans-serif"
+               font-size="3"
+               font-weight="bold"
+               fill="#ffffff"
+               text-anchor="middle"
+               id="text25">N</text>
+          </g>
+        </g>
+        <ellipse
+           id="pin_shadow"
+           cx="116.8"
+           cy="75"
+           rx="2.8"
+           ry="1.3"
+           fill="#0f172a"
+           opacity="0.5" />
+        <g
+           id="location_pin_group">
+          <path
+             id="location_pin"
+             d="M 116.8 57 C 112.5 57 109 60.5 109 64.8 C 109 69.5 116.8 77.5 116.8 77.5 C 116.8 77.5 124.6 69.5 124.6 64.8 C 124.6 60.5 121.1 57 116.8 57 Z"
+             fill="url(#green_pin_grad)"
+             stroke="#ffffff"
+             stroke-width="0.8" />
+          <circle
+             id="pin_eye"
+             cx="116.8"
+             cy="64.8"
+             r="2.6"
+             fill="#ffffff" />
+          <path
+             id="pin_specular"
+             d="M 113 61.5 C 114 60 116.5 59.5 118 59.5"
+             fill="none"
+             stroke="#ffffff"
+             stroke-width="0.7"
+             stroke-linecap="round"
+             opacity="0.75" />
+        </g>
+      </g>
+      <g
+         id="wordmark">
+        <text
+           id="wordmark_line1"
+           x="105"
+           y="150"
+           font-family="system-ui, -apple-system, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+           font-size="11.5"
+           font-weight="800"
+           text-anchor="middle"
+           fill="#0f172a"
+           letter-spacing="0.2px">LocusPebble</text>
+        <text
+           id="wordmark_line2"
+           x="105"
+           y="163"
+           font-family="system-ui, -apple-system, 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+           font-size="8.5"
+           font-weight="700"
+           text-anchor="middle"
+           fill="#10b981"
+           letter-spacing="1.5px">Bridge</text>
+      </g>
+    </g>
+  </g>
+</svg>

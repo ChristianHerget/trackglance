@@ -1,0 +1,5 @@
+ARG GENERATED_IMAGE
+FROM ${GENERATED_IMAGE}
+COPY tools/podman/android-emulator-entrypoint.sh /android/sdk/locuspebble-entrypoint.sh
+RUN chmod 0755 /android/sdk/locuspebble-entrypoint.sh
+CMD ["/android/sdk/locuspebble-entrypoint.sh"]

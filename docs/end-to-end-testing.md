@@ -1,13 +1,13 @@
 # End-to-end development and testing
 
-This guide describes a reproducible environment for building Locus Pebble Bridge and testing the
+This guide describes a version-pinned environment for building Locus Pebble Bridge and testing the
 complete path from a PebbleOS watchapp to Locus Map. It records the setup that was proven on a
 Chromebook with Linux, ChromeOS ARCVM, CoreApp, and PebbleOS QEMU.
 
-The long-term goal is a containerized development environment. The build toolchains and PebbleOS
-QEMU can be containerized. Locus Map and CoreApp still run on an Android target, such as ARCVM, an
-Android emulator, or a physical device. A public container must not redistribute Play Store APKs,
-signing material, private API keys, or other third-party artifacts.
+The supported development environment is containerized. The build toolchains and automated
+PebbleOS QEMU acceptance run in containers. Locus Map and CoreApp still run on an Android target,
+such as the workflow's emulator, ARCVM, or a physical device. A public container must not
+redistribute Play Store APKs, signing material, private API keys, or other third-party artifacts.
 
 ## System topology
 
@@ -50,7 +50,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.1.8 |
+| Bridge and watchapp | 0.1.9 |
 | Wire protocol | v3 |
 | CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
@@ -63,103 +63,50 @@ Pebble SDK, and an optional CoreApp source build. The known-good host used appro
 the Android SDK, 1.6 GB for Pebble SDK data, and 3.8 GB for Gradle caches. Building CoreApp adds an
 NDK of approximately 2.2 GB and substantially more build output.
 
-## 1. Install the host tools
+## 1. Build the development container
 
-On Debian or Ubuntu, install the base packages:
-
-```sh
-sudo apt update
-sudo apt install git curl unzip zip bzip2 openjdk-17-jdk-headless \
-  nodejs npm python3 python3-venv adb libsdl2-2.0-0 libasound2 \
-  libpulse0 libx11-6 libfdt1
-```
-
-Confirm the tools before downloading large SDKs:
+Install Docker only, or use rootless Podman as the Docker-compatible fallback used by the full
+acceptance environment. Keep Java, Android SDK/NDK, Node, Python/uv, Pebble Tool, and Pebble SDK out
+of the host user profile:
 
 ```sh
-java -version
-node --version
-npm --version
-adb version
-df -h .
+./tools/podman-test doctor static
+./tools/podman-test build-static
+./tools/podman-test dev bash
 ```
 
-### Install the Android SDK
-
-Use Android Studio's SDK Manager or the official Android command-line tools. Install at least:
-
-- Android SDK Platform 36
-- Android SDK Build Tools 36.0.0
-- Android SDK Platform Tools
-
-Use a permanent directory such as `$HOME/Android/Sdk` or `/opt/android-sdk`. Do not install the SDK
-under `/tmp`: temporary cleanup, reboot, or a full temporary filesystem can invalidate Gradle's SDK
-path and force large downloads to be repeated.
-
-Create the untracked `local.properties` in the repository root:
-
-```properties
-sdk.dir=/absolute/path/to/Android/Sdk
-```
-
-The Locus Bridge build does **not** require an Android NDK. NDK 28.2.13676358 and CMake 3.22.1 were
-needed only when CoreApp itself was built from source. Reuse an existing complete NDK installation;
-do not delete it merely because a build or network connection was interrupted.
-
-### Install Pebble Tool and Pebble SDK
-
-Install `uv`, Pebble Tool, and a pinned Pebble SDK:
-
-```sh
-curl -LsSf https://astral.sh/uv/0.12.4/install.sh | sh
-uv tool install 'pebble-tool==5.0.39' --python 3.13
-pebble sdk install 4.33.1
-pebble sdk activate 4.33.1
-pebble --version
-pebble sdk list
-```
-
-Pebble Tool normally stores SDKs below `$XDG_DATA_HOME/pebble-sdk`, or
-`$HOME/.local/share/pebble-sdk` when `XDG_DATA_HOME` is unset. Keep that directory on persistent
-storage.
-
-On an unreliable connection, preserve the Android, Gradle, npm, uv, and Pebble download caches.
-Retry the failed download without deleting valid SDKs. Before restarting a large operation, check
-`df -h` and identify the actual partial file instead of clearing the entire cache.
+The digest-pinned image contains the complete development toolchain. `build-static` may download
+the base image and pinned SDK inputs; later runs reuse container-engine and Gradle/npm caches. The
+wrapper prefers Docker when installed and otherwise uses rootless Podman. Select explicitly with
+`DEV_CONTAINER_ENGINE=docker` or `DEV_CONTAINER_ENGINE=podman`. Use `dev COMMAND...` for focused
+commands instead of installing their tools on the host.
 
 ## 2. Build and test Locus Pebble Bridge
 
 From the repository root:
 
 ```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
-  :android:app:assembleDebug
-./gradlew :android:app:compileDebugAndroidTestKotlin
-cd watchapp
-npm ci
-npm test
-pebble clean
-pebble build
-npm run verify:pbw
-cd ..
+./tools/podman-test static
+./tools/podman-test documentation
+./tools/podman-test release-check
 ```
 
 The outputs are:
 
 ```text
 android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
-watchapp/build/locuspebble-watch.pbw
+watchapp/build/watchapp.pbw
 ```
 
 The final npm command verifies PBW targets, metadata, resources, and embedded PKJS. Check versions
 and contents manually as needed before installation:
 
 ```sh
-ANDROID_SDK_ROOT=/absolute/path/to/Android/Sdk
-"$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging \
-  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk | head
-unzip -p watchapp/build/locuspebble-watch.pbw appinfo.json
-unzip -l watchapp/build/locuspebble-watch.pbw
+./tools/podman-test dev bash -c '
+  aapt2 dump badging android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk | head
+  unzip -p watchapp/build/watchapp.pbw appinfo.json
+  unzip -l watchapp/build/watchapp.pbw
+'
 ```
 
 The APK and PBW versions must match. The PBW must contain the embedded `pebble-js-app.js` and only
@@ -171,7 +118,7 @@ Kotlin, C, `watchapp/package.json`, and `protocol/README.md`.
 The Android target must run all three apps:
 
 1. CoreApp (`coredevices.coreapp`)
-2. Locus Pebble Bridge (`io.github.christianherget.locuspebble.bridge`)
+2. Locus Pebble Bridge (`app.locuspebble.bridge`)
 3. Locus Map 4 (`menion.android.locus`)
 
 ### Chromebook ARCVM
@@ -213,20 +160,18 @@ from source for the required ABI.
 
 CoreApp's direct QEMU transport is present in
 [`coredevices/mobileapp`](https://github.com/coredevices/mobileapp) commit
-`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`. To reproduce the verified source build, check out that
-exact revision:
+`38fd4c6892599d6a02b4b3ca0b3fd518a51d6170`. The repository helper checks out that exact revision
+and builds it inside the development container:
 
 ```sh
-git clone https://github.com/coredevices/mobileapp.git coreapp
-cd coreapp
-git checkout --detach 38fd4c6892599d6a02b4b3ca0b3fd518a51d6170
-cp androidApp/src/google-services-dummy.json androidApp/src/google-services.json
-printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
-./gradlew :androidApp:assembleDebug
-adb -s "$ANDROID_SERIAL" install -r \
-  androidApp/build/outputs/apk/debug/androidApp-debug.apk
-cd ..
+./tools/podman-test dev env \
+  CORE_APP_COMMIT=38fd4c6892599d6a02b4b3ca0b3fd518a51d6170 \
+  bash tools/podman/build-coreapp.sh /workspace
 ```
+
+The resulting x86_64 debug APK is
+`build/podman/images/pebble-app-x86_64-debug.apk`. Install it using the ADB connection for the
+chosen Android target; the automated Podman workflow performs this installation itself.
 
 Open **Locus Pebble Bridge** after installing CoreApp. The bridge disables PebbleKit auto-selection
 and selects the exact `coredevices.coreapp` package automatically. Diagnostics should show that
@@ -246,7 +191,7 @@ Confirm installed packages and versions:
 ```sh
 adb -s "$ANDROID_SERIAL" shell dumpsys package coredevices.coreapp \
   | grep -E 'versionName=|versionCode='
-adb -s "$ANDROID_SERIAL" shell dumpsys package io.github.christianherget.locuspebble.bridge \
+adb -s "$ANDROID_SERIAL" shell dumpsys package app.locuspebble.bridge \
   | grep -E 'versionName=|versionCode='
 adb -s "$ANDROID_SERIAL" shell pm path menion.android.locus
 ```
@@ -364,7 +309,7 @@ window's keyboard for buttons. This is an important current limitation for unatt
 Build the PBW before this step. Copy it to Android storage:
 
 ```sh
-adb -s "$ANDROID_SERIAL" push watchapp/build/locuspebble-watch.pbw \
+adb -s "$ANDROID_SERIAL" push watchapp/build/watchapp.pbw \
   /sdcard/Download/locus-bridge.pbw
 ```
 
@@ -383,7 +328,7 @@ After launch, open the bridge diagnostics screen:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n io.github.christianherget.locuspebble.bridge/.MainActivity
+  -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity
 ```
 
 Expected values are:
@@ -402,6 +347,16 @@ Return Locus to the foreground before sending recording commands:
 adb -s "$ANDROID_SERIAL" shell am start -W \
   -n menion.android.locus/com.asamm.android.library.androidCore.features.startScreen.StartScreen
 ```
+
+This is an empirically required compatibility setup, not a precondition documented by the Locus
+API. Locus documents `ACTION_TRACK_RECORD_START` as a broadcast, and its API implementation sends
+that package-targeted broadcast without starting a Locus activity. On the API-32 target, sending
+START while Locus is backgrounded produced Android's
+`Foreground service started from background can not have location/camera/microphone access`
+diagnostic for Locus's `TrackRecordingService`. Foregrounding Locus before START avoids creating the
+recording service in that restricted state. See [Track Recording Background
+Execution](design-decisions.md#2-track-recording-background-execution) for the source links and
+product decision.
 
 The delivered activity may be reported as
 `menion.android.locus/com.asamm.locus.basic.features.mainActivity.MainActivityMap`; that is normal.
@@ -431,7 +386,7 @@ If settings says no profile response has arrived:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n io.github.christianherget.locuspebble.bridge/.MainActivity
+  -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity
 adb -s "$ANDROID_SERIAL" logcat -d \
   | grep -E 'AppMessagePush|PROFILE|QemuTransport|PebbleProtocol'
 ```
@@ -514,9 +469,9 @@ The repository also has an opt-in Locus test. It refuses to run when recording i
 then creates and saves a short track:
 
 ```sh
-ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
+./tools/podman-test dev bash -c 'ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true \
-  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000
+  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000'
 ```
 
 The observation delay is optional and capped at ten seconds. Normal verification compiles this test
@@ -547,7 +502,8 @@ dictation.
 
 ### Watchapp does not start
 
-- Run `npm test`; the stack regression catches large function-local buffers.
+- Run `./tools/podman-test dev npm test --prefix watchapp`; the stack regression catches large
+  function-local buffers.
 - Confirm that the PBW contains the correct platform binary.
 - Confirm that CoreApp finished transferring both binary and resources.
 - Inspect CoreApp and QEMU logs for an app crash or restart.
@@ -558,6 +514,13 @@ dictation.
 An SDK command probably launched another managed emulator. List exact QEMU processes and port
 owners. Stop only the unintended process. Keep the direct QEMU connected to CoreApp and its
 persistent flash intact.
+
+### Containerized Android Emulator exits with status 139
+
+On an enforcing SELinux host, KVM validation can pass while policy denies the Android Emulator
+render thread's `execheap` access. Follow the diagnosis, temporary A/B test, reviewed local-policy
+fix, verification, and rollback procedure in
+[Android Emulator exits 139 on an SELinux host](podman-testing.md#android-emulator-exits-139-on-an-selinux-host).
 
 ### CoreApp cannot connect
 
@@ -609,107 +572,15 @@ Let resumable package downloads continue unless they have definitively failed. I
 stuck, restart that transfer while retaining complete packages and caches. Do not trigger an NDK
 redownload unless the NDK is actually missing or corrupt.
 
-## 11. Containerization roadmap
+## 11. Containerized acceptance automation
 
-### Phase 1: reproducible build image
+The containerization roadmap is implemented by `./tools/podman-test`. It builds a pinned Android
+12L/API 32 emulator with Docker or rootless Podman, provisions Pebble App and a validated Locus Map
+fixture into a golden data volume, injects Pebble QEMU buttons and heart rate through a transparent
+relay, and runs the full static, instrumentation, and watch-to-Locus acceptance suites. A Google
+WebRTC frontend supports interactive local bootstrap; fresh CI bootstrap is headless.
 
-Create a pinned Linux image containing:
-
-- JDK 17;
-- Node.js and npm;
-- Python plus `uv` and Pebble Tool;
-- Pebble SDK 4.33.1;
-- Android command-line tools, Platform 36, Build Tools 36.0.0, and Platform Tools;
-- SDL2/X11 runtime libraries for QEMU;
-- Git, curl, unzip, zip, and bzip2.
-
-Run as a non-root build user. Put SDKs in stable paths such as `/opt/android-sdk` and
-`/opt/pebble-sdk`. Set `ANDROID_SDK_ROOT` and `XDG_DATA_HOME` explicitly. Pin downloads by version
-and checksum. Accept Android licenses during image construction where their terms permit it.
-
-Use persistent caches rather than rebuilding them on every invocation:
-
-```text
-/home/developer/.gradle
-/home/developer/.npm
-/home/developer/.cache/uv
-/opt/pebble-sdk
-```
-
-The first container milestone should run these commands without Android or GUI access:
-
-```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
-  :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
-cd watchapp && npm ci && npm test && pebble clean && pebble build && npm run verify:pbw
-```
-
-### Phase 2: QEMU service
-
-Add a QEMU service using the direct command from section 4. Persist one flash volume per SDK and
-platform. Expose ports 12344-12347 only to the test network. For interactive tests, forward X11 or
-use Xvfb plus VNC/noVNC. Audio and microphone forwarding are optional until dictation automation is
-in scope.
-
-Do not run the standard Pebble phone simulator in this service. CoreApp is the phone-side protocol
-and PKJS runtime.
-
-### Phase 3: external Android target
-
-Initially, keep Android outside the container:
-
-- connect to Chromebook ARCVM;
-- connect to a physical Android device; or
-- run a separately managed Android emulator with KVM.
-
-The container can use the host ADB server or host networking, subject to local security policy. Do
-not expose an unauthenticated ADB server to an untrusted network.
-
-For a containerized Android emulator, pass `/dev/kvm`, reserve substantial RAM and disk, and choose
-an ABI compatible with CoreApp and Locus. A Play-enabled emulator introduces account, licensing,
-and provisioning concerns. Locus and Play-distributed CoreApp APKs should be mounted from a private
-artifact directory or installed interactively; they should not be copied into a public image.
-
-### Phase 4: orchestration and automation
-
-A practical Compose layout is:
-
-```text
-builder       builds APK/PBW and runs unit/static tests
-pebble-qemu   runs one pinned Emery or Gabbro QEMU with persistent flash
-e2e-runner    controls ADB, installs bridge/PBW, gathers logs, and asserts state
-android       external ARCVM/device at first; optional KVM emulator later
-```
-
-Automate these readiness checks in order:
-
-1. APK and PBW built with matching versions.
-2. Android target visible through ADB.
-3. CoreApp, bridge, and Locus installed.
-4. QEMU ports listening.
-5. ADB reverse active.
-6. CoreApp QEMU watch connected.
-7. PBW installed and watchapp open.
-8. PKJS/bridge handshake reports matching versions and protocol v3.
-9. Fresh Locus profile list received.
-10. Start/pause/resume/waypoint/stop transitions observed.
-
-The remaining automation gap is button injection while CoreApp owns QEMU's only protocol socket.
-Possible solutions are a CoreApp test API that relays QEMU control frames, a dedicated test proxy
-that multiplexes control without corrupting Pebble Protocol, or UI-level keyboard automation in a
-VNC session. Until one is implemented, keep the two watch button presses as an explicit human test
-step and automate every assertion around them.
-
-### Definition of done for the container
-
-The containerized environment is complete when a new machine can, from pinned inputs:
-
-- build both artifacts without downloading tools into temporary directories;
-- run JVM, JS, stack, packaging, and Android-test compilation checks;
-- launch Emery and Gabbro QEMU and smoke-test app startup/settings;
-- connect to a documented Android target through ADB;
-- install the PBW through CoreApp;
-- obtain a fresh Locus profile list;
-- exercise and assert all recording commands end to end;
-- retain logs, screenshots, APK, and PBW as test artifacts;
-- perform all destructive recording operations only with explicit opt-in.
+See [Containerized acceptance environment](podman-testing.md) for host requirements, pinned inputs,
+commands, privacy boundaries, failure handling, artifact paths, and the Android-minimum upgrade
+procedure. The ARCVM and direct-QEMU sections above remain useful for manual and physical-device
+diagnostics; they are separate from the disposable API 32 automation.

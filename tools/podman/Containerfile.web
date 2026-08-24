@@ -1,0 +1,42 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG ANDROID_EMULATOR_SCRIPTS_COMMIT
+ARG AEMU_PROTOS_COMMIT
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates git libprotobuf-dev nodejs npm protobuf-compiler python3 python3-pip python3-venv && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/google/android-emulator-container-scripts.git /opt/aemu && \
+    git -C /opt/aemu checkout --detach "${ANDROID_EMULATOR_SCRIPTS_COMMIT}" && \
+    test "$(git -C /opt/aemu rev-parse HEAD)" = "${ANDROID_EMULATOR_SCRIPTS_COMMIT}" && \
+    mkdir -p /opt/aemu-root/hardware/google && \
+    git clone --filter=blob:none --no-checkout \
+      https://android.googlesource.com/platform/hardware/google/aemu \
+      /opt/aemu-root/hardware/google/aemu && \
+    git -C /opt/aemu-root/hardware/google/aemu fetch --depth 1 origin "${AEMU_PROTOS_COMMIT}" && \
+    git -C /opt/aemu-root/hardware/google/aemu sparse-checkout set protos && \
+    git -C /opt/aemu-root/hardware/google/aemu checkout --detach "${AEMU_PROTOS_COMMIT}" && \
+    test "$(git -C /opt/aemu-root/hardware/google/aemu rev-parse HEAD)" = "${AEMU_PROTOS_COMMIT}"
+
+RUN python3 -m venv /opt/gateway-venv && \
+    /opt/gateway-venv/bin/pip install --no-cache-dir grpcio-tools && \
+    cd /opt/aemu/gateway && \
+    BAZEL_ROOT=/opt/aemu-root /opt/gateway-venv/bin/python setup.py build_py && \
+    BAZEL_ROOT=/opt/aemu-root /opt/gateway-venv/bin/pip install --no-cache-dir /opt/aemu/gateway
+
+RUN sed -i \
+      -e 's|ws://localhost:8080|ws://127.0.0.1:8080|' \
+      -e 's|http://localhost:8080|http://127.0.0.1:8080|' \
+      /opt/aemu/js/example/vite.config.js && \
+    npm ci --prefix /opt/aemu/js && \
+    PATH=/opt/aemu/js/node_modules/.bin:$PATH protoc \
+      -I/usr/include -I/opt/aemu/js/src/proto -I/opt/aemu/js/proto \
+      --js_out=import_style=commonjs,binary:/opt/aemu/js/src/proto \
+      /opt/aemu/js/proto/emulator_controller.proto && \
+    cd /opt/aemu/js && \
+    python3 eslint_prefix.py src/proto/emulator_controller_pb.js && \
+    npm ci --prefix /opt/aemu/js/example
+COPY tools/podman/web-entrypoint.sh /usr/local/bin/locuspebble-web
+RUN chmod 0755 /usr/local/bin/locuspebble-web
+EXPOSE 5173
+ENTRYPOINT ["/usr/local/bin/locuspebble-web"]

@@ -1,0 +1,7 @@
+{
+  "name": "locuspebble-documentation",
+  "private": true,
+  "devDependencies": {
+    "playwright-chromium": "1.55.0"
+  }
+}

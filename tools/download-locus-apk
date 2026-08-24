@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Download the pinned public Locus acceptance APK without persisting Drive tokens."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import html.parser
+import os
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = ROOT / "tools" / "locus-test-apk.properties"
+USER_AGENT = "pebble-locus-map-acceptance/1"
+MAX_WARNING_BYTES = 1024 * 1024
+
+
+def read_properties(path: Path) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or not key:
+            raise ValueError(f"invalid fixture property in {path}")
+        properties[key] = value
+    return properties
+
+
+def google_drive_id(url: str) -> str | None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in {"drive.google.com", "docs.google.com"}:
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 3 and parts[0] == "file" and parts[1] == "d":
+        return parts[2]
+    query = urllib.parse.parse_qs(parsed.query)
+    return query.get("id", [None])[0]
+
+
+class DownloadFormParser(html.parser.HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.action: str | None = None
+        self.fields: dict[str, str] = {}
+        self._in_download_form = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        if tag == "form" and values.get("id") == "download-form":
+            self._in_download_form = True
+            self.action = values.get("action")
+        elif tag == "input" and self._in_download_form:
+            name = values.get("name")
+            value = values.get("value")
+            if name and value is not None:
+                self.fields[name] = value
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form":
+            self._in_download_form = False
+
+
+def request(url: str, timeout: int) -> urllib.response.addinfourl:
+    return urllib.request.urlopen(
+        urllib.request.Request(url, headers={"User-Agent": USER_AGENT}),
+        timeout=timeout,
+    )
+
+
+def initial_url(source_url: str) -> str:
+    file_id = google_drive_id(source_url)
+    if not file_id:
+        return source_url
+    return "https://drive.google.com/uc?" + urllib.parse.urlencode(
+        {"export": "download", "id": file_id}
+    )
+
+
+def confirmed_drive_url(body: bytes) -> str:
+    parser = DownloadFormParser()
+    parser.feed(body.decode("utf-8", errors="strict"))
+    if parser.action != "https://drive.usercontent.google.com/download":
+        raise ValueError("HTML response did not contain Google's expected download form")
+    required = {"id", "export", "confirm", "uuid"}
+    if not required.issubset(parser.fields):
+        raise ValueError("Google Drive download form is missing required fields")
+    return parser.action + "?" + urllib.parse.urlencode(
+        {key: parser.fields[key] for key in ("id", "export", "confirm", "uuid")}
+    )
+
+
+def response_is_html(response: urllib.response.addinfourl, first: bytes) -> bool:
+    content_type = response.headers.get_content_type().lower()
+    return content_type in {"text/html", "application/xhtml+xml"} or first.lstrip().lower().startswith(
+        (b"<!doctype html", b"<html")
+    )
+
+
+def download(source_url: str, output: Path, expected_sha256: str, timeout: int) -> tuple[int, str]:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        response = request(initial_url(source_url), timeout)
+        first = response.read(8192)
+        if response_is_html(response, first):
+            warning = first + response.read(MAX_WARNING_BYTES + 1)
+            response.close()
+            if len(warning) > MAX_WARNING_BYTES:
+                raise ValueError("download returned an oversized HTML response instead of an APK")
+            response = request(confirmed_drive_url(warning), timeout)
+            first = response.read(8192)
+        if response_is_html(response, first):
+            raise ValueError("download returned HTML instead of an APK")
+        if not first.startswith(b"PK\x03\x04"):
+            raise ValueError("download is not an APK/ZIP object")
+
+        digest = hashlib.sha256()
+        size = 0
+        with tempfile.NamedTemporaryFile(
+            mode="wb", prefix=f".{output.name}.", dir=output.parent, delete=False
+        ) as destination:
+            temporary_name = destination.name
+            destination.write(first)
+            digest.update(first)
+            size += len(first)
+            while chunk := response.read(1024 * 1024):
+                destination.write(chunk)
+                digest.update(chunk)
+                size += len(chunk)
+            destination.flush()
+            os.fsync(destination.fileno())
+        response.close()
+        actual_sha256 = digest.hexdigest()
+        if actual_sha256 != expected_sha256.lower():
+            raise ValueError("downloaded APK SHA-256 does not match the pinned fixture")
+        os.replace(temporary_name, output)
+        temporary_name = None
+        return size, actual_sha256
+    finally:
+        if temporary_name is not None:
+            Path(temporary_name).unlink(missing_ok=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--url")
+    parser.add_argument("--sha256")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--timeout", type=int, default=600)
+    args = parser.parse_args()
+    properties = read_properties(args.config)
+    source_url = args.url or properties["LOCUS_APK_URL"]
+    expected_sha256 = args.sha256 or properties["LOCUS_APK_SHA256"]
+    size, actual_sha256 = download(source_url, args.output, expected_sha256, args.timeout)
+    print(f"Downloaded verified Locus acceptance fixture ({size} bytes, SHA-256 {actual_sha256}).")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyError, OSError, UnicodeError, ValueError, urllib.error.URLError) as error:
+        raise SystemExit(f"Locus APK download failed: {error}")
