@@ -53,6 +53,10 @@ class ReleasePreflightTest(unittest.TestCase):
     def test_rejects_malformed_tag(self):
         self.assertNotEqual(0, self.preflight("0.2.2").returncode)
 
+    def test_accepts_matching_versions_with_sentence_punctuation(self):
+        self.git("tag", "v0.2.2")
+        self.assertEqual(0, self.preflight("v0.2.2").returncode)
+
     def test_rejects_version_mismatch(self):
         self.git("tag", "v0.2.3")
         self.assertNotEqual(0, self.preflight("v0.2.3").returncode)

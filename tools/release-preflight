@@ -17,7 +17,7 @@ values=(
   "$(sed -nE 's/^#define RELEASE_VERSION "([^"]+)"/\1/p' watchapp/src/c/main.c)"
   "$(sed -nE "s/^  var RELEASE = '([^']+)';/\1/p" watchapp/src/pkjs/index.js)"
   "$(sed -nE "s/^version = '([^']+)'/\1/p" docs/sphinx/conf.py)"
-  "$(sed -nE 's/^Protocol v[0-9]+ is retained for release ([0-9.]+).*/\1/p' protocol/README.md)"
+  "$(sed -nE 's/^Protocol v[0-9]+ is retained for release ([0-9]+\.[0-9]+\.[0-9]+)\..*/\1/p' protocol/README.md)"
 )
 for actual in "${values[@]}"; do
   [[ "$actual" == "$version" ]] || {
