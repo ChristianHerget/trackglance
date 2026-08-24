@@ -19,11 +19,19 @@ const androidTransport = read('android/app/src/main/java/io/github/christianherg
 const androidIngress = read('android/app/src/main/java/io/github/christianherget/locuspebble/bridge/pebble/AuthenticatedIngress.kt');
 const androidRuntime = read('android/app/src/main/java/io/github/christianherget/locuspebble/bridge/core/BridgeRuntime.kt');
 const androidMessages = read('android/app/src/main/java/io/github/christianherget/locuspebble/bridge/pebble/PebbleMessages.kt');
-const androidProfileSerial = read(
-  'android/app/src/main/java/io/github/christianherget/locuspebble/bridge/core/ProfileTransferSerialStore.kt');
+const androidOperations = read(
+  'android/app/src/main/java/io/github/christianherget/locuspebble/bridge/core/BridgeOperationCoordinator.kt');
 const protocol = read('protocol/README.md');
 const development = read('docs/development.md');
 const endToEnd = read('docs/end-to-end-testing.md');
+const podmanTesting = read('docs/podman-testing.md');
+const sphinxGettingStarted = read('docs/sphinx/getting-started.rst');
+const sphinxConfig = read('docs/sphinx/conf.py');
+const podmanVersions = read('tools/podman/versions.env');
+const podmanBuildContainer = read('tools/podman/Containerfile.build');
+const podmanWebContainer = read('tools/podman/Containerfile.web');
+const coreAppBuild = read('tools/podman/build-coreapp.sh');
+const debugStatusManifest = read('android/app/src/debug/AndroidManifest.xml');
 const settings = read('settings.gradle.kts');
 const verificationMetadata = read('gradle/verification-metadata.xml');
 const wrapperProperties = read('gradle/wrapper/gradle-wrapper.properties');
@@ -59,6 +67,8 @@ delete expectedKotlinKeys.PROTOCOL_VERSION;
 assert.deepStrictEqual(kotlinKeys,expectedKotlinKeys,'Kotlin and package.json must define the same complete key map');
 
 const versionName = capture(androidBuild,/versionName\s*=\s*"([^"]+)"/,'Android versionName');
+const versionCode = Number(capture(androidBuild,/versionCode\s*=\s*(\d+)/,'Android versionCode'));
+const minSdk = Number(capture(androidBuild,/minSdk\s*=\s*(\d+)/,'Android minimum SDK'));
 const uuid = packageJson.pebble.uuid;
 assert.strictEqual(packageJson.version,versionName);
 assert.strictEqual(packageLock.version,versionName);
@@ -69,6 +79,18 @@ assert(protocol.includes(`currently \`${versionName}\``));
 assert(protocol.includes(`\`${versionName}\` APK and PBW`));
 assert(kotlin.includes(`fromString("${uuid}")`));
 assert(protocol.includes(`UUID \`${uuid}\``));
+assert.strictEqual(versionCode,10);
+assert.strictEqual(minSdk,24);
+assert.strictEqual(
+  capture(androidBuild,/applicationId\s*=\s*"([^"]+)"/,'Android application ID'),
+  'app.locuspebble.bridge',
+  'the installed application identity must remain upgrade-compatible');
+assert.strictEqual(capture(sphinxConfig,/^version = '([^']+)'/m,'Sphinx version'),versionName);
+assert.strictEqual(capture(sphinxConfig,/^release = '([^']+)'/m,'Sphinx release'),versionName);
+assert(sphinxGettingStarted.includes('Android 7.0 or newer'));
+assert(podmanTesting.includes('API 32 is the acceptance runtime'));
+assert(debugStatusManifest.includes('android.permission.DUMP'));
+assert(debugStatusManifest.includes('${applicationId}.debug-status'));
 
 const kotlinVersion = Number(capture(kotlin,/object BridgeProtocol \{\s*const val VERSION = (\d+)/,'Kotlin protocol version'));
 const cVersion = Number(capture(watch,/#define PROTOCOL_VERSION (\d+)/,'C protocol version'));
@@ -100,6 +122,7 @@ assert.strictEqual(pkjs.TYPES.configResult,9);
 assert(watch.includes('MSG_CONFIG_RESULT = 9'));
 assert(kotlin.includes('CONFIG_RESULT(9)'));
 assert(protocol.includes('config result `9`'));
+assert(!protocol.includes('profile-list result `10`'));
 assert.deepStrictEqual(
   [pkjs.RESULTS.applied,pkjs.RESULTS.queued,pkjs.RESULTS.invalidConfig,pkjs.RESULTS.storageFailed],
   [0,7,8,9],
@@ -170,11 +193,11 @@ assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,cTransferSerialHalfRange);
 assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,androidTransferSerialHalfRange);
 assert.strictEqual(pkjs.LIMIT.transferSerialMask,0x7fffffff);
 assert.strictEqual(pkjs.LIMIT.transferSerialHalfRange,0x40000000);
-assert(androidRuntime.includes('profileTransferSerialStore.reserve()') &&
-    androidProfileSerial.includes('if (previous == -1L)') &&
-    androidProfileSerial.includes('0L') &&
-    androidProfileSerial.includes('(previous + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK'),
-  'Android profile transfers must reserve a dedicated zero-seeded durable +1 serial under the shared mask');
+assert(androidRuntime.includes('operations.serialized') &&
+    androidOperations.includes('if (profileTransferSerial == -1L)') &&
+    androidOperations.includes('0L') &&
+    androidOperations.includes('(profileTransferSerial + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK'),
+  'Android profile transfers must reserve a zero-seeded in-memory +1 serial under the shared coordinator');
 assert.strictEqual(mainDefines.DURABLE_TRANSFER_GENERATION,androidLimit('DURABLE_TRANSFER_GENERATION'));
 assert.strictEqual(mainDefines.DURABLE_TRANSFER_GENERATION,1);
 assert(androidMessages.includes('BridgeProtocol.Key.TRANSFER_GENERATION') &&
@@ -316,13 +339,54 @@ assert.deepStrictEqual(companion.apps,[{package:applicationId}]);
 assert.strictEqual(companion.url,'https://github.com/ChristianHerget/pebble-locus-map');
 
 for (const document of [development,endToEnd]) {
-  assert(document.includes('https://astral.sh/uv/0.12.4/install.sh'),
-    'development setup must pin the uv installer');
-  assert(document.includes("uv tool install 'pebble-tool==5.0.39' --python 3.13"),
-    'development setup must pin Pebble Tool');
+  assert(document.includes('./tools/podman-test build-static') &&
+      document.includes('./tools/podman-test dev bash'),
+    'development setup must keep the pinned toolchain in the development container');
 }
-assert(endToEnd.includes('git checkout --detach 38fd4c6892599d6a02b4b3ca0b3fd518a51d6170'),
-  'the reproducible CoreApp source setup must check out the verified commit');
+assert(endToEnd.includes('CORE_APP_COMMIT=38fd4c6892599d6a02b4b3ca0b3fd518a51d6170') &&
+    endToEnd.includes('bash tools/podman/build-coreapp.sh /workspace') &&
+    coreAppBuild.includes('checkout --detach "$CORE_APP_COMMIT"') &&
+    coreAppBuild.includes('rev-parse HEAD'),
+  'the containerized CoreApp source setup must check out and verify the pinned commit');
+for (const pin of [
+  'BASE_IMAGE=debian:12-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241',
+  'ANDROID_PLATFORM_TOOLS_VERSION=37.0.1',
+  'ANDROID_PLATFORM_32_REVISION=1',
+  'ANDROID_PLATFORM_36_REVISION=2',
+  'ANDROID_PLATFORM_37_REVISION=2',
+  'ANDROID_BUILD_TOOLS_VERSION=36.0.0',
+  'ANDROID_NDK_VERSION=28.2.13676358',
+  'ANDROID_CMAKE_VERSION=3.22.1',
+  'ANDROID_EMULATOR_SCRIPTS_COMMIT=0654f694b46794fae4b178f1e1a17cb60c5d2d34',
+  'AEMU_PROTOS_COMMIT=863dffe2c8c7d278c918f1fc409f85d3188c691e',
+  'ANDROID_SYSTEM_IMAGE_SHA256=2709bcc5a4aa98539b12c2169df606dfe9184fc3b4a0aac7120f319721e63bf1',
+  'ANDROID_EMULATOR_SHA256=95771e0ae431897b2a4bd2d97fa095f29a8b0624a7b216baf529f9306161c266',
+  'CORE_APP_COMMIT=38fd4c6892599d6a02b4b3ca0b3fd518a51d6170',
+]) assert(podmanVersions.includes(pin),`Podman input drifted: ${pin.split('=')[0]}`);
+assert(podmanWebContainer.includes('checkout --detach "${AEMU_PROTOS_COMMIT}"') &&
+    podmanWebContainer.includes('BAZEL_ROOT=/opt/aemu-root') &&
+    podmanWebContainer.includes('setup.py build_py'),
+  'the pinned WebRTC gateway must generate its protocol stubs from pinned AEMU sources');
+for (const revision of [
+  'ANDROID_PLATFORM_TOOLS_VERSION', 'ANDROID_PLATFORM_32_REVISION',
+  'ANDROID_PLATFORM_36_REVISION', 'ANDROID_PLATFORM_37_REVISION', 'ANDROID_BUILD_TOOLS_VERSION',
+  'ANDROID_NDK_VERSION', 'ANDROID_CMAKE_VERSION',
+]) {
+  assert(podmanBuildContainer.includes(`\${${revision}}`),
+    `build image must consume and verify ${revision}`);
+}
+assert(podmanBuildContainer.includes('sdk_revision()') &&
+    podmanBuildContainer.includes('/opt/android-sdk/platform-tools') &&
+    podmanBuildContainer.includes('/opt/android-sdk/platforms/android-32') &&
+    podmanBuildContainer.includes('/opt/android-sdk/platforms/android-36') &&
+    podmanBuildContainer.includes('/opt/android-sdk/platforms/android-37.0'),
+  'rolling Android SDK package revisions must be checked after sdkmanager installation');
+assert(podmanBuildContainer.includes('libpixman-1-0'),
+  'build container must include the Pebble QEMU pixman runtime');
+for (const browserLibrary of ['libatk-bridge2.0-0', 'libatk1.0-0', 'libatspi2.0-0']) {
+  assert(podmanBuildContainer.includes(browserLibrary),
+    `build container must include Playwright runtime ${browserLibrary}`);
+}
 for (const group of ['com.github.asamm','com.github.asamm.locus-api']) {
   assert(settings.includes(`includeGroup("${group}")`),`JitPack must be restricted to ${group}`);
 }

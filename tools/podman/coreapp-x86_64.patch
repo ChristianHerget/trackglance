@@ -1,0 +1,46 @@
+diff --git a/androidApp/build.gradle.kts b/androidApp/build.gradle.kts
+index 1a09f4f..a642afd 100644
+--- a/androidApp/build.gradle.kts
++++ b/androidApp/build.gradle.kts
+@@ -59,7 +59,7 @@ android {
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         ndk {
+             //noinspection ChromeOsAbiSupport
+-            abiFilters += setOf("armeabi-v7a", "arm64-v8a")
++            abiFilters += setOf("armeabi-v7a", "arm64-v8a", "x86_64")
+         }
+     }
+     packaging {
+diff --git a/cactus-native/build.gradle.kts b/cactus-native/build.gradle.kts
+index 887b724..0525118 100644
+--- a/cactus-native/build.gradle.kts
++++ b/cactus-native/build.gradle.kts
+@@ -11,7 +11,7 @@ android {
+     defaultConfig {
+         minSdk = libs.versions.android.minSdk.get().toInt()
+         ndk {
+-            abiFilters += "arm64-v8a"
++            abiFilters += setOf("arm64-v8a", "x86_64")
+         }
+     }
+     externalNativeBuild {
+diff --git a/cactus-native/src/main/cpp/cactus_cpu.c b/cactus-native/src/main/cpp/cactus_cpu.c
+index 57a0f06..1149404 100644
+--- a/cactus-native/src/main/cpp/cactus_cpu.c
++++ b/cactus-native/src/main/cpp/cactus_cpu.c
+@@ -1,8 +1,14 @@
+ #include <jni.h>
++#if defined(__aarch64__)
+ #include <sys/auxv.h>
+ #include <asm/hwcap.h>
++#endif
+-
++
+ JNIEXPORT jboolean JNICALL
+ Java_com_cactus_CactusCpuJNI_nativeIsCactusSupported(JNIEnv *env, jclass clazz) {
++#if defined(__aarch64__)
+     return (getauxval(AT_HWCAP) & HWCAP_ASIMDHP) != 0 ? JNI_TRUE : JNI_FALSE;
++#else
++    return JNI_FALSE;
++#endif
+ }

@@ -3,9 +3,10 @@
 ## Project Structure & Module Organization
 
 - `android/app/` contains the Kotlin Android bridge. Production code is under
-  `src/main/java/app/locuspebble/bridge/`; JVM tests use `src/test/`, and real-device Locus tests
+  `src/main/java/io/github/christianherget/locuspebble/bridge/`; JVM tests use `src/test/`, and real-device Locus tests
   use `src/androidTest/`.
-- `watchapp/` contains the Pebble C application. Edit `src/c/main.c`; platform declarations and
+- `watchapp/` contains the Pebble C application. Cohesive modules under `src/c/` own AppMessage
+  parsing, metrics, configuration, persistence, and transfer state; platform declarations and
   AppMessage keys live in `package.json`. Generated files belong in `watchapp/build/`.
 - `protocol/README.md` is the contract between Android and Pebble. Update it whenever message
   versions, keys, commands, or units change.
@@ -17,22 +18,60 @@ Pebble Time 2 (`emery`) and Pebble Round 2 (`gabbro`).
 
 ## Build, Test, and Development Commands
 
+Keep development dependencies inside the version-pinned container. Do not install the JDK, Android
+SDK, Node, Python tools, Pebble Tool, or Pebble SDK into the developer's user profile. Docker is the
+preferred static-development engine; rootless Podman is a supported Docker-compatible fallback.
+The wrapper selects Docker when available, otherwise Podman. Set `DEV_CONTAINER_ENGINE=docker` or
+`DEV_CONTAINER_ENGINE=podman` to choose explicitly.
+
 ```sh
-./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
-./gradlew :android:app:compileDebugAndroidTestKotlin
-cd watchapp && pebble clean && pebble build
+./tools/podman-test doctor static
+./tools/podman-test build-static
+./tools/podman-test dev bash
+./tools/podman-test static
+./tools/podman-test documentation
+./tools/podman-test release-check
 ```
 
-These commands verify watch targets, run JVM regressions, produce the Android APK, compile Android
-instrumentation tests, and produce `watchapp/build/watchapp.pbw`. The APK is written to
-`android/app/build/outputs/apk/debug/app-debug.apk`.
+`build-static` builds only the development image and may use the network; `--refresh` explicitly
+refreshes its digest-pinned base reference. `static` automatically builds that image when missing,
+then runs Gradle/JVM, Android assembly, Android-test compilation, JavaScript, Python, shell, C
+sanitizer, protocol, Pebble build, and PBW checks inside it. `documentation` validates committed
+screenshots without regenerating them. `release-check` assembles the release APK and verifies its
+application ID, API 24 minimum, and absence of `DebugStatusProvider`. Generated outputs go under
+`build/`, `android/app/build/`, and `watchapp/build/`; the APK is written to
+`android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk`. Run
+`./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally
+updating tracked images. Use `dev bash` for an interactive container shell or prefix any focused
+repository command with `./tools/podman-test dev`; do not reproduce its toolchain on the host.
+
+Heavy acceptance remains separate from the development container. It supports Docker or rootless
+Podman with `crun`, KVM, the pinned emulator stack, and the pinned Locus fixture. Never copy the APK
+into an image, repository, Actions artifact, or persistent cache:
+
+```sh
+./tools/podman-test doctor acceptance
+./tools/podman-test build
+./tools/podman-test bootstrap --locus-apks /absolute/private/path
+./tools/podman-test acceptance --locus-apks /absolute/private/path
+```
+
+The manual GitHub-hosted path uses Docker, downloads the official public fixture with
+`tools/download-locus-apk` into `$RUNNER_TEMP`, validates every pin in
+`tools/locus-test-apk.properties`, performs headless bootstrap, and runs acceptance twice. Keep the
+protected self-hosted path until hosted acceptance has proved reliable over time.
+
+The API 32 image includes Google Play services, so use the regular Locus Map 4 Google Play APK for
+acceptance. Do not use the `GooglePlayAfa` all-files-access build unless that permission is the
+specific subject of a test, and do not use the Amazon/no-Google-services build in this emulator.
+Keep the selected APK set in the absolute private directory passed to the wrapper.
 
 The opt-in Locus test creates and saves a short recording. Never run it when a user recording is
 active:
 
 ```sh
-ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true
+./tools/podman-test dev bash -c 'ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true'
 ```
 
 ## Coding Style & Naming Conventions
@@ -50,8 +89,9 @@ deduplication, wire scaling, and platform packaging. Locus broadcasts do not ack
 integration tests must poll and assert the resulting recording state.
 
 A successful Pebble build is not a runtime check. Keep large C buffers out of function-local stack
-storage, run `npm test`, and smoke-test launch plus settings opening on both Emery and Gabbro QEMU
-before declaring watch changes complete. Static stack checks complement, but do not replace, QEMU.
+storage, run `./tools/podman-test dev npm test --prefix watchapp`, and smoke-test launch plus settings
+opening on both Emery and Gabbro QEMU before declaring watch changes complete. Static stack checks
+complement, but do not replace, QEMU.
 
 ## Commit & Pull Request Guidelines
 

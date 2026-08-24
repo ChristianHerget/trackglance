@@ -90,6 +90,9 @@ class BridgeRuntimeTest {
                 BridgeProtocol.Result.FAILED.wire,
                 PebbleMessages.signed32(sender.calls.last().dictionary, BridgeProtocol.Key.RESULT),
             )
+            assertEquals(BridgeProtocol.Command.START, BridgeState.status.value.lastCommand)
+            assertEquals(BridgeProtocol.Result.FAILED, BridgeState.status.value.lastCommandResult)
+            assertEquals(null, BridgeState.status.value.lastWaypointName)
         } finally {
             runtime.close()
         }
@@ -321,37 +324,6 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Key.RESULT,
                 ),
             )
-        } finally {
-            runtime.close()
-        }
-    }
-
-    @Test fun epochStorageFailureIssuesNoSnapshotRequestOrCommandResult() = runBlocking {
-        val sender = RecordingSender()
-        val locus = StateChangingLocus()
-        val storage = MemorySnapshotEpochStorage().apply { savesSucceed = false }
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            snapshotEpochStore = SnapshotDeliveryEpochStore(storage, Dispatchers.Unconfined),
-        )
-        try {
-            assertFalse(runtime.refresh(listOf(WatchIdentifier("watch"))))
-            assertTrue(sender.calls.isEmpty())
-
-            assertFalse(
-                runtime.handleCommand(
-                    WatchIdentifier("watch"),
-                    8,
-                    1,
-                    BridgeProtocol.Command.START,
-                    "Hiking",
-                    null,
-                ),
-            )
-            assertEquals(0, locus.executions)
-            assertTrue(sender.calls.isEmpty())
-            assertTrue(BridgeState.status.value.lastError?.contains("durably advanced") == true)
         } finally {
             runtime.close()
         }
@@ -603,13 +575,9 @@ class BridgeRuntimeTest {
         try {
             assertTrue(runtime.handleHeartRate(WatchIdentifier("watch"), 9, 1, 120, 1_000))
             assertTrue(locus.mutationStarted.await(5, TimeUnit.SECONDS))
-            val revocationStarted = CompletableDeferred<Unit>()
-            val revocation = async {
-                revocationStarted.complete(Unit)
+            val revocation = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                 leases.mutateSession { runtime.companionTrustLost() }
             }
-            revocationStarted.await()
-            yield()
             assertFalse(revocation.isCompleted)
 
             locus.releaseMutation.countDown()
@@ -729,86 +697,6 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun unreadableCommandJournalRemainsVisibleAfterSnapshotRefresh() = runBlocking {
-        val sender = RecordingSender()
-        val locus = FakeLocus()
-        val journal = CommandJournal(object : CommandJournal.Storage {
-            override fun load(): List<CommandJournal.Record> = error("corrupt journal")
-            override fun save(records: List<CommandJournal.Record>) = true
-        })
-        val runtime = runtime(sender = sender, locus = locus, commandJournal = journal)
-        try {
-            assertTrue(
-                runtime.handleCommand(
-                    WatchIdentifier("watch"),
-                    7,
-                    1,
-                    BridgeProtocol.Command.STOP_SAVE,
-                    null,
-                    null,
-                ),
-            )
-
-            assertEquals(0, locus.executions)
-            assertTrue(BridgeState.status.value.commandJournalError?.contains("clear this app's storage") == true)
-            assertEquals(
-                BridgeProtocol.Result.FAILED.wire,
-                PebbleMessages.signed32(
-                    sender.calls.single { call ->
-                        PebbleMessages.signed32(
-                            call.dictionary,
-                            BridgeProtocol.Key.MESSAGE_TYPE,
-                        ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
-                    }.dictionary,
-                    BridgeProtocol.Key.RESULT,
-                ),
-            )
-        } finally {
-            runtime.close()
-        }
-    }
-
-    @Test fun failedCommandCompletionPermanentlyBlocksTheNextLocusMutation() = runBlocking {
-        val sender = RecordingSender()
-        val locus = FakeLocus()
-        val storage = FailingCompletionStorage()
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            commandJournal = CommandJournal(storage),
-        )
-        try {
-            assertTrue(
-                runtime.handleCommand(
-                    WatchIdentifier("watch"),
-                    7,
-                    1,
-                    BridgeProtocol.Command.PAUSE_RESUME,
-                    null,
-                    null,
-                ),
-            )
-            assertEquals(1, locus.executions)
-            assertTrue(BridgeState.status.value.commandJournalError?.contains("unresolved action") == true)
-
-            storage.savesSucceed = true
-            assertTrue(
-                runtime.handleCommand(
-                    WatchIdentifier("watch"),
-                    7,
-                    2,
-                    BridgeProtocol.Command.PAUSE_RESUME,
-                    null,
-                    null,
-                ),
-            )
-            assertEquals(1, locus.executions)
-            assertTrue(BridgeState.status.value.commandJournalError?.contains("unresolved action") == true)
-        } finally {
-            runtime.close()
-        }
-    }
-
     @Test fun profileTransfersForTheActiveWatchAreSerialized() = runBlocking {
         val sender = RecordingSender(yieldDuringSend = true)
         val locus = FakeLocus(profiles = listOf("x".repeat(200)))
@@ -891,74 +779,11 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun profileEpochReservationFailureEmitsNoChunk() = runBlocking {
-        val sender = RecordingSender()
-        val storage = MemoryProfileTransferSerialStorage().apply { savesSucceed = false }
-        val runtime = runtime(
-            sender = sender,
-            profileTransferSerialStore = ProfileTransferSerialStore(storage, Dispatchers.Unconfined),
-        )
-        try {
-            assertFalse(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
-            assertTrue(sender.calls.isEmpty())
-            assertTrue(BridgeState.status.value.lastError?.contains("Profile ordering history") == true)
-        } finally {
-            runtime.close()
-        }
-    }
-
-    @Test fun profileTransferIdentifierSurvivesRestartAndWrapsInThe31BitSerialSpace() = runBlocking {
-        val storage = MemoryProfileTransferSerialStorage().apply { serial = 0x7fff_fffeL }
-        val firstSender = RecordingSender()
-        val first = runtime(
-            sender = firstSender,
-            profileTransferSerialStore = ProfileTransferSerialStore(storage, Dispatchers.Unconfined),
-        )
-        try {
-            assertTrue(first.sendRecordingProfiles(WatchIdentifier("watch")))
-            assertEquals(
-                Int.MAX_VALUE,
-                PebbleMessages.signed32(
-                    firstSender.calls.single().dictionary,
-                    BridgeProtocol.Key.TRANSFER_ID,
-                ),
-            )
-        } finally {
-            first.close()
-        }
-
-        val secondSender = RecordingSender()
-        val second = runtime(
-            sender = secondSender,
-            profileTransferSerialStore = ProfileTransferSerialStore(storage, Dispatchers.Unconfined),
-        )
-        try {
-            assertTrue(second.sendRecordingProfiles(WatchIdentifier("watch")))
-            assertEquals(
-                0,
-                PebbleMessages.signed32(
-                    secondSender.calls.single().dictionary,
-                    BridgeProtocol.Key.TRANSFER_ID,
-                ),
-            )
-        } finally {
-            second.close()
-        }
-    }
-
     private fun runtime(
         sender: PebbleDictionarySender,
         locus: LocusBridgeGateway = FakeLocus(),
         maxAttempts: Int = 1,
-        commandJournal: CommandJournal = CommandJournal(MemoryStorage()),
-        snapshotEpochStore: SnapshotDeliveryEpochStore = SnapshotDeliveryEpochStore(
-            MemorySnapshotEpochStorage(),
-            Dispatchers.Unconfined,
-        ),
-        profileTransferSerialStore: ProfileTransferSerialStore = ProfileTransferSerialStore(
-            MemoryProfileTransferSerialStorage(),
-            Dispatchers.Unconfined,
-        ),
+        commandJournal: CommandJournal = CommandJournal(),
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Unconfined,
         trustedWorkLease: suspend (suspend () -> Unit) -> Unit = { block -> block() },
@@ -976,8 +801,6 @@ class BridgeRuntimeTest {
         locus = locus,
         transport = ReliablePebbleTransport(sender, maxAttempts = maxAttempts, retryDelay = {}),
         commandJournal = commandJournal,
-        snapshotEpochStore = snapshotEpochStore,
-        profileTransferSerialStore = profileTransferSerialStore,
         refreshMode = { RefreshMode.ADAPTIVE },
         ioDispatcher = ioDispatcher,
         monotonicMillis = { 1_000L },
@@ -1300,56 +1123,6 @@ class BridgeRuntimeTest {
             profileName: String?,
             waypointName: String?,
         ) = BridgeProtocol.Result.FAILED
-    }
-
-    private class MemoryStorage : CommandJournal.Storage {
-        private var records: List<CommandJournal.Record> = emptyList()
-        override fun load(): List<CommandJournal.Record> = records
-        override fun save(records: List<CommandJournal.Record>): Boolean {
-            this.records = records.map { it.copy() }
-            return true
-        }
-    }
-
-    private class FailingCompletionStorage : CommandJournal.Storage {
-        private var records: List<CommandJournal.Record> = emptyList()
-        private var saveCalls = 0
-        var savesSucceed = false
-
-        override fun load(): List<CommandJournal.Record> = records
-
-        override fun save(records: List<CommandJournal.Record>): Boolean {
-            saveCalls++
-            if (saveCalls > 1 && !savesSucceed) return false
-            this.records = records.map { it.copy() }
-            return true
-        }
-    }
-
-    private class MemorySnapshotEpochStorage : SnapshotDeliveryEpochStore.Storage {
-        var epoch: Long? = null
-        var savesSucceed = true
-
-        override fun load(): Long? = epoch
-
-        override fun save(epoch: Long): Boolean {
-            if (!savesSucceed) return false
-            this.epoch = epoch
-            return true
-        }
-    }
-
-    private class MemoryProfileTransferSerialStorage : ProfileTransferSerialStore.Storage {
-        var serial: Long? = null
-        var savesSucceed = true
-
-        override fun load(): Long? = serial
-
-        override fun save(serial: Long): Boolean {
-            if (!savesSucceed) return false
-            this.serial = serial
-            return true
-        }
     }
 
     private class RecordingSender(

@@ -1,6 +1,8 @@
 package io.github.christianherget.locuspebble.bridge
 
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +41,6 @@ import io.github.christianherget.locuspebble.bridge.pebble.CoreAppConnectionKind
 import io.github.christianherget.locuspebble.bridge.pebble.TrustedPebbleCompanionProvider
 import io.github.christianherget.locuspebble.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.client.DefaultPebbleInfoRetriever
-import io.rebble.pebblekit2.client.DefaultPebbleSender
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -54,6 +55,7 @@ import java.util.Date
 
 class MainActivity : ComponentActivity() {
     private lateinit var refreshModePreference: RefreshModePreferenceState
+    private lateinit var watchAppLauncher: WatchAppLauncher
     private val diagnosticsMutex = Mutex()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +64,7 @@ class MainActivity : ComponentActivity() {
         refreshModePreference = RefreshModePreferenceState(
             readPreference = { Preferences.refreshMode(appContext) },
         )
+        watchAppLauncher = WatchAppLauncher.create(appContext)
         setContent { MaterialTheme { DiagnosticsScreen() } }
         lifecycleScope.launch {
             // The safe default renders immediately; the first SharedPreferences read is never a
@@ -73,17 +76,35 @@ class MainActivity : ComponentActivity() {
                 runPeriodicDiagnostics(::refreshDiagnostics)
             }
         }
-        if (intent?.action == "locus.api.android.INTENT_ITEM_MAIN_FUNCTION") {
-            lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    val watches = DefaultPebbleInfoRetriever(applicationContext).getConnectedWatches().first()
-                    if (watches.isNotEmpty()) {
-                        val identifiers = watches.map { it.id }
-                        DefaultPebbleSender(applicationContext).startAppOnTheWatch(BridgeProtocol.APP_UUID, identifiers)
-                    }
-                } catch (e: Exception) {
-                    // Ignore communication errors
-                }
+        handleLaunchIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    private fun handleLaunchIntent(intent: Intent?) {
+        if (!isLocusWatchLaunchIntent(intent?.action)) return
+        lifecycleScope.launch {
+            val result = watchAppLauncher.launch()
+            Log.i(TAG, "Locus watchapp auto-start result: $result")
+            BridgeState.update { status ->
+                status.copy(
+                    watchAppLaunchResult = result,
+                    lastError = when (result) {
+                        WatchAppLaunchResult.LOOKUP_FAILED -> "Could not query connected Pebble watches"
+                        WatchAppLaunchResult.LAUNCH_FAILED -> "Could not start the Pebble watchapp"
+                        WatchAppLaunchResult.TIMED_OUT -> "Pebble watchapp auto-start timed out"
+                        WatchAppLaunchResult.UNTRUSTED_COMPANION,
+                        WatchAppLaunchResult.STALE_COMPANION,
+                        -> "Pebble App is not trusted for watchapp auto-start"
+                        WatchAppLaunchResult.STARTED,
+                        WatchAppLaunchResult.NO_CONNECTED_WATCH,
+                        -> status.lastError
+                    },
+                )
             }
         }
     }
@@ -91,7 +112,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun refreshDiagnostics() = diagnosticsMutex.withLock {
         var pebbleError: String? = null
         try {
-            // Construction loads the durable command journal and publishes its health.
+            // Runtime construction initializes process-local bridge state off the main thread.
             withContext(Dispatchers.IO) { BridgeRuntime.get(applicationContext) }
         } catch (error: CancellationException) {
             throw error
@@ -112,9 +133,9 @@ class MainActivity : ComponentActivity() {
         val selected = TRUSTED_CORE_APP_PACKAGE.takeIf { coreSelected }
         if (!coreSelected && pebbleError == null) {
             pebbleError = when (connection.kind) {
-                CoreAppConnectionKind.NOT_INSTALLED -> "CoreApp is not installed"
-                CoreAppConnectionKind.NOT_SELECTED -> connection.detail ?: "CoreApp could not be selected"
-                CoreAppConnectionKind.SELECTED -> "CoreApp could not be selected"
+                CoreAppConnectionKind.NOT_INSTALLED -> "Pebble App is not installed"
+                CoreAppConnectionKind.NOT_SELECTED -> connection.detail ?: "Pebble App could not be selected"
+                CoreAppConnectionKind.SELECTED -> "Pebble App could not be selected"
             }
         }
         BridgeState.update { it.withPebbleSelection(selected) }
@@ -123,6 +144,7 @@ class MainActivity : ComponentActivity() {
         BridgeState.update {
             it.withDiagnosticsSnapshot(
                 recordingState = snapshot.state,
+                activeLocusProfile = snapshot.locusProfileName,
                 sampledAtMillis = System.currentTimeMillis(),
                 currentHeartRate = snapshot.currentHeartRate,
                 error = pebbleError ?: if (
@@ -164,7 +186,7 @@ class MainActivity : ComponentActivity() {
                     GuardedForeignQueryOutcome.PUBLISHED -> Unit
                     GuardedForeignQueryOutcome.STALE -> return@withLock
                     GuardedForeignQueryOutcome.UNTRUSTED ->
-                        error("CoreApp selection changed while querying connected Pebble watches")
+                        error("Pebble App selection changed while querying connected Pebble watches")
                     GuardedForeignQueryOutcome.FAILED ->
                         error("Timed out while querying connected Pebble watches")
                 }
@@ -204,8 +226,12 @@ class MainActivity : ComponentActivity() {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatusLine("Pebble watchapp", if (status.watchAppOpen) "Open" else "Closed")
-                        StatusLine("Pebble/Core app", status.pebbleAppPackage ?: "Not selected")
+                        StatusLine("Pebble App", status.pebbleAppPackage ?: "Not selected")
                         StatusLine("Pebble watch", if (status.watchConnected) "Connected" else "Not connected")
+                        StatusLine(
+                            "Watchapp auto-start",
+                            status.watchAppLaunchResult?.name?.lowercase()?.replace('_', ' ') ?: "Not requested",
+                        )
                         StatusLine(
                             "Watchapp version",
                             status.watchVersion?.let { version ->
@@ -260,6 +286,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val TAG = "LocusPebble"
         const val CONNECTION_QUERY_TIMEOUT_MILLIS = 3_000L
         // Process-wide ceiling: Activity recreation cannot accumulate abandoned provider threads.
         val WATCH_QUERY_EXECUTOR = BoundedAbandonableCallExecutor(
@@ -268,6 +295,9 @@ class MainActivity : ComponentActivity() {
         )
     }
 }
+
+internal fun isLocusWatchLaunchIntent(action: String?): Boolean =
+    action == "locus.api.android.INTENT_ITEM_MAIN_FUNCTION"
 
 @Composable
 private fun StatusLine(label: String, value: String) {

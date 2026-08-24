@@ -1,0 +1,1124 @@
+#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+source "$SCRIPT_DIR/podman/versions.env"
+
+BUILD_ROOT="$PROJECT_DIR/build/podman"
+IMAGE_PREFIX=localhost/locuspebble
+BUILD_IMAGE="$IMAGE_PREFIX/build:0.1.9"
+GENERATOR_IMAGE="$IMAGE_PREFIX/emulator-generator:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
+GENERATED_EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32-generated:15917651"
+GENERATED_EMULATOR_LATEST="$IMAGE_PREFIX/android-api32-generated:latest"
+GENERATED_EMULATOR_BARE=android-api32-generated:latest
+GENERATED_SYSTEM_IMAGE="$IMAGE_PREFIX/sys-32-google-x64:latest"
+GENERATED_SYSTEM_IMAGE_BARE=sys-32-google-x64:latest
+EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32:$ANDROID_EMULATOR_VERSION"
+WEB_IMAGE="$IMAGE_PREFIX/android-webrtc:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
+NETWORK=locuspebble-test
+GOLDEN_VOLUME=locuspebble-android-api32-golden
+DOWNLOAD_VOLUME=locuspebble-android-downloads
+GRADLE_CACHE=locuspebble-gradle-cache
+NPM_CACHE=locuspebble-npm-cache
+BOOTSTRAP_SCHEMA=3
+LOCUS_FIXTURE_CONFIG="$SCRIPT_DIR/locus-test-apk.properties"
+ACTIVE_POD=
+ACTIVE_ANDROID_CONTAINER=
+ACTIVE_PUBLISH_WEBRTC=false
+ACTIVE_CONTAINERS=()
+ACTIVE_DATA_VOLUME=
+ACTIVE_WATCH_VOLUME=
+ACTIVE_RUNTIME_VOLUME=
+SERVICE_PID=
+SOCKET_DIR=
+LOCUS_INPUT_DIR=
+PROBE_CONTAINER=
+PROBE_DATA_VOLUME=
+PROBE_RUNTIME_VOLUME=
+PROBE_DOWNLOAD_VOLUME=
+PULL_POLICY=missing
+STATIC_ENGINE=
+ACCEPTANCE_ENGINE=
+
+usage() {
+  cat <<'EOF'
+Usage: ./tools/podman-test COMMAND [OPTIONS]
+
+Commands:
+  doctor static                  Validate only prerequisites for static checks
+  doctor acceptance              Validate the complete rootless x86_64/KVM host
+  emulator-probe                 Build and cold-boot only the pinned API 32 emulator with Docker/KVM
+  build-static [--refresh]       Build only the version-pinned development image
+  dev COMMAND [ARGUMENTS...]     Run an arbitrary command in the development container
+  build [--refresh]              Build pinned images; refresh explicitly pulls pinned inputs
+  build-acceptance              Build only images and artifacts required by headless acceptance
+  bootstrap --locus-apks DIR     Create the onboarded API 32 golden state
+  static                         Run every public check inside the development container
+  documentation                  Validate committed documentation in the development container
+  release-check                  Assemble release and reject debug-only provider leakage
+  android --locus-apks DIR       Run every instrumentation test, including Locus
+  acceptance --locus-apks DIR    Run Emery acceptance and Gabbro smoke automation
+  all --locus-apks DIR           Run static, android, and e2e in order
+  clean                          Remove this workflow's generated state and images
+
+LOCUS_APKS_DIR may be used instead of --locus-apks.
+EOF
+}
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+cleanup_active() {
+  set +e
+  cleanup_emulator_probe
+  if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
+    local container index
+    for ((index=${#ACTIVE_CONTAINERS[@]} - 1; index >= 0; index--)); do
+      container=${ACTIVE_CONTAINERS[$index]}
+      [[ -z "$container" ]] || docker rm --force "$container" >/dev/null 2>&1
+    done
+  elif [[ -n "$ACTIVE_POD" ]]; then
+    podman pod stop --time 15 "$ACTIVE_POD" >/dev/null 2>&1
+    podman pod rm --force "$ACTIVE_POD" >/dev/null 2>&1
+  fi
+  for volume in "$ACTIVE_DATA_VOLUME" "$ACTIVE_WATCH_VOLUME" "$ACTIVE_RUNTIME_VOLUME"; do
+    [[ -z "$volume" || -z "$ACCEPTANCE_ENGINE" ]] \
+      || "$ACCEPTANCE_ENGINE" volume rm --force "$volume" >/dev/null 2>&1
+  done
+  if [[ -n "$SERVICE_PID" ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1
+    wait "$SERVICE_PID" >/dev/null 2>&1
+  fi
+  if [[ -n "$SOCKET_DIR" && -d "$SOCKET_DIR" ]]; then
+    find "$SOCKET_DIR" -mindepth 1 -delete >/dev/null 2>&1
+    rmdir "$SOCKET_DIR" >/dev/null 2>&1
+  fi
+  ACTIVE_POD=
+  ACTIVE_ANDROID_CONTAINER=
+  ACTIVE_PUBLISH_WEBRTC=false
+  ACTIVE_CONTAINERS=()
+  ACTIVE_DATA_VOLUME=
+  ACTIVE_WATCH_VOLUME=
+  ACTIVE_RUNTIME_VOLUME=
+  SERVICE_PID=
+  SOCKET_DIR=
+  set -e
+}
+trap cleanup_active EXIT INT TERM HUP
+
+cleanup_emulator_probe() {
+  [[ -z "$PROBE_CONTAINER" ]] || docker rm --force "$PROBE_CONTAINER" >/dev/null 2>&1
+  for volume in "$PROBE_DATA_VOLUME" "$PROBE_RUNTIME_VOLUME" "$PROBE_DOWNLOAD_VOLUME"; do
+    [[ -z "$volume" ]] || docker volume rm --force "$volume" >/dev/null 2>&1
+  done
+  PROBE_CONTAINER=
+  PROBE_DATA_VOLUME=
+  PROBE_RUNTIME_VOLUME=
+  PROBE_DOWNLOAD_VOLUME=
+}
+
+select_acceptance_engine() {
+  [[ -z "$ACCEPTANCE_ENGINE" ]] || return 0
+  if [[ -n "${ACCEPTANCE_CONTAINER_ENGINE:-}" ]]; then
+    ACCEPTANCE_ENGINE=$ACCEPTANCE_CONTAINER_ENGINE
+  elif command -v podman >/dev/null; then
+    ACCEPTANCE_ENGINE=podman
+  elif command -v docker >/dev/null; then
+    ACCEPTANCE_ENGINE=docker
+  else
+    die "Install Docker or rootless Podman for acceptance."
+  fi
+  [[ "$ACCEPTANCE_ENGINE" == podman || "$ACCEPTANCE_ENGINE" == docker ]] \
+    || die "ACCEPTANCE_CONTAINER_ENGINE must be docker or podman."
+  command -v "$ACCEPTANCE_ENGINE" >/dev/null \
+    || die "$ACCEPTANCE_ENGINE is not installed."
+}
+
+acceptance_engine() {
+  select_acceptance_engine
+  "$ACCEPTANCE_ENGINE" "$@"
+}
+
+acceptance_image_exists() {
+  select_acceptance_engine
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    podman image exists "$1" 2>/dev/null
+  else
+    docker image inspect "$1" >/dev/null 2>&1
+  fi
+}
+
+acceptance_volume_exists() {
+  select_acceptance_engine
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    podman volume exists "$1" 2>/dev/null
+  else
+    docker volume inspect "$1" >/dev/null 2>&1
+  fi
+}
+
+acceptance_network_exists() {
+  select_acceptance_engine
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    podman network exists "$1" 2>/dev/null
+  else
+    docker network inspect "$1" >/dev/null 2>&1
+  fi
+}
+
+acceptance_security_args() {
+  select_acceptance_engine
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    printf '%s\n' --group-add keep-groups --security-opt label=disable
+  fi
+}
+
+active_network_args() {
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    printf '%s\n' --pod "$ACTIVE_POD"
+  else
+    printf '%s\n' --network "container:$ACTIVE_ANDROID_CONTAINER"
+  fi
+}
+
+register_active_container() {
+  [[ "$ACCEPTANCE_ENGINE" != docker ]] || ACTIVE_CONTAINERS+=("$1")
+}
+
+podman_build() {
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    podman build --pull="$PULL_POLICY" "$@"
+  elif [[ "$PULL_POLICY" == always ]]; then
+    docker build --pull "$@"
+  else
+    docker build "$@"
+  fi
+}
+
+ensure_network() {
+  acceptance_network_exists "$NETWORK" || acceptance_engine network create "$NETWORK" >/dev/null
+}
+
+ensure_cache_volumes() {
+  for volume in "$GRADLE_CACHE" "$NPM_CACHE"; do
+    acceptance_volume_exists "$volume" || acceptance_engine volume create "$volume" >/dev/null
+  done
+}
+
+build_container_args() {
+  local -a security
+  mapfile -t security < <(acceptance_security_args)
+  printf '%s\n' --rm "${security[@]}" \
+    --volume "$PROJECT_DIR:/workspace" \
+    --volume "$GRADLE_CACHE:/root/.gradle" \
+    --volume "$NPM_CACHE:/root/.npm" \
+    --workdir /workspace
+}
+
+run_build_container() {
+  local -a arguments
+  mapfile -t arguments < <(build_container_args)
+  acceptance_engine run "${arguments[@]}" "$BUILD_IMAGE" "$@"
+}
+
+select_static_engine() {
+  if [[ -n "${DEV_CONTAINER_ENGINE:-}" ]]; then
+    command -v "$DEV_CONTAINER_ENGINE" >/dev/null ||
+      die "DEV_CONTAINER_ENGINE '$DEV_CONTAINER_ENGINE' is not installed."
+    STATIC_ENGINE=$DEV_CONTAINER_ENGINE
+  elif command -v docker >/dev/null; then
+    STATIC_ENGINE=docker
+  elif command -v podman >/dev/null; then
+    STATIC_ENGINE=podman
+  else
+    die "Install Docker or rootless Podman; development dependencies stay inside the container."
+  fi
+}
+
+doctor_static() {
+  select_static_engine
+  if [[ "$STATIC_ENGINE" == podman ]]; then
+    [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == true ]] ||
+      die "The development container requires rootless Podman."
+  fi
+  echo "Container engine is ready: $STATIC_ENGINE. KVM, emulator images, and Locus APKs are not required."
+}
+
+doctor_acceptance() {
+  select_acceptance_engine
+  [[ "$(uname -s)" == Linux ]] || die "Acceptance requires Linux."
+  [[ "$(uname -m)" == x86_64 ]] || die "Acceptance requires x86_64."
+  [[ $(id -u) -ne 0 ]] || die "Run the workflow as a normal user, not root."
+  local version cpus memory_kib free_kib
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    local rootless runtime
+    rootless=$(podman info --format '{{.Host.Security.Rootless}}')
+    [[ "$rootless" == true ]] || die "Podman must be rootless."
+    version=$(podman version --format '{{.Client.Version}}')
+    [[ "$(printf '%s\n' 4.4.0 "$version" | sort -V | head -n1)" == 4.4.0 ]] \
+      || die "Podman 4.4.0 or newer is required (found $version)."
+    runtime=$(podman info --format '{{.Host.OCIRuntime.Name}}')
+    [[ "$runtime" == crun ]] \
+      || die "Podman's crun OCI runtime is required for --group-add keep-groups."
+  else
+    docker info >/dev/null || die "The current user cannot use the Docker daemon."
+    version=$(docker version --format '{{.Client.Version}}')
+    [[ "$(printf '%s\n' 24.0.0 "$version" | sort -V | head -n1)" == 24.0.0 ]] \
+      || die "Docker 24.0.0 or newer is required (found $version)."
+  fi
+  [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] || die "The current user cannot access /dev/kvm."
+  cpus=$(getconf _NPROCESSORS_ONLN)
+  (( cpus >= 4 )) || die "At least four logical CPUs are required (found $cpus)."
+  memory_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+  (( memory_kib >= 8 * 1024 * 1024 )) || die "At least 8 GiB RAM is required."
+  free_kib=$(df -Pk "$PROJECT_DIR" | awk 'NR==2 {print $4}')
+  (( free_kib >= 35 * 1024 * 1024 )) || die "At least 35 GiB free disk is required."
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    echo "Host is ready: rootless Podman $version with crun, KVM, $cpus CPUs, sufficient RAM and disk."
+  else
+    echo "Host is ready: Docker $version with KVM, $cpus CPUs, sufficient RAM and disk."
+  fi
+  report_acceptance_provisioning
+}
+
+report_acceptance_provisioning() {
+  local image missing_images=0
+  for image in "$BUILD_IMAGE" "$EMULATOR_IMAGE" "$WEB_IMAGE"; do
+    if ! acceptance_image_exists "$image"; then
+      missing_images=$((missing_images + 1))
+    fi
+  done
+  if (( missing_images == 0 )); then
+    echo "Acceptance images: ready."
+  else
+    echo "Acceptance images: $missing_images missing; run ./tools/podman-test build."
+  fi
+
+  if [[ -n "${LOCUS_APKS_DIR:-}" && -d "$LOCUS_APKS_DIR" ]]; then
+    echo "Locus fixture input: configured outside the repository."
+  else
+    echo "Locus fixture input: not configured; set LOCUS_APKS_DIR to an absolute directory."
+  fi
+
+  if acceptance_volume_exists "$GOLDEN_VOLUME"; then
+    echo "Golden Android state: ready."
+  else
+    echo "Golden Android state: missing; run bootstrap after the images and Locus fixture are ready."
+  fi
+}
+
+doctor() {
+  case "${1:-}" in
+    static) doctor_static ;;
+    acceptance) doctor_acceptance ;;
+    *) die "doctor requires either 'static' or 'acceptance'." ;;
+  esac
+}
+
+build_emulator_image() {
+  mkdir -p "$BUILD_ROOT/generated"
+  acceptance_volume_exists "$DOWNLOAD_VOLUME" \
+    || acceptance_engine volume create "$DOWNLOAD_VOLUME" >/dev/null
+  local socket
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    SOCKET_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/locuspebble-podman.XXXXXX")
+    socket="$SOCKET_DIR/docker.sock"
+    podman system service --time=0 "unix://$socket" >"$BUILD_ROOT/podman-service.log" 2>&1 &
+    SERVICE_PID=$!
+    for attempt in $(seq 1 100); do
+      [[ -S "$socket" ]] && break
+      kill -0 "$SERVICE_PID" 2>/dev/null \
+        || die "Podman's temporary Docker-compatible service exited."
+      sleep 0.1
+    done
+    [[ -S "$socket" ]] \
+      || die "Podman's temporary Docker-compatible socket did not become ready."
+  else
+    socket=/var/run/docker.sock
+    [[ -S "$socket" ]] || die "Docker's daemon socket is unavailable."
+  fi
+
+  local -a security
+  mapfile -t security < <(acceptance_security_args)
+  set +e
+  acceptance_engine run --rm "${security[@]}" \
+    --env DOCKER_HOST=unix:///run/docker.sock \
+    --env ANDROID_EMULATOR_URL="$ANDROID_EMULATOR_URL" \
+    --env ANDROID_EMULATOR_SHA256="$ANDROID_EMULATOR_SHA256" \
+    --env ANDROID_SYSTEM_IMAGE_URL="$ANDROID_SYSTEM_IMAGE_URL" \
+    --env ANDROID_SYSTEM_IMAGE_SHA256="$ANDROID_SYSTEM_IMAGE_SHA256" \
+    --volume "$socket:/run/docker.sock" \
+    --volume "$DOWNLOAD_VOLUME:/downloads" \
+    --volume "$BUILD_ROOT/generated:/generated" \
+    "$GENERATOR_IMAGE" bash -euo pipefail -c '
+      emulator_zip=/downloads/emulator-linux_x64-15917651.zip
+      system_zip=/downloads/x86_64-32_r08.zip
+      [[ -s "$emulator_zip" ]] || curl --fail --location --retry 4 "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
+      [[ -s "$system_zip" ]] || curl --fail --location --retry 4 "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
+      echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
+      echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
+      emu-docker create "$emulator_zip" "$system_zip" \
+        --dest /generated --repo localhost/locuspebble \
+        --name android-api32-generated --no-metrics
+    '
+  local status=$?
+  set -e
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    kill "$SERVICE_PID" >/dev/null 2>&1
+    wait "$SERVICE_PID" >/dev/null 2>&1
+    SERVICE_PID=
+    find "$SOCKET_DIR" -mindepth 1 -delete
+    rmdir "$SOCKET_DIR"
+    SOCKET_DIR=
+  fi
+  (( status == 0 )) || return "$status"
+  if ! acceptance_image_exists "$GENERATED_EMULATOR_IMAGE"; then
+    acceptance_image_exists "$GENERATED_EMULATOR_LATEST" \
+      || die "Google's generator did not produce the expected image."
+    acceptance_engine tag "$GENERATED_EMULATOR_LATEST" "$GENERATED_EMULATOR_IMAGE"
+  fi
+
+  podman_build \
+    --build-arg "GENERATED_IMAGE=$GENERATED_EMULATOR_IMAGE" \
+    --file "$SCRIPT_DIR/podman/Containerfile.emulator" \
+    --tag "$EMULATOR_IMAGE" "$PROJECT_DIR"
+}
+
+docker_emulator_probe() {
+  [[ "${ACCEPTANCE_CONTAINER_ENGINE:-docker}" == docker ]] \
+    || die "emulator-probe currently requires ACCEPTANCE_CONTAINER_ENGINE=docker."
+  [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] \
+    || die "The emulator probe requires x86_64 Linux."
+  command -v docker >/dev/null || die "Docker is not installed."
+  docker info >/dev/null || die "The current user cannot use the Docker daemon."
+  [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] \
+    || die "The current user cannot access /dev/kvm."
+
+  local cpus memory_kib free_kib probe_id status=0
+  cpus=$(getconf _NPROCESSORS_ONLN)
+  (( cpus >= 4 )) || die "At least four logical CPUs are required (found $cpus)."
+  memory_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+  (( memory_kib >= 8 * 1024 * 1024 )) || die "At least 8 GiB RAM is required."
+  free_kib=$(df -Pk "$PROJECT_DIR" | awk 'NR==2 {print $4}')
+  (( free_kib >= 20 * 1024 * 1024 )) \
+    || die "At least 20 GiB free disk is required for the isolated emulator probe."
+
+  mkdir -p "$BUILD_ROOT/generated"
+  docker build --pull=false \
+    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+    --build-arg "ANDROID_EMULATOR_SCRIPTS_COMMIT=$ANDROID_EMULATOR_SCRIPTS_COMMIT" \
+    --file "$SCRIPT_DIR/podman/Containerfile.generator" \
+    --tag "$GENERATOR_IMAGE" "$PROJECT_DIR"
+
+  probe_id="${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
+  PROBE_DOWNLOAD_VOLUME="locuspebble-emulator-probe-downloads-$probe_id"
+  docker volume create "$PROBE_DOWNLOAD_VOLUME" >/dev/null
+  docker run --rm \
+    --env DOCKER_HOST=unix:///var/run/docker.sock \
+    --env ANDROID_EMULATOR_URL="$ANDROID_EMULATOR_URL" \
+    --env ANDROID_EMULATOR_SHA256="$ANDROID_EMULATOR_SHA256" \
+    --env ANDROID_SYSTEM_IMAGE_URL="$ANDROID_SYSTEM_IMAGE_URL" \
+    --env ANDROID_SYSTEM_IMAGE_SHA256="$ANDROID_SYSTEM_IMAGE_SHA256" \
+    --volume /var/run/docker.sock:/var/run/docker.sock \
+    --volume "$PROBE_DOWNLOAD_VOLUME:/downloads" \
+    --volume "$BUILD_ROOT/generated:/generated" \
+    "$GENERATOR_IMAGE" bash -euo pipefail -c '
+      emulator_zip=/downloads/emulator-linux_x64-15917651.zip
+      system_zip=/downloads/x86_64-32_r08.zip
+      curl --fail --location --retry 4 "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
+      curl --fail --location --retry 4 "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
+      echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
+      echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
+      emu-docker create "$emulator_zip" "$system_zip" \
+        --dest /generated --repo localhost/locuspebble \
+        --name android-api32-generated --no-metrics
+    '
+  if ! docker image inspect "$GENERATED_EMULATOR_IMAGE" >/dev/null 2>&1; then
+    docker image inspect "$GENERATED_EMULATOR_LATEST" >/dev/null 2>&1 \
+      || die "Google's generator did not produce the expected Docker image."
+    docker tag "$GENERATED_EMULATOR_LATEST" "$GENERATED_EMULATOR_IMAGE"
+  fi
+  docker build --pull=false \
+    --build-arg "GENERATED_IMAGE=$GENERATED_EMULATOR_IMAGE" \
+    --file "$SCRIPT_DIR/podman/Containerfile.emulator" \
+    --tag "$EMULATOR_IMAGE" "$PROJECT_DIR"
+
+  PROBE_DATA_VOLUME="locuspebble-emulator-probe-data-$probe_id"
+  PROBE_RUNTIME_VOLUME="locuspebble-emulator-probe-runtime-$probe_id"
+  PROBE_CONTAINER="locuspebble-emulator-probe-$probe_id"
+  docker volume create "$PROBE_DATA_VOLUME" >/dev/null
+  docker volume create "$PROBE_RUNTIME_VOLUME" >/dev/null
+  docker run --detach --name "$PROBE_CONTAINER" --device /dev/kvm \
+    --volume "$PROBE_DATA_VOLUME:/data" \
+    --volume "$PROBE_RUNTIME_VOLUME:/run/locuspebble" \
+    "$EMULATOR_IMAGE" >/dev/null
+
+  local deadline=$((SECONDS + 240)) booted=false value
+  while (( SECONDS < deadline )); do
+    if ! docker inspect --format '{{.State.Running}}' "$PROBE_CONTAINER" 2>/dev/null \
+      | grep -qx true; then
+      echo "The Android emulator container exited before boot completed." >&2
+      status=1
+      break
+    fi
+    value=$(docker exec "$PROBE_CONTAINER" /android/sdk/platform-tools/adb \
+      -s emulator-5556 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+    if [[ "$value" == 1 ]]; then
+      booted=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$booted" != true ]]; then
+    echo "Android API 32 did not reach sys.boot_completed=1 within 240 seconds." >&2
+    status=1
+  else
+    docker exec "$PROBE_CONTAINER" /android/sdk/emulator/emulator -accel-check
+    echo "Pinned Android API 32 cold boot reached sys.boot_completed=1 with Docker and KVM."
+  fi
+  if (( status != 0 )); then
+    docker logs "$PROBE_CONTAINER" || true
+    docker inspect "$PROBE_CONTAINER" || true
+  fi
+  cleanup_emulator_probe
+  return "$status"
+}
+
+build_static_image() {
+  [[ -n "$STATIC_ENGINE" ]] || select_static_engine
+  local -a pull=()
+  if [[ "$STATIC_ENGINE" == podman ]]; then
+    pull=("--pull=$PULL_POLICY")
+  elif [[ "$PULL_POLICY" == always ]]; then
+    pull=(--pull)
+  fi
+  "$STATIC_ENGINE" build "${pull[@]}" \
+    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+    --build-arg "ANDROID_CMDLINE_TOOLS_VERSION=$ANDROID_CMDLINE_TOOLS_VERSION" \
+    --build-arg "ANDROID_CMDLINE_TOOLS_SHA256=$ANDROID_CMDLINE_TOOLS_SHA256" \
+    --build-arg "ANDROID_PLATFORM_TOOLS_VERSION=$ANDROID_PLATFORM_TOOLS_VERSION" \
+    --build-arg "ANDROID_PLATFORM_32_REVISION=$ANDROID_PLATFORM_32_REVISION" \
+    --build-arg "ANDROID_PLATFORM_36_REVISION=$ANDROID_PLATFORM_36_REVISION" \
+    --build-arg "ANDROID_PLATFORM_37_REVISION=$ANDROID_PLATFORM_37_REVISION" \
+    --build-arg "ANDROID_BUILD_TOOLS_VERSION=$ANDROID_BUILD_TOOLS_VERSION" \
+    --build-arg "ANDROID_NDK_VERSION=$ANDROID_NDK_VERSION" \
+    --build-arg "ANDROID_CMAKE_VERSION=$ANDROID_CMAKE_VERSION" \
+    --build-arg "PEBBLE_TOOL_VERSION=$PEBBLE_TOOL_VERSION" \
+    --build-arg "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
+    --build-arg "UV_VERSION=$UV_VERSION" \
+    --build-arg "UV_X86_64_SHA256=$UV_X86_64_SHA256" \
+    --file "$SCRIPT_DIR/podman/Containerfile.build" \
+    --tag "$BUILD_IMAGE" "$PROJECT_DIR"
+}
+
+build_images() {
+  local include_web=${1:-true}
+  mkdir -p "$BUILD_ROOT/images"
+  STATIC_ENGINE=$ACCEPTANCE_ENGINE build_static_image
+  podman_build \
+    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+    --build-arg "ANDROID_EMULATOR_SCRIPTS_COMMIT=$ANDROID_EMULATOR_SCRIPTS_COMMIT" \
+    --file "$SCRIPT_DIR/podman/Containerfile.generator" \
+    --tag "$GENERATOR_IMAGE" "$PROJECT_DIR"
+  if [[ "$include_web" == true ]]; then
+    podman_build \
+      --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+      --build-arg "ANDROID_EMULATOR_SCRIPTS_COMMIT=$ANDROID_EMULATOR_SCRIPTS_COMMIT" \
+      --build-arg "AEMU_PROTOS_COMMIT=$AEMU_PROTOS_COMMIT" \
+      --file "$SCRIPT_DIR/podman/Containerfile.web" \
+      --tag "$WEB_IMAGE" "$PROJECT_DIR"
+  fi
+  build_emulator_image
+}
+
+static_image_exists() {
+  if [[ "$STATIC_ENGINE" == podman ]]; then
+    podman image exists "$BUILD_IMAGE" 2>/dev/null
+  else
+    docker image inspect "$BUILD_IMAGE" >/dev/null 2>&1
+  fi
+}
+
+run_static_container() {
+  if [[ "$STATIC_ENGINE" == podman ]]; then
+    ensure_cache_volumes
+    run_build_container "$@"
+    return
+  fi
+  local cache_root="$PROJECT_DIR/build/dev-container-cache"
+  mkdir -p "$cache_root/gradle" "$cache_root/npm"
+  docker run --rm \
+    --user "$(id -u):$(id -g)" \
+    --env HOME=/tmp \
+    --env GRADLE_USER_HOME=/workspace/build/dev-container-cache/gradle \
+    --env npm_config_cache=/workspace/build/dev-container-cache/npm \
+    --volume "$PROJECT_DIR:/workspace" \
+    --workdir /workspace \
+    "$BUILD_IMAGE" "$@"
+}
+
+build_project_inputs() {
+  local run_checks=${1:-true}
+  ensure_cache_volumes
+  if [[ "$run_checks" == true ]]; then
+    run_build_container bash -euo pipefail -c '
+      ./gradlew verifyPebbleTargets \
+        :android:app:testDebugUnitTest :android:app:assembleDebug \
+        :android:app:assembleDebugAndroidTest
+      npm ci --prefix watchapp
+      npm test --prefix watchapp
+      (cd watchapp && pebble clean && pebble build && npm run verify:pbw)
+      npm ci --prefix docs
+    '
+  else
+    run_build_container bash -euo pipefail -c '
+      ./gradlew :android:app:assembleDebug :android:app:assembleDebugAndroidTest
+      npm ci --prefix watchapp
+      (cd watchapp && pebble clean && pebble build && npm run verify:pbw)
+    '
+  fi
+  run_build_container env CORE_APP_COMMIT="$CORE_APP_COMMIT" \
+    bash /workspace/tools/podman/build-coreapp.sh /workspace
+}
+
+build_all() {
+  doctor_acceptance
+  ensure_network
+  build_images
+  build_project_inputs
+  echo "Pinned acceptance images and provisioning artifacts are ready."
+}
+
+build_acceptance_all() {
+  doctor_acceptance
+  ensure_network
+  build_images false
+  build_project_inputs false
+  echo "Pinned headless acceptance images and provisioning artifacts are ready."
+}
+
+require_images() {
+  for image in "$BUILD_IMAGE" "$EMULATOR_IMAGE"; do
+    acceptance_image_exists "$image" \
+      || die "Missing image $image; run ./tools/podman-test build first."
+  done
+  test -s "$BUILD_ROOT/images/pebble-app-x86_64-debug.apk" \
+    || die "Missing Pebble App build; run ./tools/podman-test build first."
+  test -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" \
+    || die "Missing bridge APK; run ./tools/podman-test build first."
+  test -s "$PROJECT_DIR/watchapp/build/watchapp.pbw" \
+    || die "Missing PBW; run ./tools/podman-test build first."
+}
+
+parse_locus_apk_options() {
+  LOCUS_INPUT_DIR=${LOCUS_APKS_DIR:-}
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --locus-apks)
+        [[ $# -ge 2 ]] || die "--locus-apks requires a directory"
+        LOCUS_INPUT_DIR=$2
+        shift 2
+        ;;
+      *) die "Unknown Locus APK option: $1" ;;
+    esac
+  done
+  [[ -n "$LOCUS_INPUT_DIR" ]] || die "Use --locus-apks DIR or LOCUS_APKS_DIR."
+  LOCUS_INPUT_DIR=$(realpath "$LOCUS_INPUT_DIR")
+  [[ -d "$LOCUS_INPUT_DIR" ]] || die "The Locus APK directory does not exist."
+}
+
+private_locus_fingerprint() {
+  local locus_dir=$1
+  local -a validation_args
+  mapfile -t validation_args < <(build_container_args)
+  acceptance_engine run "${validation_args[@]}" --network none \
+    --volume "$locus_dir:/private:ro" "$BUILD_IMAGE" \
+    python3 /workspace/tools/podman/validate-locus-apks.py --fingerprint-only /private
+}
+
+clone_volume() {
+  local source=$1 destination=$2
+  acceptance_volume_exists "$source" || die "Missing volume $source."
+  acceptance_engine volume create "$destination" >/dev/null
+  local -a security
+  mapfile -t security < <(acceptance_security_args)
+  acceptance_engine run --rm --network none "${security[@]}" \
+    --volume "$source:/source:ro" --volume "$destination:/destination" \
+    "$BASE_IMAGE" sh -eu -c 'cp -a /source/. /destination/'
+}
+
+golden_marker() {
+  local -a security
+  mapfile -t security < <(acceptance_security_args)
+  acceptance_engine run --rm --network none "${security[@]}" \
+    --volume "$GOLDEN_VOLUME:/data:ro" "$BASE_IMAGE" \
+    sh -c 'test -f /data/.locuspebble-bootstrap && cat /data/.locuspebble-bootstrap'
+}
+
+require_current_golden() {
+  local locus_dir=$1
+  acceptance_volume_exists "$GOLDEN_VOLUME" \
+    || die "No golden Android state; run bootstrap first."
+  local marker core_apk_sha256 emulator_config_sha256
+  local fixture_config_sha256 locus_fingerprint
+  marker=$(golden_marker) || die "Golden Android state has no provenance marker; clean and bootstrap again."
+  grep -qx "bootstrap_schema=$BOOTSTRAP_SCHEMA" <<<"$marker" \
+    || die "Golden Android state uses a stale bootstrap schema; clean and bootstrap again."
+  grep -qx "api=32" <<<"$marker" || die "Golden Android state is not API 32."
+  grep -qx "emulator=$ANDROID_EMULATOR_VERSION" <<<"$marker" \
+    || die "Golden Android state uses stale emulator inputs; clean and bootstrap again."
+  grep -qx "system_image=$ANDROID_SYSTEM_IMAGE_SHA256" <<<"$marker" \
+    || die "Golden Android state uses a stale system image; clean and bootstrap again."
+  emulator_config_sha256=$(sha256sum "$SCRIPT_DIR/podman/android-emulator-entrypoint.sh" | cut -d' ' -f1)
+  grep -qx "emulator_config=$emulator_config_sha256" <<<"$marker" \
+    || die "Golden Android state uses stale emulator configuration; clean and bootstrap again."
+  grep -qx "core=$CORE_APP_COMMIT" <<<"$marker" \
+    || die "Golden Android state uses a stale Pebble App; clean and bootstrap again."
+  core_apk_sha256=$(sha256sum "$BUILD_ROOT/images/pebble-app-x86_64-debug.apk" | cut -d' ' -f1)
+  grep -qx "core_apk=$core_apk_sha256" <<<"$marker" \
+    || die "Golden Android state uses a stale Pebble App build; clean and bootstrap again."
+  grep -qx "bridge=0.1.9" <<<"$marker" \
+    || die "Golden Android state uses a stale bridge; clean and bootstrap again."
+  fixture_config_sha256=$(sha256sum "$LOCUS_FIXTURE_CONFIG" | cut -d' ' -f1)
+  grep -qx "locus_fixture_config=$fixture_config_sha256" <<<"$marker" \
+    || die "Golden Android state uses stale Locus fixture pins; clean and bootstrap again."
+  locus_fingerprint=$(private_locus_fingerprint "$locus_dir") \
+    || die "Could not fingerprint the current Locus fixture."
+  grep -qx "locus=$locus_fingerprint" <<<"$marker" \
+    || die "Golden Android state uses stale Locus APK inputs; clean and bootstrap again."
+}
+
+create_test_pod() {
+  local name=$1 publish_webrtc=${2:-false}
+  ensure_network
+  ACTIVE_PUBLISH_WEBRTC=$publish_webrtc
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    local -a publish=()
+    [[ "$publish_webrtc" == true ]] && publish=(--publish 127.0.0.1:5173:5173)
+    podman pod create --name "$name" --network "$NETWORK" "${publish[@]}" >/dev/null
+  fi
+}
+
+start_android() {
+  local name=$1 data_volume=$2 runtime_volume=$3
+  local -a security network publish=()
+  mapfile -t security < <(acceptance_security_args)
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    network=(--pod "$ACTIVE_POD")
+  else
+    network=(--network "$NETWORK")
+    [[ "$ACTIVE_PUBLISH_WEBRTC" == true ]] \
+      && publish=(--publish 127.0.0.1:5173:5173)
+  fi
+  acceptance_engine run --detach "${network[@]}" "${publish[@]}" --name "$name" \
+    --device /dev/kvm "${security[@]}" \
+    --volume "$data_volume:/data" --volume "$runtime_volume:/run/locuspebble" \
+    "$EMULATOR_IMAGE" >/dev/null
+  ACTIVE_ANDROID_CONTAINER=$name
+  register_active_container "$name"
+}
+
+runner_in_pod() {
+  local artifacts=$1
+  shift
+  local -a arguments
+  mapfile -t arguments < <(build_container_args)
+  local -a network
+  mapfile -t network < <(active_network_args)
+  acceptance_engine run "${arguments[@]}" "${network[@]}" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$artifacts:/artifacts" \
+    "$BUILD_IMAGE" "$@"
+}
+
+stop_active_pod() {
+  if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
+    local container index
+    for ((index=${#ACTIVE_CONTAINERS[@]} - 1; index >= 0; index--)); do
+      container=${ACTIVE_CONTAINERS[$index]}
+      docker rm --force "$container" >/dev/null 2>&1 || true
+    done
+    ACTIVE_CONTAINERS=()
+    ACTIVE_ANDROID_CONTAINER=
+    ACTIVE_POD=
+  elif [[ -n "$ACTIVE_POD" ]]; then
+    podman pod stop --time 15 "$ACTIVE_POD" >/dev/null 2>&1 || true
+    podman pod rm --force "$ACTIVE_POD" >/dev/null 2>&1 || true
+    ACTIVE_POD=
+  fi
+}
+
+bootstrap() {
+  parse_locus_apk_options "$@"
+  local locus_dir=$LOCUS_INPUT_DIR
+  local automated=${ACCEPTANCE_BOOTSTRAP_AUTOMATED:-0}
+  require_images
+  [[ "$automated" == 1 ]] || acceptance_image_exists "$WEB_IMAGE" \
+    || die "Interactive bootstrap needs $WEB_IMAGE; run ./tools/podman-test build first."
+  acceptance_volume_exists "$GOLDEN_VOLUME" \
+    && die "Golden state already exists; run clean before replacing onboarding or APK inputs."
+
+  local -a validation_args
+  mapfile -t validation_args < <(build_container_args)
+  acceptance_engine run "${validation_args[@]}" --network none \
+    --volume "$locus_dir:/private:ro" "$BUILD_IMAGE" \
+    python3 /workspace/tools/podman/validate-locus-apks.py \
+      --fixture-config /workspace/tools/locus-test-apk.properties /private
+
+  acceptance_engine volume create "$GOLDEN_VOLUME" >/dev/null
+  ACTIVE_DATA_VOLUME=$GOLDEN_VOLUME
+  ACTIVE_RUNTIME_VOLUME=locuspebble-bootstrap-runtime
+  acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_POD=locuspebble-bootstrap
+  if [[ "$automated" == 1 ]]; then
+    create_test_pod "$ACTIVE_POD" false
+  else
+    create_test_pod "$ACTIVE_POD" true
+  fi
+  start_android locuspebble-bootstrap-android "$GOLDEN_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
+  local -a security network
+  mapfile -t security < <(acceptance_security_args)
+  mapfile -t network < <(active_network_args)
+  if [[ "$automated" != 1 ]]; then
+    acceptance_engine run --detach "${network[@]}" --name locuspebble-bootstrap-web \
+      "${security[@]}" --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble:ro" \
+      "$WEB_IMAGE" >/dev/null
+    register_active_container locuspebble-bootstrap-web
+  fi
+
+  local artifacts="$BUILD_ROOT/bootstrap-artifacts"
+  mkdir -p "$artifacts"
+  local -a runner_args
+  mapfile -t runner_args < <(build_container_args)
+  acceptance_engine run "${runner_args[@]}" "${network[@]}" \
+    --env "ACCEPTANCE_BOOTSTRAP_AUTOMATED=$automated" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$locus_dir:/private:ro" \
+    --volume "$artifacts:/artifacts" \
+    "$BUILD_IMAGE" bash -euo pipefail -c '
+      source /workspace/tools/podman/device-lib.sh
+      wait_for_android 180
+      adb_device_timeout 180 install -r /workspace/build/podman/images/pebble-app-x86_64-debug.apk >/dev/null
+      mapfile -d "" apks < <(find /private -maxdepth 1 -type f -name "*.apk" -print0)
+      (( ${#apks[@]} > 0 ))
+      adb_device_timeout 300 install-multiple -r "${apks[@]}" >/dev/null
+      grant_locus_test_permissions
+      adb_device_timeout 180 install -r /workspace/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk >/dev/null
+      adb_device shell monkey -p coredevices.coreapp 1 >/dev/null
+      adb_device shell monkey -p menion.android.locus 1 >/dev/null
+      if [[ "$ACCEPTANCE_BOOTSTRAP_AUTOMATED" == 1 ]]; then
+        complete_locus_onboarding 90
+        # Do not freeze a golden volume while Locus is still completing its first map/database
+        # initialization. A top-resumed activity alone precedes that work on slower cold runners.
+        foreground_locus 30
+      fi
+      adb_device shell am start -W \
+        -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity >/dev/null
+    '
+
+  if [[ "$automated" != 1 ]]; then
+    echo "Complete Pebble App and Locus Map onboarding at http://127.0.0.1:5173/."
+    echo "Configure at least one Locus Map recording profile and leave recording stopped."
+  fi
+  if [[ "$automated" != 1 && "${PODMAN_BOOTSTRAP_READY:-0}" != 1 ]]; then
+    [[ -t 0 ]] || die "Bootstrap needs a terminal, or PODMAN_BOOTSTRAP_READY=1 after scripted onboarding."
+    read -r -p "Press Enter after onboarding is complete... "
+  fi
+
+  acceptance_engine run "${runner_args[@]}" "${network[@]}" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$locus_dir:/private:ro" \
+    --volume "$GOLDEN_VOLUME:/golden" \
+    "$BUILD_IMAGE" bash -euo pipefail -c "
+      source /workspace/tools/podman/device-lib.sh
+      wait_status locus_available true 45
+      wait_status recording_state STOPPED 15
+      wait_nonempty_status locus_profiles 30 >/dev/null
+      adb_device uninstall app.locuspebble.bridge >/dev/null 2>&1 || true
+      fingerprint=\$(python3 /workspace/tools/podman/validate-locus-apks.py --fingerprint-only /private)
+      core_apk=\$(sha256sum /workspace/build/podman/images/pebble-app-x86_64-debug.apk | cut -d' ' -f1)
+      emulator_config=\$(sha256sum /workspace/tools/podman/android-emulator-entrypoint.sh | cut -d' ' -f1)
+      fixture_config=\$(sha256sum /workspace/tools/locus-test-apk.properties | cut -d' ' -f1)
+      printf 'bootstrap_schema=%s\\napi=32\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=0.1.9\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
+        '$BOOTSTRAP_SCHEMA' '$ANDROID_EMULATOR_VERSION' '$ANDROID_SYSTEM_IMAGE_SHA256' \\
+        \"\$emulator_config\" '$CORE_APP_COMMIT' \"\$core_apk\" \\
+        \"\$fixture_config\" \"\$fingerprint\" \\
+        > /golden/.locuspebble-bootstrap
+      adb_device emu kill >/dev/null 2>&1 || true
+    "
+  stop_active_pod
+  ACTIVE_DATA_VOLUME=
+  acceptance_engine volume rm --force "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_RUNTIME_VOLUME=
+  echo "Golden API 32 state is ready; Locus remains only in the private Android data volume."
+}
+
+new_run() {
+  local stage=$1
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-${stage}-$$"
+  RUN_ARTIFACTS="$BUILD_ROOT/$RUN_ID"
+  mkdir -p "$RUN_ARTIFACTS"
+}
+
+static_tests() {
+  doctor_static
+  static_image_exists || build_static_image
+  new_run static
+  set +e
+  run_static_container bash -euo pipefail -c '
+    mkdir -p "$HOME"
+    bash -n tools/podman-test tools/podman/*.sh docs/*.sh
+    python3 -m unittest discover -s tools/podman -p "test_*.py"
+    ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
+      :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
+    npm ci --prefix watchapp
+    npm test --prefix watchapp
+    (cd watchapp && pebble clean && pebble build && npm run verify:pbw)
+  ' 2>&1 | tee "$RUN_ARTIFACTS/static.log"
+  local status=${PIPESTATUS[0]}
+  set -e
+  [[ ! -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" ]] \
+    || cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" "$RUN_ARTIFACTS/"
+  [[ ! -s "$PROJECT_DIR/watchapp/build/watchapp.pbw" ]] \
+    || cp "$PROJECT_DIR/watchapp/build/watchapp.pbw" "$RUN_ARTIFACTS/"
+  [[ ! -d "$PROJECT_DIR/docs/sphinx/_build/html" ]] \
+    || cp -a "$PROJECT_DIR/docs/sphinx/_build/html" "$RUN_ARTIFACTS/html"
+  return "$status"
+}
+
+documentation_tests() {
+  doctor_static
+  static_image_exists || build_static_image
+  run_static_container bash -euo pipefail -c '
+    mkdir -p "$HOME"
+    ./gradlew verifyDocumentation
+  '
+}
+
+release_check() {
+  doctor_static
+  static_image_exists || build_static_image
+  run_static_container bash -euo pipefail -c '
+    mkdir -p "$HOME"
+    ./gradlew :android:app:assembleRelease
+    release_apk=android/app/build/outputs/apk/release/locuspebble-bridge-release-unsigned.apk
+    test -s "$release_apk"
+    badging=$(aapt2 dump badging "$release_apk")
+    grep -Fq "package: name='\''app.locuspebble.bridge'\''" <<<"$badging"
+    grep -Fq "minSdkVersion:'\''24'\''" <<<"$badging"
+    manifest=$(aapt2 dump xmltree --file AndroidManifest.xml "$release_apk")
+    if grep -Fq DebugStatusProvider <<<"$manifest"; then
+      echo "DebugStatusProvider leaked into the release APK." >&2
+      exit 1
+    fi
+  '
+}
+
+development_command() {
+  [[ $# -gt 0 ]] || die "dev requires a command"
+  doctor_static
+  static_image_exists || build_static_image
+  run_static_container "$@"
+}
+
+run_android_tests() {
+  local locus_dir=$1
+  require_images
+  require_current_golden "$locus_dir"
+  ensure_cache_volumes
+  new_run android
+  ACTIVE_DATA_VOLUME="locuspebble-${RUN_ID}-android"
+  ACTIVE_RUNTIME_VOLUME="locuspebble-${RUN_ID}-runtime"
+  acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  clone_volume "$GOLDEN_VOLUME" "$ACTIVE_DATA_VOLUME"
+  ACTIVE_POD="locuspebble-${RUN_ID}"
+  create_test_pod "$ACTIVE_POD"
+  start_android "${ACTIVE_POD}-android" "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
+  set +e
+  runner_in_pod "$RUN_ARTIFACTS" bash -euo pipefail -c '
+    source /workspace/tools/podman/device-lib.sh
+    capture_artifacts() {
+      set +e
+      adb_device_timeout 10 exec-out screencap -p > /artifacts/android-instrumentation.png
+      adb_device_timeout 15 logcat -d > /artifacts/android-logcat.txt
+      cp /workspace/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk /artifacts/
+      cp /workspace/watchapp/build/watchapp.pbw /artifacts/
+      cp -a /workspace/android/app/build/outputs/androidTest-results /artifacts/
+      true
+    }
+    trap capture_artifacts EXIT
+    wait_for_android 180
+    adb_device uninstall app.locuspebble.bridge >/dev/null 2>&1 || true
+    grant_locus_test_permissions
+    foreground_locus
+    # Refresh the boot-time console fix after Locus is active. The emulator retains it until the
+    # recording service registers its real GPS listener.
+    set_emulator_test_location
+    ANDROID_SERIAL="$ADB_SERIAL" timeout 30m ./gradlew :android:app:connectedDebugAndroidTest \
+      -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true
+    python3 /workspace/tools/podman/assert-instrumentation-results.py \
+      /workspace/android/app/build/outputs/androidTest-results/connected
+  '
+  local status=$?
+  acceptance_engine logs "${ACTIVE_POD}-android" \
+    > "$RUN_ARTIFACTS/android-container.log" 2>&1 || true
+  set -e
+  stop_active_pod
+  acceptance_engine volume rm --force "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_DATA_VOLUME=
+  ACTIVE_RUNTIME_VOLUME=
+  return "$status"
+}
+
+run_e2e_platform() {
+  local platform=$1 artifacts=$2
+  ACTIVE_DATA_VOLUME="locuspebble-${RUN_ID}-${platform}-android"
+  ACTIVE_WATCH_VOLUME="locuspebble-${RUN_ID}-${platform}-watch"
+  ACTIVE_RUNTIME_VOLUME="locuspebble-${RUN_ID}-${platform}-runtime"
+  clone_volume "$GOLDEN_VOLUME" "$ACTIVE_DATA_VOLUME"
+  acceptance_engine volume create "$ACTIVE_WATCH_VOLUME" >/dev/null
+  acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_POD="locuspebble-${RUN_ID}-${platform}"
+  create_test_pod "$ACTIVE_POD"
+  start_android "${ACTIVE_POD}-android" "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
+  local -a security network
+  mapfile -t security < <(acceptance_security_args)
+  mapfile -t network < <(active_network_args)
+  acceptance_engine run --detach "${network[@]}" --name "${ACTIVE_POD}-watch" \
+    "${security[@]}" \
+    --env "PEBBLE_PLATFORM=$platform" --env "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
+    --volume "$PROJECT_DIR:/workspace" \
+    --volume "$ACTIVE_WATCH_VOLUME:/pebble-state" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$artifacts:/artifacts" \
+    --entrypoint /workspace/tools/podman/watch-qemu-entrypoint.sh \
+    "$BUILD_IMAGE" >/dev/null
+  register_active_container "${ACTIVE_POD}-watch"
+  set +e
+  runner_in_pod "$artifacts" env PEBBLE_PLATFORM="$platform" \
+    bash /workspace/tools/podman/e2e-stage.sh
+  local status=$?
+  acceptance_engine logs "${ACTIVE_POD}-android" \
+    > "$artifacts/${platform}-android-container.log" 2>&1 || true
+  acceptance_engine logs "${ACTIVE_POD}-watch" \
+    > "$artifacts/${platform}-watch-container.log" 2>&1 || true
+  set -e
+  stop_active_pod
+  acceptance_engine volume rm --force \
+    "$ACTIVE_DATA_VOLUME" "$ACTIVE_WATCH_VOLUME" "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_DATA_VOLUME=
+  ACTIVE_WATCH_VOLUME=
+  ACTIVE_RUNTIME_VOLUME=
+  return "$status"
+}
+
+e2e_tests() {
+  local locus_dir=$1
+  require_images
+  require_current_golden "$locus_dir"
+  ensure_cache_volumes
+  new_run e2e
+  cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" "$RUN_ARTIFACTS/"
+  cp "$PROJECT_DIR/watchapp/build/watchapp.pbw" "$RUN_ARTIFACTS/"
+  run_e2e_platform emery "$RUN_ARTIFACTS"
+  run_e2e_platform gabbro "$RUN_ARTIFACTS"
+}
+
+all_tests() {
+  local locus_dir=$1
+  static_tests
+  run_android_tests "$locus_dir"
+  e2e_tests "$locus_dir"
+}
+
+clean() {
+  select_acceptance_engine
+  local pod container volume image
+  if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
+    while read -r pod; do
+      [[ "$pod" == locuspebble-* ]] && podman pod rm --force "$pod" >/dev/null
+    done < <(podman pod ps --format '{{.Name}}' --filter 'name=^locuspebble-')
+  else
+    while read -r container; do
+      [[ "$container" == locuspebble-* ]] \
+        && docker container rm --force "$container" >/dev/null
+    done < <(docker container ls -a --format '{{.Names}}' --filter name=locuspebble-)
+  fi
+  while read -r volume; do
+    [[ "$volume" == locuspebble-* ]] \
+      && acceptance_engine volume rm --force "$volume" >/dev/null
+  done < <(acceptance_engine volume ls --format '{{.Name}}' --filter name=locuspebble-)
+  if [[ -d "$BUILD_ROOT" ]]; then
+    [[ "$BUILD_ROOT" == "$PROJECT_DIR/build/podman" ]] || die "Refusing unexpected clean path."
+    if [[ "$ACCEPTANCE_ENGINE" == docker ]] && acceptance_image_exists "$GENERATOR_IMAGE"; then
+      docker run --rm --volume "$BUILD_ROOT:/target" "$GENERATOR_IMAGE" \
+        find /target -mindepth 1 -delete
+      rmdir "$BUILD_ROOT"
+    else
+      find "$BUILD_ROOT" -depth -delete
+    fi
+  fi
+  for image in \
+    "$EMULATOR_IMAGE" "$GENERATED_EMULATOR_IMAGE" "$GENERATED_EMULATOR_LATEST" \
+    "$GENERATED_EMULATOR_BARE" "$GENERATED_SYSTEM_IMAGE" "$GENERATED_SYSTEM_IMAGE_BARE" \
+    "$WEB_IMAGE" "$GENERATOR_IMAGE" "$BUILD_IMAGE"; do
+    acceptance_image_exists "$image" \
+      && acceptance_engine image rm --force "$image" >/dev/null || true
+  done
+  acceptance_network_exists "$NETWORK" \
+    && acceptance_engine network rm "$NETWORK" >/dev/null || true
+  echo "Removed acceptance images, volumes, containers, network, caches, and generated artifacts."
+}
+
+main() {
+  local command=${1:-}
+  [[ -n "$command" ]] || { usage; return 2; }
+  shift
+  case "$command" in
+    doctor) [[ $# -eq 1 ]] || die "doctor requires static or acceptance"; doctor "$1" ;;
+    emulator-probe) [[ $# -eq 0 ]] || die "emulator-probe takes no options"; docker_emulator_probe ;;
+    build)
+      if [[ $# -eq 1 && "$1" == --refresh ]]; then
+        PULL_POLICY=always
+      elif [[ $# -ne 0 ]]; then
+        die "build accepts only --refresh"
+      fi
+      build_all
+      ;;
+    build-acceptance)
+      if [[ $# -eq 1 && "$1" == --refresh ]]; then
+        PULL_POLICY=always
+      elif [[ $# -ne 0 ]]; then
+        die "build-acceptance accepts only --refresh"
+      fi
+      build_acceptance_all
+      ;;
+    build-static)
+      doctor_static
+      if [[ $# -eq 1 && "$1" == --refresh ]]; then
+        PULL_POLICY=always
+      elif [[ $# -ne 0 ]]; then
+        die "build-static accepts only --refresh"
+      fi
+      build_static_image
+      ;;
+    dev) development_command "$@" ;;
+    bootstrap) bootstrap "$@" ;;
+    static) [[ $# -eq 0 ]] || die "static takes no options"; static_tests ;;
+    documentation) [[ $# -eq 0 ]] || die "documentation takes no options"; documentation_tests ;;
+    release-check) [[ $# -eq 0 ]] || die "release-check takes no options"; release_check ;;
+    android) parse_locus_apk_options "$@"; run_android_tests "$LOCUS_INPUT_DIR" ;;
+    acceptance|e2e) parse_locus_apk_options "$@"; e2e_tests "$LOCUS_INPUT_DIR" ;;
+    all) parse_locus_apk_options "$@"; all_tests "$LOCUS_INPUT_DIR" ;;
+    clean) [[ $# -eq 0 ]] || die "clean takes no options"; clean ;;
+    -h|--help|help) usage ;;
+    *) usage; die "Unknown command: $command" ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

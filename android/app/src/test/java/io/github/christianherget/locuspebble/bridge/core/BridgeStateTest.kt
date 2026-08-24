@@ -5,6 +5,7 @@ import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeStateTest {
@@ -53,6 +54,7 @@ class BridgeStateTest {
     @Test fun healthyDiagnosticsDoNotEraseAnUnrelatedRuntimeFailure() {
         val refreshed = BridgeStatus(lastError = "Command result delivery failed").withDiagnosticsSnapshot(
             recordingState = BridgeProtocol.RecordingState.RECORDING,
+            activeLocusProfile = "Walking",
             sampledAtMillis = 1_000L,
             currentHeartRate = 120,
             error = null,

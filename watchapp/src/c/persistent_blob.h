@@ -5,9 +5,9 @@
 #include <stdint.h>
 
 typedef struct {
-  uint32_t metadata_key[2];
+  uint32_t record_key;
   uint32_t legacy_key;
-  uint32_t bank_base[2];
+  uint32_t chunk_base;
   uint8_t max_chunks;
 } PersistentBlob;
 

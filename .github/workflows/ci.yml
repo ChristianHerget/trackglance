@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_acceptance_probe:
+        description: Probe Docker/KVM/API-32 boot on a GitHub-hosted runner
+        type: boolean
+        default: false
+      run_hosted_acceptance:
+        description: Bootstrap and run full acceptance twice on a fresh GitHub-hosted runner
+        type: boolean
+        default: false
+      run_acceptance:
+        description: Run protected KVM acceptance on a prepared self-hosted runner
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Android, Pebble, protocol, and helpers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the public static entry point
+        env:
+          DEV_CONTAINER_ENGINE: docker
+        run: tools/podman-test static
+      - name: Assemble release and exclude debug provider
+        env:
+          DEV_CONTAINER_ENGINE: docker
+        run: tools/podman-test release-check
+
+  documentation:
+    name: Committed documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate docs without regenerating screenshots
+        env:
+          DEV_CONTAINER_ENGINE: docker
+        run: tools/podman-test documentation
+
+  acceptance-probe-hosted:
+    name: Hosted Docker/KVM emulator probe
+    if: github.event_name == 'workflow_dispatch' && inputs.run_acceptance_probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Report hosted-runner resources
+        run: |
+          uname -a
+          nproc
+          free -h
+          df -h
+          docker version
+          ls -l /dev/kvm
+      - name: Grant this runner access to KVM
+        run: |
+          sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+      - name: Boot the pinned API 32 emulator with Docker and KVM
+        env:
+          ACCEPTANCE_CONTAINER_ENGINE: docker
+        run: tools/podman-test emulator-probe
+      - name: Report probe resource use
+        if: always()
+        run: |
+          df -h
+          docker system df
+          docker ps -a
+
+  acceptance-hosted:
+    name: Hosted full-stack acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.run_hosted_acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ACCEPTANCE_CONTAINER_ENGINE: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure ephemeral fixture location
+        run: echo "LOCUS_APKS_DIR=$RUNNER_TEMP/locus-apks" >> "$GITHUB_ENV"
+      - name: Report fresh hosted-runner resources
+        run: |
+          uname -a
+          nproc
+          free -h
+          df -h
+          docker version
+          ls -l /dev/kvm
+          docker system df
+      - name: Grant this runner access to KVM
+        run: |
+          sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+      - name: Download the pinned public Locus fixture
+        run: |
+          mkdir -p "$LOCUS_APKS_DIR"
+          tools/download-locus-apk --output "$LOCUS_APKS_DIR/locus.apk"
+      - name: Check the fresh acceptance host
+        run: tools/podman-test doctor acceptance
+      - name: Build only headless acceptance inputs
+        run: timeout 45m tools/podman-test build-acceptance
+      - name: Report resources after image and application builds
+        run: |
+          df -h
+          docker system df
+          du -sh build android/app/build watchapp/build "$LOCUS_APKS_DIR" 2>/dev/null || true
+      - name: Bootstrap disposable Android golden state
+        env:
+          ACCEPTANCE_BOOTSTRAP_AUTOMATED: 1
+        run: timeout 20m tools/podman-test bootstrap
+      - name: Report resources after bootstrap
+        run: |
+          df -h
+          docker system df
+          du -sh build android/app/build watchapp/build "$LOCUS_APKS_DIR" 2>/dev/null || true
+      - name: Run all Android and Locus instrumentation tests
+        run: timeout 35m tools/podman-test android
+      - name: Report resources after Android tests
+        run: |
+          df -h
+          docker system df
+          du -sh build android/app/build watchapp/build "$LOCUS_APKS_DIR" 2>/dev/null || true
+      - name: Run Emery and Gabbro acceptance
+        run: timeout 35m tools/podman-test acceptance
+      - name: Report resources after first acceptance
+        run: |
+          df -h
+          docker system df
+          du -sh build android/app/build watchapp/build "$LOCUS_APKS_DIR" 2>/dev/null || true
+      - name: Repeat Emery and Gabbro acceptance from clean clones
+        run: timeout 35m tools/podman-test acceptance
+      - name: Report final resources
+        if: always()
+        run: |
+          df -h
+          docker system df
+          docker ps -a
+          du -sh build android/app/build watchapp/build "$LOCUS_APKS_DIR" 2>/dev/null || true
+      - name: Print bounded failure diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          for container in $(docker ps -aq --filter name=locuspebble-); do
+            echo "Diagnostics for container $container"
+            timeout 15 docker logs --tail 400 "$container" || true
+          done
+          find build/podman -path build/podman/generated -prune -o -type f \
+            \( -name '*.log' -o -name '*.txt' -o -name '*.jsonl' \) \
+            -size -5M -print -exec tail -n 200 {} \; 2>/dev/null || true
+      - name: Remove ephemeral acceptance state and Locus fixture
+        if: always()
+        run: |
+          status=0
+          tools/podman-test clean || status=$?
+          find "$LOCUS_APKS_DIR" -type f -delete 2>/dev/null || true
+          rmdir "$LOCUS_APKS_DIR" 2>/dev/null || true
+          docker system df
+          exit "$status"
+
+  acceptance:
+    name: Protected KVM acceptance
+    if: github.event_name == 'workflow_dispatch' && inputs.run_acceptance
+    runs-on: [self-hosted, linux, x64, kvm]
+    environment: acceptance
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check prepared acceptance host
+        run: tools/podman-test doctor acceptance
+      - name: Run full acceptance
+        env:
+          LOCUS_APKS_DIR: ${{ vars.LOCUS_APKS_DIR }}
+        run: tools/podman-test acceptance

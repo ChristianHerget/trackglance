@@ -8,11 +8,12 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.christianherget.locuspebble.bridge"
+        // Keep the identity used by every distributable build so upgrades replace the existing app.
+        applicationId = "app.locuspebble.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.1.8"
+        versionCode = 10
+        versionName = "0.1.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
