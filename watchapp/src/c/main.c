@@ -1,19 +1,21 @@
 #include <pebble.h>
 
 #include "app_message_handler.h"
+#include "i18n.h"
 #include "persistent_blob.h"
 #include "ui_metrics.h"
 #include "watch_build_hash.auto.h"
 #include "watch_config.h"
 #include "watch_state.h"
 
-#define PROTOCOL_VERSION 3
-#define RELEASE_VERSION "0.1.9"
+#define PROTOCOL_VERSION 4
+#define RELEASE_VERSION "0.2.2"
 #define MAX_SLOTS WATCH_MAX_SLOTS
 #define MAX_PROFILES WATCH_MAX_PROFILES
 #define NAME_SIZE WATCH_PROFILE_NAME_SIZE
 #define ID_SIZE WATCH_PROFILE_ID_SIZE
 #define LOCUS_NAME_SIZE WATCH_LOCUS_NAME_SIZE
+#define LOCUS_ID_SIZE WATCH_LOCUS_ID_SIZE
 #define WAYPOINT_NAME_BYTES WATCH_WAYPOINT_NAME_BYTES
 #define WAYPOINT_NAME_SIZE (WAYPOINT_NAME_BYTES + 1)
 #define CONFIG_SIZE WATCH_CONFIG_BUFFER_SIZE
@@ -35,7 +37,6 @@
 #define PERSIST_CONFIG_LEGACY 100
 #define PERSIST_PENDING_CONFIG_LEGACY 101
 #define PERSIST_PROFILE_LIST_LEGACY 102
-#define PERSIST_ACTIVE_ID 103
 #define PERSIST_SESSION_COUNTER 104
 #define PERSIST_RELAY_TRANSFER_COUNTER 105
 #define PERSIST_CONFIG_META 200
@@ -52,6 +53,8 @@ enum {
   MSG_REQUEST_PROFILE_LIST = 7,
   MSG_HEART_RATE = 8,
   MSG_CONFIG_RESULT = 9,
+  MSG_RECORDING_CONTEXT = 10,
+  MSG_REQUEST_RUNTIME_CONFIG = 11,
 };
 
 enum {
@@ -92,7 +95,7 @@ typedef struct {
   uint32_t command_id;
   int32_t transfer_id;
   int32_t result;
-  char text[LOCUS_NAME_SIZE];
+  char text[WAYPOINT_NAME_SIZE];
 } ControlMessage;
 
 typedef struct {
@@ -122,7 +125,7 @@ static const PersistentBlob s_pending_config_blob = {
   .chunk_base = 1040,
   .max_chunks = 16,
 };
-static const PersistentBlob s_profile_list_blob = {
+static const PersistentBlob s_obsolete_profile_list_blob = {
   .record_key = PERSIST_PROFILE_LIST_META,
   .legacy_key = PERSIST_PROFILE_LIST_LEGACY,
   .chunk_base = 1080,
@@ -132,20 +135,21 @@ static const PersistentBlob s_profile_list_blob = {
 static Window *s_main_window;
 static Window *s_controls_window;
 static Window *s_confirm_window;
-static Window *s_profile_window;
+static Window *s_waypoint_window;
 static StatusBarLayer *s_status_bar;
 static TextLayer *s_header;
+static TextLayer *s_instruction;
 static TextLayer *s_labels[MAX_SLOTS];
 static TextLayer *s_value_layers[MAX_SLOTS];
 static SimpleMenuLayer *s_menu;
 static SimpleMenuLayer *s_confirm_menu;
-static SimpleMenuLayer *s_profile_menu;
+static SimpleMenuLayer *s_waypoint_menu;
 static SimpleMenuItem s_items[5];
 static SimpleMenuItem s_confirm_items[2];
-static SimpleMenuItem s_profile_items[MAX_PROFILES];
+static SimpleMenuItem s_waypoint_items[2];
 static SimpleMenuSection s_section;
 static SimpleMenuSection s_confirm_section;
-static SimpleMenuSection s_profile_section;
+static SimpleMenuSection s_waypoint_section;
 
 static Snapshot s_snapshot = {
   .state = STATE_UNAVAILABLE,
@@ -155,6 +159,8 @@ static Snapshot s_snapshot = {
   .current_speed = UNAVAILABLE,
   .average_speed = UNAVAILABLE,
   .max_speed = UNAVAILABLE,
+  .current_pace = UNAVAILABLE,
+  .average_pace = UNAVAILABLE,
   .altitude = UNAVAILABLE,
   .ascent = UNAVAILABLE,
   .descent = UNAVAILABLE,
@@ -168,16 +174,33 @@ static Snapshot s_snapshot = {
   .avg_power = UNAVAILABLE,
   .max_power = UNAVAILABLE,
   .energy = UNAVAILABLE,
+  .altitude_format = FORMAT_M_0,
+  .distance_format = FORMAT_M_0,
+  .moving_distance_format = FORMAT_M_0,
+  .current_speed_format = FORMAT_KPH_1,
+  .average_speed_format = FORMAT_KPH_1,
+  .max_speed_format = FORMAT_KPH_1,
+  .vertical_speed_format = FORMAT_MPS_2,
+  .slope_format = FORMAT_PERCENT_0,
+  .energy_format = FORMAT_KJ_0,
+  .pace_format = FORMAT_PER_KM,
 };
 static Profile s_profiles[MAX_PROFILES];
 static WatchConfig s_parsed_config;
 static int s_profile_count;
 static int s_selected;
 static bool s_dark = true;
-static bool s_german;
 static bool s_snapshot_received;
 static uint16_t s_snapshot_age;
 static uint32_t s_uptime_seconds;
+static char s_current_locus_id[LOCUS_ID_SIZE];
+static char s_config_locus_id[LOCUS_ID_SIZE];
+static uint32_t s_config_fingerprint_a;
+static uint32_t s_config_fingerprint_b;
+static bool s_activity_ready;
+static bool s_context_active;
+static uint32_t s_context_started;
+static uint32_t s_last_runtime_config_request;
 
 static char s_header_text[64] = "Connecting...";
 static char s_notice[48];
@@ -185,13 +208,13 @@ static char s_value_text[MAX_SLOTS][24];
 static time_t s_notice_until;
 
 static char s_chunks[CONFIG_SIZE];
-static char s_pending_chunks[CONFIG_SIZE];
 static char s_config_work[CONFIG_SIZE];
 static WatchConfigTransfer s_config_transfer = {.id = -1};
 static bool s_config_durable_generation_seen;
 static uint32_t s_transfer_last_activity;
+static uint32_t s_transfer_fingerprint_a;
+static uint32_t s_transfer_fingerprint_b;
 static bool s_config_result_slot_reserved;
-static bool s_pending_cleanup_required;
 
 static char s_profile_chunks[WATCH_PROFILE_TRANSFER_BUFFER_SIZE];
 static WatchProfileTransfer s_profile_transfer;
@@ -250,10 +273,6 @@ static void layout_slots(void);
 static void update_health_subscription(void);
 static void send_next(void);
 
-static const char *tr(const char *english, const char *german) {
-  return s_german ? german : english;
-}
-
 static void copy_text(char *destination, size_t size, const char *source) {
   if (!destination || !size) return;
   snprintf(destination, size, "%s", source ? source : "");
@@ -266,71 +285,34 @@ static void show_notice(const char *message, int seconds) {
   render();
 }
 
-static bool read_persisted_string(uint32_t key, char *output, size_t output_size) {
-  if (!output || output_size < 1) return false;
-  const int size = persist_get_size(key);
-  if (size < 1 || (size_t)size > output_size ||
-      persist_read_string(key, output, output_size) != size) {
-    output[0] = '\0';
-    return false;
-  }
-  const char *terminator = memchr(output, '\0', (size_t)size);
-  if (terminator != output + size - 1) {
-    output[0] = '\0';
-    return false;
-  }
-  return true;
-}
-
-static bool write_active_id(void) {
-  if (s_selected < 0 || s_selected >= s_profile_count) return false;
-  const char *id = s_profiles[s_selected].id;
-  const size_t size = strlen(id) + 1;
-  return size <= PERSIST_STRING_MAX_LENGTH && persist_write_string(PERSIST_ACTIVE_ID, id) == (int)size;
-}
-
 static void default_profiles(void) {
   memset(s_profiles, 0, sizeof(s_profiles));
   s_dark = true;
   s_selected = 0;
-  s_profile_count = 2;
+  s_profile_count = 1;
   s_watch_hr_to_locus = false;
   s_heart_rate_interval = 5;
 
-  copy_text(s_profiles[0].name, sizeof(s_profiles[0].name), tr("Walking", "Gehen"));
-  copy_text(s_profiles[0].locus, sizeof(s_profiles[0].locus), tr("Walking", "Gehen"));
-  copy_text(s_profiles[0].id, sizeof(s_profiles[0].id), "default-walking");
-  const uint8_t walking[] = {1, 3, 5, 6, 10, 22};
-  memcpy(s_profiles[0].metrics, walking, sizeof(walking));
-  s_profiles[0].count = sizeof(walking);
-
-  copy_text(s_profiles[1].name, sizeof(s_profiles[1].name), tr("Cycling", "Radfahren"));
-  copy_text(s_profiles[1].locus, sizeof(s_profiles[1].locus), tr("Cycling", "Radfahren"));
-  copy_text(s_profiles[1].id, sizeof(s_profiles[1].id), "default-cycling");
-  const uint8_t cycling[] = {1, 3, 5, 6, 7, 22};
-  memcpy(s_profiles[1].metrics, cycling, sizeof(cycling));
-  s_profiles[1].count = sizeof(cycling);
-
-  char active[ID_SIZE] = "";
-  read_persisted_string(PERSIST_ACTIVE_ID, active, sizeof(active));
-  for (int i = 0; i < s_profile_count; i++) {
-    if (strcmp(active, s_profiles[i].id) == 0) s_selected = i;
-  }
+  copy_text(s_profiles[0].name, sizeof(s_profiles[0].name), i18n_text(I18N_DEFAULT));
+  copy_text(s_profiles[0].id, sizeof(s_profiles[0].id), "unconfigured");
+  const uint8_t general[] = {1, 3, 5, 6, 10, 22};
+  memcpy(s_profiles[0].metrics, general, sizeof(general));
+  s_profiles[0].count = sizeof(general);
 }
 
 static void close_secondary_windows(void) {
   if (s_confirm_window && window_stack_contains_window(s_confirm_window)) {
     window_stack_remove(s_confirm_window, false);
   }
-  if (s_profile_window && window_stack_contains_window(s_profile_window)) {
-    window_stack_remove(s_profile_window, false);
+  if (s_waypoint_window && window_stack_contains_window(s_waypoint_window)) {
+    window_stack_remove(s_waypoint_window, false);
   }
   if (s_controls_window && window_stack_contains_window(s_controls_window)) {
     window_stack_remove(s_controls_window, false);
   }
 }
 
-static void install_config(const WatchConfig *config, bool persist_selection) {
+static void install_config(const WatchConfig *config) {
   if (!config || config->profile_count < 1 || config->profile_count > MAX_PROFILES ||
       config->selected < 0 || config->selected >= config->profile_count) {
     return;
@@ -342,9 +324,11 @@ static void install_config(const WatchConfig *config, bool persist_selection) {
   s_dark = config->dark;
   s_watch_hr_to_locus = config->watch_hr_to_locus;
   s_heart_rate_interval = config->heart_rate_interval;
-  if (persist_selection && !write_active_id()) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Failed to persist active profile");
-  }
+  copy_text(s_config_locus_id, sizeof(s_config_locus_id), config->locus_id);
+  s_config_fingerprint_a = config->fingerprint_a;
+  s_config_fingerprint_b = config->fingerprint_b;
+  s_activity_ready = s_context_active &&
+      strcmp(s_current_locus_id, s_config_locus_id) == 0;
   layout_slots();
   apply_theme();
   update_health_subscription();
@@ -353,77 +337,14 @@ static void install_config(const WatchConfig *config, bool persist_selection) {
 
 static bool parse_config_buffer(char *data, WatchConfig *output) {
   char active[ID_SIZE] = "";
-  read_persisted_string(PERSIST_ACTIVE_ID, active, sizeof(active));
+  if (s_activity_ready && s_selected >= 0 && s_selected < s_profile_count) {
+    copy_text(active, sizeof(active), s_profiles[s_selected].id);
+  }
   return watch_config_parse(data, active, output);
 }
 
 static bool store_active_config(const char *data) {
   return data && persistent_blob_write(&s_config_blob, data, strlen(data));
-}
-
-static bool cleanup_pending_config(const char *failure_log) {
-  if (persistent_blob_delete(&s_pending_config_blob)) {
-    s_pending_cleanup_required = false;
-    return true;
-  }
-  s_pending_cleanup_required = true;
-  APP_LOG(APP_LOG_LEVEL_ERROR, "%s", failure_log);
-  show_notice(tr("Config cleanup failed", "Konfig.-Bereinigung fehlgeschlagen"), 5);
-  return false;
-}
-
-static bool prepare_pending_config_for_direct_apply(void) {
-  if (s_pending_cleanup_required) {
-    return cleanup_pending_config("Pending configuration cleanup retry failed");
-  }
-  if (!persistent_blob_exists(&s_pending_config_blob)) return true;
-  if (!persistent_blob_read(&s_pending_config_blob, s_pending_chunks, sizeof(s_pending_chunks))) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Discarding unreadable pending configuration before direct apply");
-    return cleanup_pending_config("Unreadable pending configuration cleanup failed");
-  }
-  copy_text(s_config_work, sizeof(s_config_work), s_pending_chunks);
-  if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Discarding invalid pending configuration before direct apply");
-    return cleanup_pending_config("Invalid pending configuration cleanup failed");
-  }
-
-  // A queued result is the recovery baseline until the incoming replacement is durable.
-  if (!store_active_config(s_pending_chunks)) {
-    show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
-    return false;
-  }
-  install_config(&s_parsed_config, true);
-  return true;
-}
-
-static void apply_pending_config_if_stopped(void) {
-  if (!s_snapshot_received || s_snapshot.state != STATE_STOPPED) return;
-  if (s_pending_cleanup_required) {
-    cleanup_pending_config("Pending configuration cleanup retry failed");
-    return;
-  }
-  if (!persistent_blob_exists(&s_pending_config_blob)) return;
-  if (!persistent_blob_read(&s_pending_config_blob, s_pending_chunks, sizeof(s_pending_chunks))) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Pending configuration is unreadable");
-    if (cleanup_pending_config("Unreadable pending configuration cleanup failed")) {
-      show_notice(tr("Config storage error", "Konfigurationsfehler"), 5);
-    }
-    return;
-  }
-  copy_text(s_config_work, sizeof(s_config_work), s_pending_chunks);
-  if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Pending configuration is invalid");
-    if (cleanup_pending_config("Invalid pending configuration cleanup failed")) {
-      show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
-    }
-    return;
-  }
-  if (!store_active_config(s_pending_chunks)) {
-    show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
-    return;
-  }
-  install_config(&s_parsed_config, true);
-  cleanup_pending_config("Applied pending configuration but cleanup failed");
 }
 
 static void apply_theme(void) {
@@ -432,9 +353,10 @@ static void apply_theme(void) {
   if (s_main_window) window_set_background_color(s_main_window, background);
   if (s_controls_window) window_set_background_color(s_controls_window, background);
   if (s_confirm_window) window_set_background_color(s_confirm_window, background);
-  if (s_profile_window) window_set_background_color(s_profile_window, background);
+  if (s_waypoint_window) window_set_background_color(s_waypoint_window, background);
   if (s_status_bar) status_bar_layer_set_colors(s_status_bar, background, foreground);
   if (s_header) text_layer_set_text_color(s_header, foreground);
+  if (s_instruction) text_layer_set_text_color(s_instruction, foreground);
   for (int i = 0; i < MAX_SLOTS; i++) {
     if (s_labels[i]) text_layer_set_text_color(s_labels[i], foreground);
     if (s_value_layers[i]) text_layer_set_text_color(s_value_layers[i], foreground);
@@ -453,8 +375,8 @@ static void apply_theme(void) {
       menu_layer_set_highlight_colors(menu, foreground, background);
     }
   }
-  if (s_profile_menu) {
-    MenuLayer *menu = simple_menu_layer_get_menu_layer(s_profile_menu);
+  if (s_waypoint_menu) {
+    MenuLayer *menu = simple_menu_layer_get_menu_layer(s_waypoint_menu);
     if (menu) {
       menu_layer_set_normal_colors(menu, background, foreground);
       menu_layer_set_highlight_colors(menu, foreground, background);
@@ -463,11 +385,11 @@ static void apply_theme(void) {
 }
 
 static const char *metric_label(int metric) {
-  return ui_metric_label(metric, s_german);
+  return ui_metric_label(metric);
 }
 
-static void format_metric(char *output, size_t size, int metric, uint32_t elapsed) {
-  ui_metric_format(output, size, metric, &s_snapshot, elapsed);
+static void format_metric(char *output, size_t size, int metric) {
+  ui_metric_format(output, size, metric, &s_snapshot);
 }
 
 static void layout_slots(void) {
@@ -487,6 +409,12 @@ static void layout_slots(void) {
 #endif
   const int width = bounds.size.w - 2 * inset;
   const int height = bounds.size.h - top - PBL_IF_ROUND_ELSE(18, 0);
+  if (s_instruction) {
+    layer_set_frame(
+        text_layer_get_layer(s_instruction),
+        GRect(PBL_IF_ROUND_ELSE(20, 8), top + 8,
+              bounds.size.w - PBL_IF_ROUND_ELSE(40, 16), height - 8));
+  }
   for (int i = 0; i < MAX_SLOTS; i++) {
     if (!s_labels[i] || !s_value_layers[i]) continue;
     const bool visible = i < count;
@@ -534,24 +462,52 @@ static void layout_slots(void) {
 static void render(void) {
   if (!s_header || s_selected < 0 || s_selected >= s_profile_count) return;
   const time_t now = time(NULL);
-  const bool stale = !s_snapshot_received || s_snapshot_age > SNAPSHOT_STALE_SECONDS;
-  const char *state = s_snapshot.state == STATE_RECORDING ? tr("Recording", "Aufzeichnung") :
-      s_snapshot.state == STATE_PAUSED ? tr("Paused", "Pausiert") :
-      s_snapshot.state == STATE_STOPPED ? tr("Stopped", "Gestoppt") :
-      tr("No Locus", "Kein Locus");
+  const bool stale = s_snapshot_received && s_snapshot_age > SNAPSHOT_STALE_SECONDS;
+  const char *state = s_snapshot.state == STATE_RECORDING ? i18n_text(I18N_RECORDING) :
+      s_snapshot.state == STATE_PAUSED ? i18n_text(I18N_PAUSED) :
+      s_snapshot.state == STATE_STOPPED ? i18n_text(I18N_STOPPED) :
+      i18n_text(I18N_NO_LOCUS);
   const bool showing_notice = now < s_notice_until;
-  snprintf(s_header_text, sizeof(s_header_text), "%s%s",
-           showing_notice ? s_notice : state,
-           !showing_notice && stale ? tr(" | stale", " | veraltet") : "");
+  const bool active = s_context_active && s_activity_ready &&
+      (s_snapshot.state == STATE_RECORDING || s_snapshot.state == STATE_PAUSED);
+  if (!s_snapshot_received && !showing_notice) {
+    copy_text(s_header_text, sizeof(s_header_text), i18n_text(I18N_CONNECTING));
+  } else if (showing_notice) {
+    copy_text(s_header_text, sizeof(s_header_text), s_notice);
+  } else if (active) {
+    snprintf(s_header_text, sizeof(s_header_text), "%s \xc2\xb7 %d/%d%s",
+             state, s_selected + 1, s_profile_count,
+             stale ? i18n_text(I18N_STALE_SUFFIX) : "");
+  } else {
+    snprintf(s_header_text, sizeof(s_header_text), "%s%s", state,
+             stale ? i18n_text(I18N_STALE_SUFFIX) : "");
+  }
   text_layer_set_text(s_header, s_header_text);
 
-  uint32_t elapsed = s_snapshot.elapsed;
-  if (!stale && s_snapshot.state == STATE_RECORDING) {
-    elapsed = UINT32_MAX - elapsed < s_snapshot_age ? UINT32_MAX : elapsed + s_snapshot_age;
+  const char *instruction = NULL;
+  if (!s_snapshot_received) {
+    instruction = s_uptime_seconds >= 10 ? i18n_text(I18N_NO_BRIDGE_RESPONSE) : NULL;
+  } else if (s_snapshot.state == STATE_STOPPED) {
+    instruction = i18n_text(I18N_START_IN_LOCUS);
+  } else if (s_snapshot.state == STATE_UNAVAILABLE) {
+    instruction = i18n_text(I18N_LOCUS_UNAVAILABLE_INSTRUCTION);
+  } else if (!s_activity_ready) {
+    instruction = s_uptime_seconds - s_context_started >= 15 ?
+        i18n_text(I18N_OPEN_WATCH_SETTINGS) : i18n_text(I18N_PREPARING_PROFILE);
   }
+  if (s_instruction) {
+    text_layer_set_text(s_instruction, instruction ? instruction : "");
+    layer_set_hidden(text_layer_get_layer(s_instruction), instruction == NULL);
+  }
+  for (int i = 0; i < MAX_SLOTS; i++) {
+    if (s_labels[i]) layer_set_hidden(text_layer_get_layer(s_labels[i]), !active || i >= s_profiles[s_selected].count);
+    if (s_value_layers[i]) layer_set_hidden(text_layer_get_layer(s_value_layers[i]), !active || i >= s_profiles[s_selected].count);
+  }
+  if (!active) return;
+
   const int count = s_profiles[s_selected].count;
   for (int i = 0; i < count && i < MAX_SLOTS; i++) {
-    format_metric(s_value_text[i], sizeof(s_value_text[i]), s_profiles[s_selected].metrics[i], elapsed);
+    format_metric(s_value_text[i], sizeof(s_value_text[i]), s_profiles[s_selected].metrics[i]);
     if (s_value_layers[i]) text_layer_set_text(s_value_layers[i], s_value_text[i]);
   }
 }
@@ -576,7 +532,8 @@ static bool control_contains_type(int type) {
 }
 
 static bool control_enqueue(int type, int command, uint32_t command_id, const char *text) {
-  const bool coalescible = type == MSG_REQUEST_SNAPSHOT || type == MSG_REQUEST_PROFILE_LIST;
+  const bool coalescible = type == MSG_REQUEST_SNAPSHOT || type == MSG_REQUEST_PROFILE_LIST ||
+      type == MSG_REQUEST_RUNTIME_CONFIG;
   if (coalescible && control_contains_type(type)) return true;
   const uint8_t limit = CONTROL_QUEUE_SIZE - (s_config_result_slot_reserved ? 1 : 0);
   if (s_control_count >= limit) return false;
@@ -688,15 +645,19 @@ static AppMessageResult send_control_packet(const ControlMessage *message) {
     valid = dict_write_uint32(iterator, MESSAGE_KEY_COMMAND_ID, message->command_id) == DICT_OK &&
         dict_write_uint32(iterator, MESSAGE_KEY_SESSION_ID, s_session_id) == DICT_OK &&
         dict_write_int32(iterator, MESSAGE_KEY_COMMAND, message->command) == DICT_OK;
-    if (valid && (message->command == CMD_START ||
-                  message->command == CMD_ADD_WAYPOINT_WITH_NOTE)) {
-      const uint32_t key = message->command == CMD_START ?
-          MESSAGE_KEY_LOCUS_PROFILE_NAME : MESSAGE_KEY_WAYPOINT_NAME;
-      valid = dict_write_cstring(iterator, key, message->text) == DICT_OK;
+    if (valid && message->command == CMD_ADD_WAYPOINT_WITH_NOTE) {
+      valid = dict_write_cstring(iterator, MESSAGE_KEY_WAYPOINT_NAME, message->text) == DICT_OK;
     }
   } else if (valid && message->type == MSG_CONFIG_RESULT) {
     valid = dict_write_int32(iterator, MESSAGE_KEY_TRANSFER_ID, message->transfer_id) == DICT_OK &&
         dict_write_int32(iterator, MESSAGE_KEY_RESULT, message->result) == DICT_OK;
+  } else if (valid && message->type == MSG_REQUEST_RUNTIME_CONFIG) {
+    valid = s_current_locus_id[0] &&
+        dict_write_cstring(iterator, MESSAGE_KEY_LOCUS_PROFILE_ID, s_current_locus_id) == DICT_OK &&
+        dict_write_uint32(iterator, MESSAGE_KEY_CONFIG_FINGERPRINT_A,
+                          s_activity_ready ? s_config_fingerprint_a : 0) == DICT_OK &&
+        dict_write_uint32(iterator, MESSAGE_KEY_CONFIG_FINGERPRINT_B,
+                          s_activity_ready ? s_config_fingerprint_b : 0) == DICT_OK;
   }
   if (!valid) return APP_MSG_BUFFER_OVERFLOW;
   return app_message_outbox_send();
@@ -772,7 +733,7 @@ static void drop_outbound(OutboundKind kind) {
   if (kind == OUTBOUND_CONTROL) {
     ControlMessage *message = control_head();
     if (message && message->type == MSG_COMMAND && command_record_remove(message->command_id)) {
-      show_notice(tr("Phone delivery failed", "Telefon nicht erreichbar"), 5);
+      show_notice(i18n_text(I18N_PHONE_DELIVERY_FAILED), 5);
     }
     control_pop();
   } else if (kind == OUTBOUND_RELAY) {
@@ -851,7 +812,7 @@ static void enqueue_deferred_profile_request(void) {
   if (control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL)) {
     s_request_profiles_after_relay = false;
   } else {
-    show_notice(tr("Message queue full", "Nachrichtenwarteschl. voll"), 4);
+    show_notice(i18n_text(I18N_MESSAGE_QUEUE_FULL), 4);
   }
 }
 
@@ -901,7 +862,7 @@ static void outbox_failed(
 
 static void inbox_dropped(AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_WARNING, "Inbox dropped: %d", (int)reason);
-  show_notice(tr("Phone message dropped", "Telefonnachricht verloren"), 4);
+  show_notice(i18n_text(I18N_PHONE_MESSAGE_DROPPED), 4);
 }
 
 static void relay_profile_list(void) {
@@ -928,7 +889,7 @@ static void relay_profile_list(void) {
           0,
           &transfer_id)) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Failed to reserve profile relay transfer ID");
-    show_notice(tr("Profile relay unavailable", "Profilübertr. nicht verfügbar"), 5);
+    show_notice(i18n_text(I18N_PROFILE_RELAY_UNAVAILABLE), 5);
     return;
   }
   s_relay_offset = 0;
@@ -952,15 +913,11 @@ static void relay_pending_profile_list(void) {
     s_profile_pending_ready = false;
     s_profile_pending_id = -1;
     reset_profile_transfer();
-    show_notice(tr("Invalid profile list", "Ungültige Profilliste"), 4);
+    show_notice(i18n_text(I18N_INVALID_PROFILE_LIST), 4);
     enqueue_deferred_profile_request();
     return;
   }
 
-  const bool persisted = persistent_blob_write(&s_profile_list_blob, s_profile_chunks, length);
-  if (!persisted) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "Profile list cache could not be persisted");
-  }
   s_relay_result = s_profile_pending_result;
   s_profile_pending_ready = false;
   s_profile_pending_id = -1;
@@ -1038,6 +995,8 @@ static void reset_config_transfer(void) {
   s_transfer_last_activity = 0;
   s_config_result_slot_reserved = false;
   s_chunks[0] = '\0';
+  s_transfer_fingerprint_a = 0;
+  s_transfer_fingerprint_b = 0;
 }
 
 static bool begin_config_transfer(void) {
@@ -1052,6 +1011,8 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   int32_t id;
   int32_t index;
   int32_t count;
+  uint32_t fingerprint_a;
+  uint32_t fingerprint_b;
   const char *data;
   size_t length;
   const int generation = app_message_transfer_generation(iterator, DURABLE_TRANSFER_GENERATION);
@@ -1059,6 +1020,8 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   if (!app_message_int32(iterator, MESSAGE_KEY_TRANSFER_ID, &id) || id < 0) return;
   if (!app_message_int32(iterator, MESSAGE_KEY_CHUNK_INDEX, &index) ||
       !app_message_int32(iterator, MESSAGE_KEY_CHUNK_COUNT, &count) ||
+      !app_message_uint32(iterator, MESSAGE_KEY_CONFIG_FINGERPRINT_A, &fingerprint_a) ||
+      !app_message_uint32(iterator, MESSAGE_KEY_CONFIG_FINGERPRINT_B, &fingerprint_b) ||
       count < 1 || count > CONFIG_MAX_CHUNKS || index < 0 || index >= count ||
       !app_message_cstring(iterator, MESSAGE_KEY_CHUNK_DATA, CONFIG_CHUNK_BYTES, &data, &length)) {
     if (generation == 1 && !s_config_durable_generation_seen) return;
@@ -1073,6 +1036,14 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   } else if (index == 0 && (s_config_transfer.id < 0 || id != s_config_transfer.id)) {
     if (!watch_config_transfer_may_start(&s_config_transfer, id)) return;
     if (!begin_config_transfer()) return;
+  }
+  if (index == 0 && s_config_transfer.next_chunk == 0) {
+    s_transfer_fingerprint_a = fingerprint_a;
+    s_transfer_fingerprint_b = fingerprint_b;
+  } else if (fingerprint_a != s_transfer_fingerprint_a ||
+             fingerprint_b != s_transfer_fingerprint_b) {
+    reset_config_transfer();
+    return;
   }
   const WatchTransferOutcome outcome = watch_config_transfer_accept(
       &s_config_transfer,
@@ -1096,46 +1067,21 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
   int result = RESULT_CONFIG_APPLIED;
   copy_text(s_config_work, sizeof(s_config_work), s_chunks);
   const bool valid = parse_config_buffer(s_config_work, &s_parsed_config);
-  if (!valid) {
+  if (!valid || s_parsed_config.fingerprint_a != s_transfer_fingerprint_a ||
+      s_parsed_config.fingerprint_b != s_transfer_fingerprint_b) {
     result = RESULT_INVALID_CONFIG;
-    show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
-  } else if (s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS &&
-             s_snapshot.state == STATE_STOPPED) {
-    if (!prepare_pending_config_for_direct_apply()) {
-      result = RESULT_STORAGE_FAILED;
-    } else {
-      // Reparse after reconciliation because promoting a queued baseline may update the
-      // stable active-profile ID used to select a profile in the incoming configuration.
-      copy_text(s_config_work, sizeof(s_config_work), s_chunks);
-      if (!parse_config_buffer(s_config_work, &s_parsed_config)) {
-        result = RESULT_INVALID_CONFIG;
-        APP_LOG(
-            APP_LOG_LEVEL_ERROR,
-            "Validated configuration failed to reparse after reconciliation");
-        show_notice(tr("Invalid configuration", "Ungültige Konfiguration"), 5);
-      } else if (store_active_config(s_chunks)) {
-        install_config(&s_parsed_config, true);
-        if (persistent_blob_exists(&s_pending_config_blob) &&
-            !cleanup_pending_config("Replaced configuration but pending cleanup failed")) {
-          result = RESULT_STORAGE_FAILED;
-        }
-      } else {
-        result = RESULT_STORAGE_FAILED;
-        show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
-      }
-    }
-  } else if (!persistent_blob_write(
-          &s_pending_config_blob, s_chunks, s_config_transfer.length)) {
-    result = RESULT_STORAGE_FAILED;
-    show_notice(tr("Config storage full", "Konfig.-Speicher voll"), 5);
+    show_notice(i18n_text(I18N_INVALID_CONFIGURATION), 5);
+  } else if (strcmp(s_parsed_config.locus_id, s_current_locus_id) != 0) {
+    result = RESULT_INVALID_CONFIG;
+  } else if (store_active_config(s_chunks)) {
+    install_config(&s_parsed_config);
   } else {
-    s_pending_cleanup_required = false;
-    result = RESULT_CONFIG_QUEUED;
-    show_notice(tr("Config queued until stop", "Konfig. nach dem Stopp"), 4);
+    result = RESULT_STORAGE_FAILED;
+    show_notice(i18n_text(I18N_CONFIG_STORAGE_FULL), 5);
   }
   if (!control_enqueue_config_result(id, result)) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Reserved config-result slot was unavailable");
-    show_notice(tr("Message queue error", "Nachrichtenfehler"), 5);
+    show_notice(i18n_text(I18N_MESSAGE_QUEUE_ERROR), 5);
   }
   reset_config_transfer();
   send_next();
@@ -1151,18 +1097,17 @@ static void send_command(int command) {
   if (s_selected < 0 || s_selected >= s_profile_count) return;
   const uint32_t command_id = next_command_id();
   const char *text = NULL;
-  if (command == CMD_START) text = s_profiles[s_selected].locus;
 #if defined(PBL_MICROPHONE)
   if (command == CMD_ADD_WAYPOINT_WITH_NOTE) text = s_waypoint_name;
 #endif
   if (!command_id || !command_record_add(command_id, command) ||
       !control_enqueue(MSG_COMMAND, command, command_id, text)) {
     command_record_remove(command_id);
-    show_notice(tr("Command queue full", "Befehlswarteschl. voll"), 4);
+    show_notice(i18n_text(I18N_COMMAND_QUEUE_FULL), 4);
     close_controls();
     return;
   }
-  show_notice(tr("Sending...", "Senden..."), 5);
+  show_notice(i18n_text(I18N_SENDING), 5);
   send_next();
   close_controls();
 }
@@ -1176,29 +1121,8 @@ static void confirm_selected(int index, void *context) {
   }
 }
 
-static void profile_choice_selected(int index, void *context) {
-  if (index < 0 || index >= s_profile_count) {
-    close_secondary_windows();
-    return;
-  }
-  if (s_snapshot.state == STATE_RECORDING || s_snapshot.state == STATE_PAUSED) {
-    show_notice(tr("Stop to change profile", "Zum Wechseln stoppen"), 4);
-  } else {
-    s_selected = index;
-    if (!write_active_id()) show_notice(tr("Profile was not saved", "Profil nicht gespeichert"), 4);
-    layout_slots();
-    render();
-  }
-  if (s_profile_window && window_stack_contains_window(s_profile_window)) window_stack_pop(true);
-  if (s_controls_window && window_stack_contains_window(s_controls_window)) window_stack_pop(true);
-}
-
-static void profile_selected(int index, void *context) {
-  if (s_profile_window) window_stack_push(s_profile_window, true);
-}
-
 static void recording_selected(int index, void *context) {
-  send_command(s_snapshot.state == STATE_STOPPED ? CMD_START : CMD_PAUSE_RESUME);
+  send_command(CMD_PAUSE_RESUME);
 }
 
 static void stop_selected(int index, void *context) {
@@ -1213,13 +1137,13 @@ static void waypoint_selected(int index, void *context) {
 static void show_dictation_failure(DictationSessionStatus status) {
   const char *message;
   if (status == DictationSessionStatusFailureConnectivityError) {
-    message = tr("No phone/internet", "Kein Telefon/Internet");
+    message = i18n_text(I18N_NO_PHONE_INTERNET);
   } else if (status == DictationSessionStatusFailureDisabled) {
-    message = tr("Dictation disabled", "Diktat deaktiviert");
+    message = i18n_text(I18N_DICTATION_DISABLED);
   } else if (status == DictationSessionStatusFailureNoSpeechDetected) {
-    message = tr("No speech detected", "Keine Sprache erkannt");
+    message = i18n_text(I18N_NO_SPEECH);
   } else {
-    message = tr("Dictation failed", "Diktat fehlgeschlagen");
+    message = i18n_text(I18N_DICTATION_FAILED);
   }
   show_notice(message, 4);
   close_controls();
@@ -1256,7 +1180,7 @@ static void dictated_waypoint_selected(int index, void *context) {
         WAYPOINT_NAME_SIZE, dictation_callback, NULL);
   }
   if (!s_dictation_session) {
-    show_notice(tr("Dictation unavailable", "Diktat nicht verfügbar"), 4);
+    show_notice(i18n_text(I18N_DICTATION_UNAVAILABLE), 4);
     close_controls();
     return;
   }
@@ -1267,42 +1191,37 @@ static void dictated_waypoint_selected(int index, void *context) {
 }
 #endif
 
+#if defined(PBL_MICROPHONE)
+static void waypoint_menu_selected(int index, void *context) {
+  if (index == 0) waypoint_selected(index, context);
+  else dictated_waypoint_selected(index, context);
+}
+
+static void waypoints_selected(int index, void *context) {
+  if (s_waypoint_window) window_stack_push(s_waypoint_window, true);
+}
+#endif
+
 static bool rebuild_menu(void) {
   int count = 0;
+  if (!s_activity_ready ||
+      (s_snapshot.state != STATE_RECORDING && s_snapshot.state != STATE_PAUSED)) return false;
   s_items[count++] = (SimpleMenuItem) {
-    .title = s_snapshot.state == STATE_STOPPED ? tr("Start recording", "Aufzeichnung starten") :
-        s_snapshot.state == STATE_PAUSED ? tr("Resume", "Fortsetzen") :
-        s_snapshot.state == STATE_RECORDING ? tr("Pause", "Pausieren") :
-        tr("Locus unavailable", "Locus nicht verfügbar"),
-    .callback = s_snapshot.state == STATE_UNAVAILABLE ? NULL : recording_selected,
+    .title = s_snapshot.state == STATE_PAUSED ? i18n_text(I18N_RESUME) : i18n_text(I18N_PAUSE),
+    .callback = recording_selected,
   };
   s_items[count++] = (SimpleMenuItem) {
-    .title = tr("Profile", "Profil"),
-    .subtitle = s_profiles[s_selected].name,
-    .callback = profile_selected,
+    .title = i18n_text(I18N_STOP_SAVE),
+    .callback = stop_selected,
   };
-  if (s_snapshot.state == STATE_RECORDING || s_snapshot.state == STATE_PAUSED) {
-    s_items[count++] = (SimpleMenuItem) {
-      .title = tr("Stop & save", "Stoppen & speichern"),
-      .callback = stop_selected,
-    };
-  }
   if (s_snapshot.state == STATE_RECORDING) {
     s_items[count++] = (SimpleMenuItem) {
-      .title = tr("Add waypoint", "Wegpunkt hinzufügen"),
-      .callback = waypoint_selected,
+      .title = PBL_IF_MICROPHONE_ELSE(i18n_text(I18N_WAYPOINTS), i18n_text(I18N_ADD_WAYPOINT)),
+      .callback = PBL_IF_MICROPHONE_ELSE(waypoints_selected, waypoint_selected),
     };
-  }
-  if (s_snapshot.state == STATE_RECORDING && PBL_IF_MICROPHONE_ELSE(true, false)) {
-#if defined(PBL_MICROPHONE)
-    s_items[count++] = (SimpleMenuItem) {
-      .title = tr("Add waypoint + note", "Wegpunkt + Notiz"),
-      .callback = dictated_waypoint_selected,
-    };
-#endif
   }
   s_section = (SimpleMenuSection) {
-    .title = tr("Controls", "Steuerung"),
+    .title = i18n_text(I18N_CONTROLS),
     .num_items = count,
     .items = s_items,
   };
@@ -1319,15 +1238,35 @@ static bool rebuild_menu(void) {
 }
 
 static void main_select(ClickRecognizerRef recognizer, void *context) {
+  if (!s_activity_ready ||
+      (s_snapshot.state != STATE_RECORDING && s_snapshot.state != STATE_PAUSED)) return;
   if (!rebuild_menu()) {
-    show_notice(tr("Not enough memory", "Nicht genug Speicher"), 4);
+    show_notice(i18n_text(I18N_NOT_ENOUGH_MEMORY), 4);
     return;
   }
   if (s_controls_window) window_stack_push(s_controls_window, true);
 }
 
+static void switch_page(int direction) {
+  if (!s_activity_ready || s_profile_count < 1 ||
+      (s_snapshot.state != STATE_RECORDING && s_snapshot.state != STATE_PAUSED)) return;
+  s_selected = (s_selected + direction + s_profile_count) % s_profile_count;
+  layout_slots();
+  show_notice(s_profiles[s_selected].name, 2);
+}
+
+static void main_up(ClickRecognizerRef recognizer, void *context) {
+  switch_page(-1);
+}
+
+static void main_down(ClickRecognizerRef recognizer, void *context) {
+  switch_page(1);
+}
+
 static void click_config(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, main_select);
+  window_single_click_subscribe(BUTTON_ID_UP, main_up);
+  window_single_click_subscribe(BUTTON_ID_DOWN, main_down);
 }
 
 static TextLayer *make_text(Layer *root, GRect frame, GFont font) {
@@ -1351,6 +1290,7 @@ static void main_load(Window *window) {
       root,
       GRect(0, STATUS_BAR_LAYER_HEIGHT, bounds.size.w, 25),
       fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+  s_instruction = make_text(root, GRectZero, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   for (int i = 0; i < MAX_SLOTS; i++) {
     s_labels[i] = make_text(root, GRectZero, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
     s_value_layers[i] = make_text(root, GRectZero, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
@@ -1365,6 +1305,8 @@ static void main_unload(Window *window) {
   s_status_bar = NULL;
   if (s_header) text_layer_destroy(s_header);
   s_header = NULL;
+  if (s_instruction) text_layer_destroy(s_instruction);
+  s_instruction = NULL;
   for (int i = 0; i < MAX_SLOTS; i++) {
     if (s_labels[i]) text_layer_destroy(s_labels[i]);
     if (s_value_layers[i]) text_layer_destroy(s_value_layers[i]);
@@ -1378,49 +1320,48 @@ static void controls_unload(Window *window) {
   s_menu = NULL;
 }
 
-static void profile_load(Window *window) {
-  for (int i = 0; i < s_profile_count; i++) {
-    s_profile_items[i] = (SimpleMenuItem) {
-      .title = s_profiles[i].name,
-      .subtitle = i == s_selected ? tr("Active", "Aktiv") : NULL,
-      .callback = profile_choice_selected,
-    };
-  }
-  s_profile_section = (SimpleMenuSection) {
-    .title = tr("Choose profile", "Profil wählen"),
-    .num_items = s_profile_count,
-    .items = s_profile_items,
+#if defined(PBL_MICROPHONE)
+static void waypoint_load(Window *window) {
+  s_waypoint_items[0] = (SimpleMenuItem) {
+    .title = i18n_text(I18N_QUICK_WAYPOINT),
+    .callback = waypoint_menu_selected,
+  };
+  s_waypoint_items[1] = (SimpleMenuItem) {
+    .title = i18n_text(I18N_DICTATED_WAYPOINT),
+    .callback = waypoint_menu_selected,
+  };
+  s_waypoint_section = (SimpleMenuSection) {
+    .title = i18n_text(I18N_WAYPOINTS),
+    .num_items = 2,
+    .items = s_waypoint_items,
   };
   Layer *root = window_get_root_layer(window);
   if (!root) return;
-  s_profile_menu = simple_menu_layer_create(
-      layer_get_bounds(root), window, &s_profile_section, 1, NULL);
-  if (!s_profile_menu) {
-    show_notice(tr("Not enough memory", "Nicht genug Speicher"), 4);
-    return;
-  }
-  layer_add_child(root, simple_menu_layer_get_layer(s_profile_menu));
+  s_waypoint_menu = simple_menu_layer_create(
+      layer_get_bounds(root), window, &s_waypoint_section, 1, NULL);
+  if (s_waypoint_menu) layer_add_child(root, simple_menu_layer_get_layer(s_waypoint_menu));
   apply_theme();
 }
 
-static void profile_unload(Window *window) {
-  if (s_profile_menu) simple_menu_layer_destroy(s_profile_menu);
-  s_profile_menu = NULL;
+static void waypoint_unload(Window *window) {
+  if (s_waypoint_menu) simple_menu_layer_destroy(s_waypoint_menu);
+  s_waypoint_menu = NULL;
 }
+#endif
 
 static void confirm_load(Window *window) {
   s_confirm_items[0] = (SimpleMenuItem) {
-    .title = tr("Save & stop", "Speichern & stoppen"),
-    .subtitle = tr("Finish the recording", "Aufzeichnung beenden"),
+    .title = i18n_text(I18N_SAVE_STOP),
+    .subtitle = i18n_text(I18N_FINISH_RECORDING),
     .callback = confirm_selected,
   };
   s_confirm_items[1] = (SimpleMenuItem) {
-    .title = tr("Cancel", "Abbrechen"),
-    .subtitle = tr("Keep recording", "Weiter aufzeichnen"),
+    .title = i18n_text(I18N_CANCEL),
+    .subtitle = i18n_text(I18N_KEEP_RECORDING),
     .callback = confirm_selected,
   };
   s_confirm_section = (SimpleMenuSection) {
-    .title = tr("Stop recording?", "Aufzeichnung stoppen?"),
+    .title = i18n_text(I18N_STOP_RECORDING_QUESTION),
     .num_items = 2,
     .items = s_confirm_items,
   };
@@ -1429,7 +1370,7 @@ static void confirm_load(Window *window) {
   s_confirm_menu = simple_menu_layer_create(
       layer_get_bounds(root), window, &s_confirm_section, 1, NULL);
   if (!s_confirm_menu) {
-    show_notice(tr("Not enough memory", "Nicht genug Speicher"), 4);
+    show_notice(i18n_text(I18N_NOT_ENOUGH_MEMORY), 4);
     return;
   }
   layer_add_child(root, simple_menu_layer_get_layer(s_confirm_menu));
@@ -1446,7 +1387,7 @@ static void health_timeout(void *context) {
   s_health_timeout = NULL;
   if (s_health_subscribed && !s_last_hr_sent_valid && !s_health_notice_shown) {
     s_health_notice_shown = true;
-    show_notice(tr("No heart rate", "Kein Puls verfügbar"), 5);
+    show_notice(i18n_text(I18N_NO_HEART_RATE), 5);
   }
 }
 
@@ -1520,7 +1461,7 @@ static void update_health_subscription(void) {
 #endif
   if (!s_health_notice_shown) {
     s_health_notice_shown = true;
-    show_notice(tr("Heart rate unavailable", "Puls nicht verfügbar"), 5);
+    show_notice(i18n_text(I18N_HEART_RATE_UNAVAILABLE), 5);
   }
 }
 
@@ -1539,14 +1480,71 @@ static void accept_snapshot(DictionaryIterator *iterator) {
   s_snapshot = candidate;
   s_snapshot_received = true;
   s_snapshot_age = 0;
-  if (s_snapshot.state == STATE_STOPPED) s_health_notice_shown = false;
+  if (s_snapshot.state == STATE_STOPPED || s_snapshot.state == STATE_UNAVAILABLE) {
+    s_health_notice_shown = false;
+    s_context_active = false;
+    s_activity_ready = false;
+    s_selected = 0;
+    s_context_started = 0;
+  } else if (!s_context_active) {
+    s_context_active = true;
+    s_context_started = s_uptime_seconds;
+  }
   update_health_subscription();
-  if (s_snapshot.state == STATE_STOPPED) apply_pending_config_if_stopped();
   if (old_state != s_snapshot.state && s_controls_window &&
       window_stack_contains_window(s_controls_window)) {
     rebuild_menu();
   }
   render();
+}
+
+static void request_runtime_config(void) {
+  if (!s_current_locus_id[0]) return;
+  if (control_enqueue(MSG_REQUEST_RUNTIME_CONFIG, 0, 0, NULL)) {
+    s_last_runtime_config_request = s_uptime_seconds;
+    send_next();
+  }
+}
+
+static void accept_recording_context(DictionaryIterator *iterator) {
+  int32_t state = STATE_UNAVAILABLE;
+  if (!app_message_int32(iterator, MESSAGE_KEY_RECORDING_STATE, &state) ||
+      (state != STATE_RECORDING && state != STATE_PAUSED)) {
+    if (state == STATE_STOPPED || state == STATE_UNAVAILABLE) {
+      s_context_active = false;
+      s_activity_ready = false;
+      s_selected = 0;
+      render();
+    }
+    return;
+  }
+  const char *id = NULL;
+  const char *name = NULL;
+  size_t id_length = 0;
+  size_t name_length = 0;
+  if (!app_message_cstring(
+          iterator, MESSAGE_KEY_LOCUS_PROFILE_ID, LOCUS_ID_SIZE - 1, &id, &id_length) ||
+      !app_message_cstring(
+          iterator, MESSAGE_KEY_LOCUS_PROFILE_NAME, LOCUS_NAME_SIZE - 1,
+          &name, &name_length) || !id_length || !name_length ||
+      !watch_locus_profile_valid(id, name)) {
+    s_context_active = true;
+    s_activity_ready = false;
+    if (!s_context_started) s_context_started = s_uptime_seconds;
+    render();
+    return;
+  }
+  const bool changed = !s_context_active || strcmp(id, s_current_locus_id) != 0;
+  copy_text(s_current_locus_id, sizeof(s_current_locus_id), id);
+  s_context_active = true;
+  if (changed) {
+    s_selected = 0;
+    s_context_started = s_uptime_seconds;
+  }
+  s_activity_ready = strcmp(s_current_locus_id, s_config_locus_id) == 0;
+  layout_slots();
+  render();
+  request_runtime_config();
 }
 
 static void accept_command_result(DictionaryIterator *iterator) {
@@ -1566,19 +1564,19 @@ static void accept_command_result(DictionaryIterator *iterator) {
   command_record_remove(command_id);
   vibes_short_pulse();
   if (result == RESULT_INVALID_PROFILE) {
-    show_notice(tr("Invalid profile", "Ungültiges Profil"), 4);
+    show_notice(i18n_text(I18N_INVALID_PROFILE), 4);
   } else if (result == RESULT_PROFILE_NOT_FOUND) {
-    show_notice(tr("Profile not in Locus", "Profil nicht in Locus"), 4);
+    show_notice(i18n_text(I18N_PROFILE_NOT_IN_LOCUS), 4);
   } else if (result == RESULT_INVALID_WAYPOINT_NAME) {
-    show_notice(tr("Invalid waypoint note", "Ungültige Wegpunktnotiz"), 4);
+    show_notice(i18n_text(I18N_INVALID_WAYPOINT_NOTE), 4);
   } else if (result == RESULT_OK &&
              (command == CMD_ADD_WAYPOINT || command == CMD_ADD_WAYPOINT_WITH_NOTE)) {
-    show_notice(tr("Waypoint added", "Wegpunkt hinzugefügt"), 4);
+    show_notice(i18n_text(I18N_WAYPOINT_ADDED), 4);
   } else if (result == RESULT_OK) {
-    show_notice(tr("Command accepted", "Befehl angenommen"), 4);
+    show_notice(i18n_text(I18N_COMMAND_ACCEPTED), 4);
   } else {
     snprintf(s_notice, sizeof(s_notice), "%s (%ld)",
-             tr("Command failed", "Befehl fehlgeschlagen"), (long)result);
+             i18n_text(I18N_COMMAND_FAILED), (long)result);
     s_notice_until = time(NULL) + 4;
     render();
   }
@@ -1588,7 +1586,7 @@ static void inbox(DictionaryIterator *iterator, void *context) {
   int32_t version;
   if (!app_message_int32(iterator, MESSAGE_KEY_PROTOCOL_VERSION, &version) ||
       version != PROTOCOL_VERSION) {
-    show_notice(tr("Protocol mismatch", "Protokoll nicht kompatibel"), 6);
+    show_notice(i18n_text(I18N_PROTOCOL_MISMATCH), 6);
     return;
   }
   const char *release;
@@ -1598,7 +1596,7 @@ static void inbox(DictionaryIterator *iterator, void *context) {
           &release, &release_length) ||
       release_length != sizeof(RELEASE_VERSION) - 1 ||
       memcmp(release, RELEASE_VERSION, sizeof(RELEASE_VERSION) - 1) != 0) {
-    show_notice(tr("Update bridge/watch", "Bridge/Watch aktualisieren"), 10);
+    show_notice(i18n_text(I18N_UPDATE_BRIDGE_WATCH), 10);
     return;
   }
   int32_t type;
@@ -1612,30 +1610,25 @@ static void inbox(DictionaryIterator *iterator, void *context) {
       s_request_profiles_after_relay = true;
     } else if (s_profile_transfer.id >= 0 || s_profile_pending_ready) {
       s_request_profiles_after_relay = true;
-    } else if (persistent_blob_read(
-            &s_profile_list_blob, s_profile_chunks, sizeof(s_profile_chunks)) &&
-        watch_profile_list_valid(s_profile_chunks, strlen(s_profile_chunks))) {
-      s_relay_result = s_profile_chunks[0] ? RESULT_OK : RESULT_FAILED;
-      s_request_profiles_after_relay = true;
-      relay_profile_list();
-      if (!s_relay_count) enqueue_deferred_profile_request();
-      send_next();
     } else {
-      if (persistent_blob_exists(&s_profile_list_blob) &&
-          !persistent_blob_delete(&s_profile_list_blob)) {
-        APP_LOG(APP_LOG_LEVEL_WARNING, "Corrupt profile cache cleanup failed");
-      }
       control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL);
       send_next();
     }
   } else if (type == MSG_SNAPSHOT) {
     accept_snapshot(iterator);
+  } else if (type == MSG_RECORDING_CONTEXT) {
+    accept_recording_context(iterator);
   } else if (type == MSG_COMMAND_RESULT) {
     accept_command_result(iterator);
   }
 }
 
-static void tick(struct tm *time, TimeUnits units) {
+static void tick(struct tm *tick_time, TimeUnits units) {
+  const bool was_fresh = s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS;
+  const bool notice_expired = s_notice_until && time(NULL) >= s_notice_until;
+  const bool was_waiting_short = s_context_active && !s_activity_ready &&
+      s_uptime_seconds - s_context_started < 15;
+  if (notice_expired) s_notice_until = 0;
   s_uptime_seconds++;
   if (s_config_transfer.id >= 0 &&
       s_uptime_seconds - s_transfer_last_activity >= CONFIG_TRANSFER_TIMEOUT_SECONDS) {
@@ -1648,23 +1641,32 @@ static void tick(struct tm *time, TimeUnits units) {
     reset_profile_transfer();
   }
   if (expire_command_records()) {
-    show_notice(tr("Command response timeout", "Befehlsantwort fehlt"), 4);
+    show_notice(i18n_text(I18N_COMMAND_RESPONSE_TIMEOUT), 4);
   }
   if (s_snapshot_received && s_snapshot_age < UINT16_MAX) {
     s_snapshot_age++;
     if (s_snapshot_age == SNAPSHOT_STALE_SECONDS + 1) update_health_subscription();
   }
   enqueue_deferred_profile_request();
-  render();
+  if (s_context_active && s_current_locus_id[0] &&
+      s_uptime_seconds - s_last_runtime_config_request >= 60) {
+    request_runtime_config();
+  }
+  const bool now_fresh = s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS;
+  const bool waiting_short = s_context_active && !s_activity_ready &&
+      s_uptime_seconds - s_context_started < 15;
+  if (notice_expired || was_fresh != now_fresh || was_waiting_short != waiting_short ||
+      (!s_snapshot_received && s_uptime_seconds == 10)) render();
   send_next();
 }
 
 static bool create_windows(void) {
   s_main_window = window_create();
   s_controls_window = window_create();
-  s_profile_window = window_create();
   s_confirm_window = window_create();
-  if (!s_main_window || !s_controls_window || !s_profile_window || !s_confirm_window) return false;
+  s_waypoint_window = window_create();
+  if (!s_main_window || !s_controls_window || !s_confirm_window ||
+      !s_waypoint_window) return false;
   window_set_window_handlers(s_main_window, (WindowHandlers) {
     .load = main_load,
     .unload = main_unload,
@@ -1673,14 +1675,16 @@ static bool create_windows(void) {
   window_set_window_handlers(s_controls_window, (WindowHandlers) {
     .unload = controls_unload,
   });
-  window_set_window_handlers(s_profile_window, (WindowHandlers) {
-    .load = profile_load,
-    .unload = profile_unload,
-  });
   window_set_window_handlers(s_confirm_window, (WindowHandlers) {
     .load = confirm_load,
     .unload = confirm_unload,
   });
+#if defined(PBL_MICROPHONE)
+  window_set_window_handlers(s_waypoint_window, (WindowHandlers) {
+    .load = waypoint_load,
+    .unload = waypoint_unload,
+  });
+#endif
   return true;
 }
 
@@ -1706,12 +1710,14 @@ static bool init(void) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", LOCUS_WATCH_BUILD_SHA256_MARKER);
   watch_config_transfer_initialize(&s_config_transfer);
   watch_profile_transfer_initialize(&s_profile_transfer);
-  const char *locale = i18n_get_system_locale();
-  s_german = locale && strncmp(locale, "de", 2) == 0;
+  i18n_set_locale(i18n_locale(i18n_get_system_locale()));
   default_profiles();
+  // Version 0.2.1 caches only the active projection; old journals and catalogs are obsolete.
+  (void)persistent_blob_delete(&s_pending_config_blob);
+  (void)persistent_blob_delete(&s_obsolete_profile_list_blob);
   if (persistent_blob_read(&s_config_blob, s_config_work, sizeof(s_config_work))) {
     if (parse_config_buffer(s_config_work, &s_parsed_config)) {
-      install_config(&s_parsed_config, false);
+      install_config(&s_parsed_config);
     } else {
       APP_LOG(APP_LOG_LEVEL_ERROR, "Stored configuration is invalid");
     }
@@ -1728,7 +1734,7 @@ static bool init(void) {
   const AppMessageResult open_result = app_message_open(512, 512);
   if (open_result != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "AppMessage open failed: %d", (int)open_result);
-    copy_text(s_notice, sizeof(s_notice), tr("Messaging unavailable", "Nachrichten nicht verfügbar"));
+    copy_text(s_notice, sizeof(s_notice), i18n_text(I18N_MESSAGING_UNAVAILABLE));
     s_notice_until = time(NULL) + 30;
   }
   tick_timer_service_subscribe(SECOND_UNIT, tick);
@@ -1766,7 +1772,7 @@ static void deinit(void) {
 #endif
   app_message_deregister_callbacks();
   destroy_window(&s_confirm_window);
-  destroy_window(&s_profile_window);
+  destroy_window(&s_waypoint_window);
   destroy_window(&s_controls_window);
   destroy_window(&s_main_window);
 }

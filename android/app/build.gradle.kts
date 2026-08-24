@@ -4,16 +4,31 @@ plugins {
 }
 
 android {
-    namespace = "io.github.christianherget.locuspebble.bridge"
+    namespace = "io.github.christianherget.trackglance.bridge"
     compileSdk = 36
+
+    val releaseKeystorePath = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PATH").orNull
+    val releaseKeystorePassword = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PASSWORD").orNull
+    if (releaseKeystorePath != null || releaseKeystorePassword != null) {
+        require(!releaseKeystorePath.isNullOrBlank() && !releaseKeystorePassword.isNullOrBlank()) {
+            "Both Android release signing environment variables must be set"
+        }
+        signingConfigs.create("releaseEnvironment") {
+            storeFile = file(releaseKeystorePath)
+            storePassword = releaseKeystorePassword
+            keyAlias = "trackglance-release"
+            keyPassword = releaseKeystorePassword
+            storeType = "PKCS12"
+        }
+    }
 
     defaultConfig {
         // Keep the identity used by every distributable build so upgrades replace the existing app.
-        applicationId = "app.locuspebble.bridge"
+        applicationId = "app.trackglance.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.1.9"
+        versionCode = 13
+        versionName = "0.2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -22,6 +37,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("releaseEnvironment")
         }
     }
 
@@ -55,4 +71,4 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-base { archivesName.set("locuspebble-bridge") }
+base { archivesName.set("trackglance-bridge") }

@@ -85,49 +85,26 @@ int app_message_transfer_generation(DictionaryIterator *iterator, int32_t expect
       generation == expected_generation ? 1 : -1;
 }
 
-static bool nonnegative_wire_value(int32_t value) {
-  return value == UI_METRIC_UNAVAILABLE || value >= 0;
-}
-
-static bool snapshot_values_valid(const UiMetricSnapshot *snapshot) {
-  return snapshot && snapshot->state >= 0 && snapshot->state <= 3 &&
-      nonnegative_wire_value(snapshot->moving_time) &&
-      nonnegative_wire_value(snapshot->distance) &&
-      nonnegative_wire_value(snapshot->moving_distance) &&
-      nonnegative_wire_value(snapshot->current_speed) &&
-      nonnegative_wire_value(snapshot->average_speed) &&
-      nonnegative_wire_value(snapshot->max_speed) &&
-      nonnegative_wire_value(snapshot->ascent) &&
-      nonnegative_wire_value(snapshot->descent) &&
-      nonnegative_wire_value(snapshot->avg_hr) &&
-      nonnegative_wire_value(snapshot->max_hr) &&
-      nonnegative_wire_value(snapshot->current_hr) &&
-      nonnegative_wire_value(snapshot->avg_cadence) &&
-      nonnegative_wire_value(snapshot->max_cadence) &&
-      nonnegative_wire_value(snapshot->avg_power) &&
-      nonnegative_wire_value(snapshot->max_power) &&
-      nonnegative_wire_value(snapshot->energy);
-}
-
 bool app_message_snapshot(DictionaryIterator *iterator, UiMetricSnapshot *output) {
   if (!iterator || !output) return false;
   UiMetricSnapshot snapshot = {0};
   int32_t state;
-  int32_t unit_system;
   if (!app_message_int32(iterator, MESSAGE_KEY_RECORDING_STATE, &state) ||
       !app_message_uint32(iterator, MESSAGE_KEY_SAMPLE_EPOCH_SECONDS, &snapshot.sample_epoch) ||
       !app_message_uint32(iterator, MESSAGE_KEY_ELAPSED_SECONDS, &snapshot.elapsed) ||
       !app_message_int32(iterator, MESSAGE_KEY_MOVING_SECONDS, &snapshot.moving_time) ||
-      !app_message_int32(iterator, MESSAGE_KEY_DISTANCE_METRES, &snapshot.distance) ||
-      !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_METRES, &snapshot.moving_distance) ||
-      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_CMPS, &snapshot.current_speed) ||
-      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_CMPS, &snapshot.average_speed) ||
-      !app_message_int32(iterator, MESSAGE_KEY_MAX_SPEED_CMPS, &snapshot.max_speed) ||
-      !app_message_int32(iterator, MESSAGE_KEY_ALTITUDE_DECIMETRES, &snapshot.altitude) ||
-      !app_message_int32(iterator, MESSAGE_KEY_ASCENT_DECIMETRES, &snapshot.ascent) ||
-      !app_message_int32(iterator, MESSAGE_KEY_DESCENT_DECIMETRES, &snapshot.descent) ||
-      !app_message_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_CMPS, &snapshot.vertical_speed) ||
-      !app_message_int32(iterator, MESSAGE_KEY_SLOPE_TENTHS_PERCENT, &snapshot.slope) ||
+      !app_message_int32(iterator, MESSAGE_KEY_DISTANCE_VALUE, &snapshot.distance) ||
+      !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_VALUE, &snapshot.moving_distance) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_VALUE, &snapshot.current_speed) ||
+      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_VALUE, &snapshot.average_speed) ||
+      !app_message_int32(iterator, MESSAGE_KEY_MAX_SPEED_VALUE, &snapshot.max_speed) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_PACE_SECONDS, &snapshot.current_pace) ||
+      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_PACE_SECONDS, &snapshot.average_pace) ||
+      !app_message_int32(iterator, MESSAGE_KEY_ALTITUDE_VALUE, &snapshot.altitude) ||
+      !app_message_int32(iterator, MESSAGE_KEY_ASCENT_VALUE, &snapshot.ascent) ||
+      !app_message_int32(iterator, MESSAGE_KEY_DESCENT_VALUE, &snapshot.descent) ||
+      !app_message_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_VALUE, &snapshot.vertical_speed) ||
+      !app_message_int32(iterator, MESSAGE_KEY_SLOPE_VALUE, &snapshot.slope) ||
       !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_HEART_RATE, &snapshot.avg_hr) ||
       !app_message_int32(iterator, MESSAGE_KEY_MAX_HEART_RATE, &snapshot.max_hr) ||
       !app_message_int32(iterator, MESSAGE_KEY_CURRENT_HEART_RATE, &snapshot.current_hr) ||
@@ -135,12 +112,21 @@ bool app_message_snapshot(DictionaryIterator *iterator, UiMetricSnapshot *output
       !app_message_int32(iterator, MESSAGE_KEY_MAX_CADENCE, &snapshot.max_cadence) ||
       !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_POWER, &snapshot.avg_power) ||
       !app_message_int32(iterator, MESSAGE_KEY_MAX_POWER, &snapshot.max_power) ||
-      !app_message_int32(iterator, MESSAGE_KEY_ENERGY_KCAL, &snapshot.energy) ||
-      !app_message_int32(iterator, MESSAGE_KEY_UNIT_SYSTEM, &unit_system)) {
+      !app_message_int32(iterator, MESSAGE_KEY_ENERGY_VALUE, &snapshot.energy) ||
+      !app_message_int32(iterator, MESSAGE_KEY_ALTITUDE_FORMAT, &snapshot.altitude_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_DISTANCE_FORMAT, &snapshot.distance_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_FORMAT, &snapshot.moving_distance_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_FORMAT, &snapshot.current_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_FORMAT, &snapshot.average_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_MAX_SPEED_FORMAT, &snapshot.max_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_FORMAT, &snapshot.vertical_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_SLOPE_FORMAT, &snapshot.slope_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_ENERGY_FORMAT, &snapshot.energy_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_PACE_FORMAT, &snapshot.pace_format)) {
     return false;
   }
   snapshot.state = state;
-  if (unit_system != 0 || !snapshot_values_valid(&snapshot)) return false;
+  if (!ui_metric_snapshot_valid(&snapshot)) return false;
   *output = snapshot;
   return true;
 }

@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "tools" / "locus-test-apk.properties"
-USER_AGENT = "pebble-locus-map-acceptance/1"
+USER_AGENT = "trackglance-acceptance/1"
 MAX_WARNING_BYTES = 1024 * 1024
 
 

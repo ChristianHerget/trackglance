@@ -8,7 +8,7 @@ if [[ ! -f "$avd_home/MediumPhone.avd/config.ini" ]]; then
 fi
 sed -i "s|^path=.*|path=$avd_home/MediumPhone.avd|" "$avd_home/MediumPhone.ini"
 find "$avd_home/MediumPhone.avd" -maxdepth 1 -name '*.lock' -delete
-mkdir -p /root/.android /root/.config/pulse /run/locuspebble /tmp/android-unknown
+mkdir -p /root/.android /root/.config/pulse /run/trackglance /tmp/android-unknown
 ln -sfn "$avd_home" /root/.android/avd
 export ANDROID_AVD_HOME="$avd_home"
 export PULSE_SERVER=unix:/tmp/pulse-socket
@@ -36,7 +36,7 @@ for attempt in $(seq 1 300); do
   discovery=$(find /tmp /root/.android/avd/running -name 'pid_*.ini' \
     -type f -print -quit 2>/dev/null || true)
   if [[ -n "$discovery" ]]; then
-    cp "$discovery" /run/locuspebble/android-discovery.ini
+    cp "$discovery" /run/trackglance/android-discovery.ini
     break
   fi
   if ! kill -0 "$emulator_pid" 2>/dev/null; then
@@ -45,11 +45,11 @@ for attempt in $(seq 1 300); do
   fi
   sleep 0.1
 done
-test -s /run/locuspebble/android-discovery.ini
+test -s /run/trackglance/android-discovery.ini
 for attempt in $(seq 1 100); do
   if [[ -s /root/.emulator_console_auth_token ]]; then
     install -m 600 /root/.emulator_console_auth_token \
-      /run/locuspebble/emulator-console-auth-token
+      /run/trackglance/emulator-console-auth-token
     break
   fi
   if ! kill -0 "$emulator_pid" 2>/dev/null; then
@@ -58,5 +58,5 @@ for attempt in $(seq 1 100); do
   fi
   sleep 0.1
 done
-test -s /run/locuspebble/emulator-console-auth-token
+test -s /run/trackglance/emulator-console-auth-token
 wait "$emulator_pid"

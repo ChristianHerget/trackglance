@@ -10,14 +10,15 @@
     <application
         android:name=".BridgeApplication"
         android:allowBackup="true"
+        android:description="@string/app_description"
         android:icon="@mipmap/ic_launcher"
-        android:label="LocusPebble Bridge"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.LocusPebbleBridge">
+        android:theme="@style/Theme.TrackGlanceBridge">
         <activity
             android:name=".MainActivity"
-            android:label="LocusPebble"
+            android:label="@string/app_name"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -157,7 +157,7 @@ jobs:
         if: failure()
         run: |
           docker ps -a
-          for container in $(docker ps -aq --filter name=locuspebble-); do
+          for container in $(docker ps -aq --filter name=trackglance-); do
             echo "Diagnostics for container $container"
             timeout 15 docker logs --tail 400 "$container" || true
           done

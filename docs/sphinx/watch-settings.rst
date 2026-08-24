@@ -1,146 +1,65 @@
 Watch Settings
 ==============
 
-Opening Settings
-----------------
-
-Open the LocusPebble watchapp settings through the Pebble App on the phone. The settings page reads
-your recording-profile names from Locus. If the phone cannot get a fresh list, it shows the last
-known profiles and tells you that they may be outdated. It also warns when the bridge and watchapp
-versions do not match.
-
-General Options
+Activity Groups
 ---------------
 
-**Theme** selects the dark or light watchapp color scheme. The default is dark.
+Watch Settings refreshes the Locus recording-profile catalog when it opens. Activities are fully
+expanded and sorted alphabetically. There is no global activity limit; each installed activity has
+one to four pages.
 
-The page uses English or German according to the active watch language.
+Within a group:
+
+* tap a page name to edit it;
+* use ``⧉`` to clone it;
+* use ``−`` to delete it;
+* drag ``☰`` to change page order and therefore page priority.
+
+There is no activity-level add button. Deleting the last page requires confirmation and creates a
+fresh heuristic Default/Standard page immediately. Display names need only be unique within their
+activity.
 
 .. image:: _static/watch_settings_overview.png
-   :alt: Watch Settings overview with theme, heart rate, and profiles
+   :alt: Alphabetical expanded activity groups with page ordering controls
    :align: center
    :width: 390px
 
-Heart-Rate Forwarding
----------------------
+Editing Pages
+-------------
 
-Pebble Time 2 provides:
-
-* **Send watch heart rate to Locus**: enables watch-originated HR forwarding while Locus is
-  recording.
-* **Heart rate interval**: selects a forwarding interval from 1 to 60 seconds; the default is five
-  seconds.
-
-These controls are not available for Pebble Round 2, which cannot provide watch-originated
-HR samples. ``Current HR`` can still be selected as a display metric on either watch because that
-metric comes from Locus telemetry.
-
-When forwarding is enabled on Pebble Time 2 but no valid sensor value is available, the watch reports
-``Heart rate unavailable`` and sends no HR packet. Locus continues recording normally and retains
-any heart-rate data supplied by its own sensors.
-
-Display Profiles
-----------------
-
-The settings page requires between one and eight display profiles. A profile can be selected,
-edited, copied, added, deleted, or reordered. The final remaining profile cannot be deleted.
-
-Each profile contains:
-
-* **Display name**: the unique name shown on the watch, limited to 20 characters.
-* **Locus profile**: an exact mapping to one recording profile reported by Locus. Missing or stale
-  mappings are marked and must be resolved before saving.
-* **Metrics**: between one and six unique dashboard fields. Their order controls their placement on
-  the watch screen.
+Edit changes the display name, metric list, or Locus activity mapping. The same accessible ``☰``
+handle orders metrics. Moving the final source page recreates its Default page; moving into an
+activity that already has four pages is rejected. Pages keep stable IDs so an in-progress watch
+refresh can preserve the selected page.
 
 .. image:: _static/watch_settings_profile.png
-   :alt: Watch Settings profile editor with Locus profile and metrics
+   :alt: Direct page editor with activity mapping and metric drag handles
    :align: center
    :width: 390px
 
-Available Metrics
------------------
+The page can contain one to six unique metrics. One to three use full-width rows, four use a two by
+two grid, five use one full-width row plus a two by two grid, and six use two columns by three rows.
+Units come from Locus rather than a second setting.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 34 33 33
+Synchronization and Reset Behavior
+----------------------------------
 
-   * - Time and distance
-     - Motion and terrain
-     - Sensors
-   * - Elapsed time
-     - Current speed
-     - Average heart rate
-   * - Moving time
-     - Average speed
-     - Maximum heart rate
-   * - Total distance
-     - Maximum speed
-     - Current heart rate
-   * - Moving distance
-     - Current pace
-     - Average cadence
-   * -
-     - Average pace
-     - Maximum cadence
-   * -
-     - Altitude
-     - Average power
-   * -
-     - Ascent
-     - Maximum power
-   * -
-     - Descent
-     - Energy
-   * -
-     - Vertical speed
-     -
-   * -
-     - Slope
-     -
+The phone owns the complete canonical library and saves it immediately. Only global settings and
+the active activity's pages are sent to the watch. The watch caches that most recent activity and
+reconciles its canonical fingerprint once per minute.
 
-Dashboard Layout
-----------------
+A successful, nonempty fresh Locus catalog updates retained names, creates missing defaults, and
+automatically deletes groups whose numeric IDs disappeared. Failed, empty, or malformed responses
+never delete settings. Removing and later recreating a Locus profile therefore creates a new
+Default page if its ID changed.
 
-The number of selected metrics determines their placement. One to three metrics use full-width
-rows. Four metrics use a two-by-two grid. With five metrics, the first spans the full width and the
-remaining four form a two-by-two grid. Six metrics use two columns and three rows.
+Version 0.2.0 name mappings are migrated against the first confirmed fresh catalog. The numeric
+Locus profile ID is primary identity and the name is display data. The official
+`TrackRecordProfileSimple model
+<https://github.com/asamm/locus-api/blob/0.10.1/locus-api-android/src/main/java/locus/api/android/objects/TrackRecordProfileSimple.kt>`_
+calls the field ``Profile ID`` but does not explicitly guarantee that an ID survives a rename; an
+ID change is handled deterministically as removal plus addition.
 
-.. list-table::
-   :widths: 50 50
-
-   * - **One metric**
-     - **Two metrics**
-   * - .. image:: _static/screenshot_emery_layout_1.png
-          :alt: Dashboard layout with one metric
-          :width: 200px
-     - .. image:: _static/screenshot_emery_layout_2.png
-          :alt: Dashboard layout with two metrics
-          :width: 200px
-   * - **Three metrics**
-     - **Four metrics**
-   * - .. image:: _static/screenshot_emery_layout_3.png
-          :alt: Dashboard layout with three metrics
-          :width: 200px
-     - .. image:: _static/screenshot_emery_layout_4.png
-          :alt: Dashboard layout with four metrics
-          :width: 200px
-   * - **Five metrics**
-     - **Six metrics**
-   * - .. image:: _static/screenshot_emery_layout_5.png
-          :alt: Dashboard layout with five metrics
-          :width: 200px
-     - .. image:: _static/screenshot_emery_layout_6.png
-          :alt: Dashboard layout with six metrics
-          :width: 200px
-
-Saving and Applying Changes
----------------------------
-
-**Save** checks every profile and sends the settings to the watch. Invalid, duplicate, or missing
-entries are rejected without replacing the previous settings.
-**Cancel** asks before discarding unsaved changes.
-
-When Locus is stopped, valid settings are applied immediately. During recording or pause, the watch
-stores them and applies them after the recording stops. If delivery is interrupted, the settings
-page reports the problem and keeps the previous working configuration.
+Storage failure keeps the previous canonical configuration and reports a localized error. The
+**Reset** button removes all page customization and restores global settings; the current confirmed
+catalog immediately recreates one heuristic Default/Standard page per activity.

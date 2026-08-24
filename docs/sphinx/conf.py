@@ -6,12 +6,12 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'Pebble Locus Map'
+project = 'TrackGlance'
 copyright = '2026, Christian Herget'
 author = 'Christian Herget'
 
-version = '0.1.9'
-release = '0.1.9'
+version = '0.2.2'
+release = '0.2.2'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -30,9 +30,11 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
+html_title = 'TrackGlance — for Locus Map and Pebble smartwatches'
+html_favicon = '_static/favicon.ico'
 
 # -- Custom CSS --------------------------------------------------------------
 html_css_files = [
     'custom.css',
 ]
-html_logo = '_static/logo.jpg'
+html_logo = '_static/trackglance-mark.png'

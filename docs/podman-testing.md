@@ -135,12 +135,12 @@ twice. The second pass uses new golden clones and detects state leakage and clea
 
 The workflow prints `df -h`, `docker system df`, and relevant directory sizes after each major
 stage. Failure handling prints only bounded text logs; it does not upload the APK. Its final step
-removes all `locuspebble-` containers, volumes, networks, images, build output, and the downloaded
+removes all `trackglance-` containers, volumes, networks, images, build output, and the downloaded
 fixture even when an earlier stage fails. The probe input `run_acceptance_probe` exercises only the
 pinned emulator cold boot and creates no golden state.
 
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
-[run 32677775620](https://github.com/ChristianHerget/pebble-locus-map/actions/runs/32677775620)
+[run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
 at commit `47d9eb36a3ec10d80bffe337686b5e36120f972d`. The 34-minute-41-second job built
 all headless inputs, bootstrapped Locus and CoreApp from fresh state, passed all Android/Locus
 instrumentation tests, and passed Emery plus Gabbro acceptance twice from separate clean clones.
@@ -187,26 +187,13 @@ watch-version responses, the relay supplies a stable synthetic serial and the ru
 Gabbro hardware identifier. Serial-bearing real-watch responses, including their platform fields,
 pass through unchanged. This lets PebbleKit use the emulated watch as a valid, correctly typed watch
 without carrying an acceptance-only modification in Pebble App.
-The Emery run opens Watch Settings after profile transfer, verifies the resulting user-visible
-configuration flow, and exercises start,
-pause, resume, waypoint, heart-rate forwarding, and stop/save. The Gabbro run repeats connection,
-launch, Controls menu, and Watch Settings checks, and proves that unsupported watch-originated heart
-rate is not forwarded. PBWs are sideloaded through Pebble App's existing `ACTION_VIEW` deep-link
-handler, with no document picker. Android receives an emulator-console GPS fix at Wartburg
-(`50.9662,10.3065`) after every emulator boot and again immediately before START. The emulator
-retains that fix until Locus registers its real GPS listener, so Locus tests start from a current,
-deterministic location. The console token stays in the private per-run volume and the console port
-stays inside the test container group. Android shell test-provider points are not used because
-Locus identifies them as mock locations and can reject them as invalid input.
-Immediately before Emery sends START, acceptance foregrounds Locus. Without that step, the API-32
-guest logs Android's `Foreground service started from background can not have
-location/camera/microphone access` diagnostic for Locus's `TrackRecordingService`. Locus's public
-API documents START only as a broadcast and does not state a foreground requirement, so this is an
-explicit compatibility condition of the tested Android/Locus combination rather than an API
-contract. After Android reports the Locus activity resumed, acceptance allows ten seconds for its
-map and recording engine to finish a cold initialization before sending START. The bridge itself
-does not launch Locus from the background; see
-[Track Recording Background Execution](design-decisions.md#2-track-recording-background-execution).
+The Emery and Gabbro runs open Watch Settings after catalog transfer and verify grouped activity
+pages, stopped/unavailable instructions, page indicators and wrapping, revised Controls, and the
+waypoint submenu where supported. Recording start is performed in Locus UI; acceptance never sends
+obsolete command 1. Emery additionally exercises pause/resume, waypoint, heart-rate forwarding,
+60-second configuration reconciliation, and stop/save. Gabbro proves that unsupported
+watch-originated heart rate is not forwarded. PBWs are sideloaded through Pebble App's existing
+`ACTION_VIEW` deep-link handler, with no document picker.
 
 Every Android stage clones the golden state to a new named volume and deletes it during bounded
 cleanup, including on test failure. Readiness and state changes use polling deadlines rather than
@@ -224,7 +211,7 @@ Locus APK.
 Failures are explicit for missing KVM/resources, unsupported APKs, stale bootstrap provenance,
 Android or QEMU readiness timeouts, missing services, QEMU disconnects, state-transition timeouts,
 and interrupted cleanup. `./tools/podman-test clean` removes only objects with this workflow's
-`locuspebble-` names plus `build/podman`.
+`trackglance-` names plus `build/podman`.
 
 ### Android Emulator exits 139 on an SELinux host
 

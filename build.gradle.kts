@@ -25,22 +25,22 @@ val verifyProtocolParity = tasks.register<Exec>("verifyProtocolParity") {
     inputs.files(
         layout.projectDirectory.file("android/app/build.gradle.kts"),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/protocol/BridgeProtocol.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/protocol/BridgeProtocol.kt",
         ),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/core/BridgeOperationCoordinator.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/core/BridgeOperationCoordinator.kt",
         ),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/core/BridgeRuntime.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/core/BridgeRuntime.kt",
         ),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/pebble/AuthenticatedIngress.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/pebble/AuthenticatedIngress.kt",
         ),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/pebble/PebbleMessages.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/pebble/PebbleMessages.kt",
         ),
         layout.projectDirectory.file(
-            "android/app/src/main/java/io/github/christianherget/locuspebble/bridge/pebble/PebbleTransport.kt",
+            "android/app/src/main/java/io/github/christianherget/trackglance/bridge/pebble/PebbleTransport.kt",
         ),
         layout.projectDirectory.file("docs/development.md"),
         layout.projectDirectory.file("docs/end-to-end-testing.md"),
@@ -58,6 +58,7 @@ val verifyProtocolParity = tasks.register<Exec>("verifyProtocolParity") {
         layout.projectDirectory.file("watchapp/src/c/watch_config.c"),
         layout.projectDirectory.file("watchapp/src/c/watch_config.h"),
         layout.projectDirectory.file("watchapp/src/c/watch_state.h"),
+        layout.projectDirectory.file("watchapp/src/c/ui_metrics.h"),
         layout.projectDirectory.file("watchapp/src/pkjs/index.js"),
         layout.projectDirectory.file("watchapp/test/protocol_parity.test.js"),
         layout.projectDirectory.file("tools/podman/versions.env"),
@@ -83,6 +84,9 @@ val regenerateDocumentationScreenshots = tasks.register<Exec>("regenerateDocumen
     outputs.files(
         listOf(
             "screenshot_emery_dashboard.png",
+            "screenshot_emery_stopped.png",
+            "screenshot_emery_units_imperial.png",
+            "screenshot_emery_units_nautical.png",
             "screenshot_emery_menu.png",
             "screenshot_emery_profiles.png",
             "screenshot_emery_waypoints.png",
@@ -93,6 +97,7 @@ val regenerateDocumentationScreenshots = tasks.register<Exec>("regenerateDocumen
             "screenshot_emery_layout_5.png",
             "screenshot_emery_layout_6.png",
             "screenshot_gabbro_dashboard.png",
+            "screenshot_gabbro_stopped.png",
             "screenshot_gabbro_menu.png",
             "watch_settings_overview.png",
             "watch_settings_profile.png",

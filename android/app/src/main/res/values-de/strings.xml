@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TrackGlance Bridge</string>
+    <string name="title">TrackGlance Bridge</string><string name="version">Version %1$s</string>
+    <string name="app_description">Zeigt und steuert Locus-Map-Trackaufzeichnungen auf unterstützten Pebble Time 2- und Pebble Round 2-Smartwatches.</string>
+    <string name="legal_footer">Unabhängiges, inoffizielles Projekt. Rechtliches und Marken</string>
+    <string name="recent_diagnostics">Letzte Warnungen und Fehler</string>
+    <string name="no_recent_diagnostics">Keine letzten Warnungen oder Fehler.</string>
+    <string name="clear">Leeren</string><string name="warning">Warnung</string><string name="error">Fehler</string>
+    <string name="last_seen">Zuletzt</string><string name="occurrences">Anzahl</string>
+    <string name="pebble_watchapp">Pebble-Watchapp</string><string name="pebble_app">Pebble App</string>
+    <string name="pebble_watch">Pebble-Uhr</string><string name="watchapp_auto_start">Watchapp-Autostart</string>
+    <string name="watchapp_version">Watchapp-Version</string><string name="locus_map">Locus Map</string>
+    <string name="recording">Aufzeichnung</string><string name="locus_profiles">Locus-Profile</string>
+    <string name="last_profile_request">Letzte Profilabfrage</string><string name="last_update">Letzte Aktualisierung</string>
+    <string name="last_watch_hr">Letzter Uhrenpuls</string><string name="last_hr_forwarded">Puls zuletzt weitergegeben</string>
+    <string name="current_locus_hr">Aktueller Locus-Puls</string><string name="diagnostics">Diagnose</string>
+    <string name="last_runtime_error">Letzter Laufzeitfehler</string><string name="technical_detail">Technisches Detail</string>
+    <string name="open">Offen</string><string name="closed">Geschlossen</string>
+    <string name="connected">Verbunden</string><string name="not_connected">Nicht verbunden</string>
+    <string name="available">Verfügbar</string><string name="unavailable">Nicht verfügbar</string>
+    <string name="not_selected">Nicht ausgewählt</string><string name="not_requested">Nicht angefordert</string>
+    <string name="not_reported">Nicht gemeldet</string><string name="not_queried">Nicht abgefragt</string>
+    <string name="never">Nie</string><string name="none_returned">Keine zurückgegeben</string>
+    <string name="profile_count">%1$d: %2$s</string><string name="heart_rate_value">%1$d bpm</string>
+    <string name="version_expected">%1$s (erwartet %2$s)</string>
+    <string name="state_stopped">Gestoppt</string><string name="state_recording">Aufzeichnung</string>
+    <string name="state_paused">Pausiert</string><string name="state_unavailable">Nicht verfügbar</string>
+    <string name="launch_started">Gestartet</string><string name="launch_no_watch">Keine verbundene Uhr</string>
+    <string name="launch_lookup_failed">Uhrabfrage fehlgeschlagen</string><string name="launch_failed">Start fehlgeschlagen</string>
+    <string name="launch_timed_out">Zeitüberschreitung</string><string name="launch_untrusted">Pebble App nicht vertrauenswürdig</string>
+    <string name="refresh_title">Aktualisierung bei offener Watchapp</string>
+    <string name="refresh_adaptive">Adaptiv</string><string name="refresh_five">5 Sekunden</string><string name="refresh_ten">10 Sekunden</string>
+    <string name="refresh_explanation">Adaptiv aktualisiert nach dem Öffnen oder einem Befehl alle 2 Sekunden, danach alle 10 Sekunden.</string>
+    <string name="failure_locus_unavailable">Locus ist nicht verfügbar</string>
+    <string name="failure_profile_query">Locus-Aufzeichnungsprofile konnten nicht abgefragt werden</string>
+    <string name="failure_profile_invalid">Die Locus-Profilliste ist ungültig oder zu groß</string>
+    <string name="failure_no_profiles">Locus hat keine Aufzeichnungsprofile zurückgegeben</string>
+    <string name="failure_watch_lookup">Verbundene Pebble-Uhren konnten nicht abgefragt werden</string>
+    <string name="failure_watchapp_launch">Die Pebble-Watchapp konnte nicht gestartet werden</string>
+    <string name="failure_watchapp_timeout">Zeitüberschreitung beim Watchapp-Autostart</string>
+    <string name="failure_untrusted">Pebble App ist nicht vertrauenswürdig</string>
+    <string name="failure_not_installed">Pebble App ist nicht installiert</string>
+    <string name="failure_not_selected">Pebble App konnte nicht ausgewählt werden</string>
+    <string name="failure_incompatible">Die Watchapp-Version ist nicht kompatibel</string>
+    <string name="failure_snapshot_delivery">Der Locus-Schnappschuss konnte nicht übertragen werden</string>
+    <string name="failure_command_delivery">Das Befehlsergebnis konnte nicht übertragen werden</string>
+    <string name="failure_profile_delivery">Die Profilliste konnte nicht übertragen werden</string>
+    <string name="failure_third_party">Eine externe Komponente ist fehlgeschlagen</string>
+</resources>

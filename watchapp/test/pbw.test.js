@@ -96,7 +96,7 @@ function currentWatchBuildInputHash() {
   }
   for (const resource of packageJson.pebble.resources.media) {
     if (!resource || typeof resource.file !== 'string') continue;
-    const resourcePath = path.resolve(watchapp,resource.file);
+    const resourcePath = path.resolve(watchapp,'resources',resource.file);
     const relative = path.relative(watchapp,resourcePath);
     assert(
       relative && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative),

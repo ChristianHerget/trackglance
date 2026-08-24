@@ -9,7 +9,7 @@ import sys
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--socket", default="/run/locuspebble/relay.sock")
+    parser.add_argument("--socket", default="/run/trackglance/relay.sock")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("status")
     button = subparsers.add_parser("button")

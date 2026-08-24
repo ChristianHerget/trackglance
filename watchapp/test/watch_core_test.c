@@ -1,4 +1,5 @@
 #include "persistent_blob.h"
+#include "i18n.h"
 #include "ui_metrics.h"
 #include "watch_config.h"
 #include "watch_state.h"
@@ -34,25 +35,65 @@ static char s_profile_transfer_buffer[WATCH_PROFILE_TRANSFER_BUFFER_SIZE];
 
 static void test_ui_metrics(void) {
   UiMetricSnapshot snapshot = {
+    .state = 1,
     .moving_time = 65,
-    .distance = 12345,
-    .current_speed = 250,
+    .elapsed = 90061,
+    .distance = 123,
+    .current_speed = 90,
+    .current_pace = 301,
     .current_hr = 142,
+    .altitude_format = FORMAT_M_0,
+    .distance_format = FORMAT_KM_1,
+    .moving_distance_format = FORMAT_MI_2,
+    .current_speed_format = FORMAT_KPH_1,
+    .average_speed_format = FORMAT_MPH_1,
+    .max_speed_format = FORMAT_KNOT_0,
+    .vertical_speed_format = FORMAT_MPS_2,
+    .slope_format = FORMAT_PERCENT_0,
+    .energy_format = FORMAT_KJ_0,
+    .pace_format = FORMAT_PER_KM,
   };
   char output[24];
-  assert(strcmp(ui_metric_label(METRIC_DISTANCE, false), "Distance") == 0);
-  assert(strcmp(ui_metric_label(METRIC_DISTANCE, true), "Strecke") == 0);
-  ui_metric_format(output, sizeof(output), METRIC_ELAPSED, &snapshot, 3661);
-  assert(strcmp(output, "01:01:01") == 0);
-  ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot, 0);
-  assert(strcmp(output, "12.34 km") == 0);
-  ui_metric_format(output, sizeof(output), METRIC_CURRENT_SPEED, &snapshot, 0);
+  assert(i18n_catalog_complete());
+  assert(i18n_locale("de_DE") == I18N_LOCALE_DE);
+  assert(i18n_locale("de-DE") == I18N_LOCALE_DE);
+  assert(i18n_locale("en_US") == I18N_LOCALE_EN);
+  assert(i18n_locale("fr_FR") == I18N_LOCALE_EN);
+  i18n_set_locale(I18N_LOCALE_EN);
+  assert(strcmp(ui_metric_label(METRIC_DISTANCE), "Distance") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_ELAPSED, &snapshot);
+  assert(strcmp(output, "25:01") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot);
+  assert(strcmp(output, "12.3 km") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_SPEED, &snapshot);
   assert(strcmp(output, "9.0 km/h") == 0);
-  ui_metric_format(output, sizeof(output), METRIC_CURRENT_HR, &snapshot, 0);
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_PACE, &snapshot);
+  assert(strcmp(output, "5:01 /km") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_HR, &snapshot);
   assert(strcmp(output, "142 bpm") == 0);
-  snapshot.current_speed = 0;
-  ui_metric_format(output, sizeof(output), METRIC_CURRENT_PACE, &snapshot, 0);
+  snapshot.current_pace = UI_METRIC_UNAVAILABLE;
+  ui_metric_format(output, sizeof(output), METRIC_CURRENT_PACE, &snapshot);
   assert(strcmp(output, "—") == 0);
+  snapshot.current_pace = 301;
+  snapshot.distance = -123;
+  i18n_set_locale(I18N_LOCALE_DE);
+  assert(strcmp(ui_metric_label(METRIC_DISTANCE), "Strecke") == 0);
+  ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot);
+  assert(strcmp(output, "-12,3 km") == 0);
+  snapshot.distance = INT32_MIN + 1;
+  snapshot.distance_format = FORMAT_MI_2;
+  ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot);
+  assert(strcmp(output, "-21474836,47 mi") == 0);
+  for (int format = 0; format < FORMAT_COUNT; format++) assert(ui_format_code_valid(format));
+  assert(!ui_format_code_valid(-1));
+  assert(!ui_format_code_valid(FORMAT_COUNT));
+  snapshot.distance = 0;
+  assert(ui_metric_snapshot_valid(&snapshot));
+  snapshot.pace_format = FORMAT_KPH_1;
+  assert(!ui_metric_snapshot_valid(&snapshot));
+  snapshot.pace_format = FORMAT_PER_KM;
+  snapshot.distance_format = FORMAT_KPH_1;
+  assert(!ui_metric_snapshot_valid(&snapshot));
 }
 
 typedef struct {
@@ -800,43 +841,52 @@ static void test_watch_text_validation(void) {
   assert(watch_profile_names_equal("\xCE\xA3", "\xCF\x83"));
   assert(watch_profile_names_equal("\xD0\xAF", "\xD1\x8F"));
   assert(!watch_profile_names_equal("\xC4\x80", "\xC4\x81"));
+
+  assert(watch_locus_profile_valid("1", "Hiking"));
+  assert(watch_locus_profile_valid("0", "Default"));
+  assert(watch_locus_profile_valid("-9223372036854775808", "Internal"));
+  assert(watch_locus_profile_valid("9223372036854775807", "Wandern \xC3\x84"));
+  assert(!watch_locus_profile_valid("-0", "Hiking"));
+  assert(!watch_locus_profile_valid("9223372036854775808", "Hiking"));
+  assert(!watch_locus_profile_valid("12x", "Hiking"));
+  assert(!watch_locus_profile_valid("12", "bad|name"));
+  assert(!watch_locus_profile_valid("12", "bad\nname"));
 }
 
 static void test_watch_config(void) {
   WatchConfig config;
   const char valid[] =
-      "dark|1|1|10\n"
-      "Walking|Walking|0|1,3,5|walk\n"
-      "Cycling|Cycling|1|1,3,7|cycle";
+      "dark|1|10|12345|4294967295|42\n"
+      "Default|1,3,5|walk\n"
+      "Climb|1,10,11|climb";
   assert(parse(valid, "walk", &config));
   assert(config.profile_count == 2);
   assert(config.selected == 0);
   assert(config.dark);
   assert(config.watch_hr_to_locus);
   assert(config.heart_rate_interval == 10);
+  assert(strcmp(config.locus_id, "12345") == 0);
+  assert(config.fingerprint_a == UINT32_MAX);
+  assert(config.fingerprint_b == 42);
   assert(!config.profiles[1].protected_profile);
-  assert(config.profiles[1].metrics[2] == 7);
+  assert(config.profiles[1].metrics[2] == 11);
+  assert(parse(valid, "climb", &config));
+  assert(config.selected == 1);
 
-  assert(!parse("blue|0\nOnly|Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|x\nOnly|Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|0|2|5\nOnly|Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|0|0|0\nOnly|Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|2|1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1x|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1,1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1|same\nOther|Bike|0|2|same", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1|one\nonly|Bike|0|2|two", NULL, &config));
-  assert(!parse("dark|0\n\xC3\x84rger|Hiking|0|1|one\n\xC3\xA4rger|Bike|0|2|two", NULL, &config));
-  assert(parse("dark|0\n\xC4\x80|Hiking|0|1|one\n\xC4\x81|Bike|0|2|two", NULL, &config));
-  assert(parse("light|0\nOnly|Hiking|0|1", NULL, &config));
-  assert(strncmp(config.profiles[0].id, "legacy-0-", strlen("legacy-0-")) == 0);
-  assert(strlen(config.profiles[0].id) < sizeof(config.profiles[0].id));
-
-  assert(!parse("dark|0|0|5|extra\nOnly|Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1|id|extra", NULL, &config));
-  assert(!parse("dark|0\n   |Hiking|0|1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|   |0|1|id", NULL, &config));
-  assert(!parse("dark|0\nOnly|Hiking|0|1|1234567890123456789012345678901234567890", NULL, &config));
+  assert(!parse("blue|0|5|1|1|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|2|5|1|1|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|0|0|1|1|2\nOnly|1|id", NULL, &config));
+  assert(parse("dark|0|5|0|1|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|0|5|-0|1|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|0|5|01|1|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|0|5|1|x|2\nOnly|1|id", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1x|id", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1,1|id", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1|same\nOther|2|same", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1|one\nonly|2|two", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1|id|extra", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\n   |1|id", NULL, &config));
+  assert(!parse("dark|0|5|1|1|2\nOnly|1|1234567890123456789012345678901234567890", NULL, &config));
 
   char unicode_name[85];
   size_t offset = 0;
@@ -847,41 +897,31 @@ static void test_watch_config(void) {
   }
   unicode_name[offset] = '\0';
   char unicode_config[512];
-  snprintf(unicode_config, sizeof(unicode_config), "dark|0\n%s|Hiking|0|1|unicode", unicode_name);
+  snprintf(unicode_config, sizeof(unicode_config), "dark|0|5|1|1|2\n%s|1|unicode", unicode_name);
   assert(parse(unicode_config, NULL, &config));
   strcat(unicode_name, "x");
-  snprintf(unicode_config, sizeof(unicode_config), "dark|0\n%s|Hiking|0|1|unicode", unicode_name);
+  snprintf(unicode_config, sizeof(unicode_config), "dark|0|5|1|1|2\n%s|1|unicode", unicode_name);
   assert(!parse(unicode_config, NULL, &config));
 
-  unicode_name[80] = '\0';
-  snprintf(unicode_config, sizeof(unicode_config), "dark|0\n%s|Hiking|0|1", unicode_name);
-  assert(parse(unicode_config, NULL, &config));
-  assert(strncmp(config.profiles[0].id, "legacy-0-", strlen("legacy-0-")) == 0);
-  assert(strlen(config.profiles[0].id) < sizeof(config.profiles[0].id));
-
-  char long_locus[WATCH_LOCUS_NAME_SIZE + 1];
-  fill(long_locus, WATCH_LOCUS_NAME_SIZE - 1, 'a');
-  char locus_config[512];
-  snprintf(locus_config, sizeof(locus_config), "dark|0\nOnly|%s|0|1|id", long_locus);
-  assert(parse(locus_config, NULL, &config));
-  long_locus[WATCH_LOCUS_NAME_SIZE - 1] = 'x';
-  long_locus[WATCH_LOCUS_NAME_SIZE] = '\0';
-  snprintf(locus_config, sizeof(locus_config), "dark|0\nOnly|%s|0|1|id", long_locus);
-  assert(!parse(locus_config, NULL, &config));
-
-  char too_many[1024] = "dark|0";
-  for (int i = 0; i < 9; i++) {
+  char too_many[1024] = "dark|0|5|1|1|2";
+  for (int i = 0; i < 5; i++) {
     char line[80];
-    snprintf(line, sizeof(line), "\nProfile%d|Locus%d|0|1|id%d", i, i, i);
+    snprintf(line, sizeof(line), "\nProfile%d|1|id%d", i, i);
     strcat(too_many, line);
   }
   assert(!parse(too_many, NULL, &config));
 
-  assert(watch_profile_list_valid("Walking\nWandern \xC3\x84", strlen("Walking\nWandern \xC3\x84")));
-  assert(!watch_profile_list_valid("Walking\n", strlen("Walking\n")));
-  assert(!watch_profile_list_valid("Walking\n\nCycling", strlen("Walking\n\nCycling")));
-  assert(!watch_profile_list_valid("Walking\nCycling\nWalking", strlen("Walking\nCycling\nWalking")));
-  const char invalid_utf8[] = {'B', 'a', 'd', (char)0xc0, (char)0xaf};
+  assert(watch_profile_list_valid("1|Walking\n42|Wandern \xC3\x84", strlen("1|Walking\n42|Wandern \xC3\x84")));
+  assert(watch_profile_list_valid("0|Default\n-1|Internal", strlen("0|Default\n-1|Internal")));
+  assert(watch_profile_list_valid("-9223372036854775808|Minimum", strlen("-9223372036854775808|Minimum")));
+  assert(!watch_profile_list_valid("1|Walking\n", strlen("1|Walking\n")));
+  assert(!watch_profile_list_valid("1|Walking\n\n2|Cycling", strlen("1|Walking\n\n2|Cycling")));
+  assert(!watch_profile_list_valid("1|Walking\n2|Cycling\n1|Running", strlen("1|Walking\n2|Cycling\n1|Running")));
+  assert(!watch_profile_list_valid("-0|Walking", strlen("-0|Walking")));
+  assert(!watch_profile_list_valid("01|Walking", strlen("01|Walking")));
+  assert(!watch_profile_list_valid("-9223372036854775809|Walking", strlen("-9223372036854775809|Walking")));
+  assert(!watch_profile_list_valid("1|Walk|ing", strlen("1|Walk|ing")));
+  const char invalid_utf8[] = {'1', '|', 'B', 'a', 'd', (char)0xc0, (char)0xaf};
   assert(!watch_profile_list_valid(invalid_utf8, sizeof(invalid_utf8)));
 }
 

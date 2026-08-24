@@ -16,6 +16,22 @@ EMULATOR_PATH_PATCH = ROOT / "tools" / "podman" / "patches" / "android-emulator-
 EMULATOR_ENTRYPOINT = ROOT / "tools" / "podman" / "android-emulator-entrypoint.sh"
 EMULATOR_CONSOLE = ROOT / "tools" / "podman" / "emulator-console.py"
 E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
+RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
+RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+
+
+class ReleaseWorkflowTest(unittest.TestCase):
+    def test_public_signing_assets_are_checksummed_before_private_key_removal(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        stage = source.split("- name: Stage public assets and remove private key", 1)[1]
+        certificate = stage.index("cp trackglance-release-certificate.pem build/release-assets/")
+        fingerprint = stage.index("cp trackglance-release-certificate.sha256 build/release-assets/")
+        checksums = stage.index("sha256sum * > SHA256SUMS")
+        private_key_removal = stage.index("rm -f build/release-private/trackglance-release.p12")
+
+        self.assertLess(certificate, checksums)
+        self.assertLess(fingerprint, checksums)
+        self.assertLess(checksums, private_key_removal)
 
 
 class DeviceReadinessTest(unittest.TestCase):
@@ -110,7 +126,7 @@ class DeviceReadinessTest(unittest.TestCase):
     def test_emulator_console_token_stays_in_the_private_runtime_volume(self):
         entrypoint = EMULATOR_ENTRYPOINT.read_text(encoding="utf-8")
         helper = EMULATOR_CONSOLE.read_text(encoding="utf-8")
-        self.assertIn("/run/locuspebble/emulator-console-auth-token", entrypoint)
+        self.assertIn("/run/trackglance/emulator-console-auth-token", entrypoint)
         self.assertIn('socket.create_connection(("127.0.0.1", 5556)', helper)
         self.assertIn("geo fix", helper)
 
@@ -146,11 +162,11 @@ class CleanupScopeTest(unittest.TestCase):
                 BUILD_ROOT=$EMPTY_BUILD_ROOT
                 podman() {
                   if [[ "$1 $2" == "pod ps" ]]; then
-                    printf '%s\n' locuspebble-owned backup-locuspebble-old
+                    printf '%s\n' trackglance-owned backup-trackglance-old
                   elif [[ "$1 $2" == "pod rm" ]]; then
                     printf 'pod:%s\n' "$4" >> "$PODMAN_REMOVAL_LOG"
                   elif [[ "$1 $2" == "volume ls" ]]; then
-                    printf '%s\n' locuspebble-cache backup-locuspebble-cache
+                    printf '%s\n' trackglance-cache backup-trackglance-cache
                   elif [[ "$1 $2" == "volume rm" ]]; then
                     printf 'volume:%s\n' "$4" >> "$PODMAN_REMOVAL_LOG"
                   elif [[ "$1 $2" == "image exists" || "$1 $2" == "network exists" ]]; then
@@ -170,7 +186,7 @@ class CleanupScopeTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 log.read_text(encoding="utf-8").splitlines(),
-                ["pod:locuspebble-owned", "volume:locuspebble-cache"],
+                ["pod:trackglance-owned", "volume:trackglance-cache"],
             )
 
     def test_docker_clean_uses_the_generator_to_remove_root_owned_outputs_first(self):
@@ -270,7 +286,7 @@ class StaticPreflightTest(unittest.TestCase):
         android_body = podman_test.split("run_android_tests() {", 1)[1].split("\n}", 1)[0]
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         launch = "foreground_locus"
-        uninstall_bridge = "adb_device uninstall app.locuspebble.bridge"
+        uninstall_bridge = "adb_device uninstall app.trackglance.bridge"
         self.assertIn(launch, android_body)
         self.assertIn(launch, e2e_stage)
         self.assertLess(android_body.index(launch), android_body.index("set_emulator_test_location"))
@@ -288,26 +304,36 @@ class StaticPreflightTest(unittest.TestCase):
             bootstrap.index("foreground_locus 30"),
         )
 
+    def test_acceptance_retries_external_settings_webview_loading(self):
+        source = E2E_STAGE.read_text(encoding="utf-8")
+        settings = source.split("settings_loaded=0", 1)[1].split(
+            'cp /tmp/trackglance-window.xml', 1
+        )[0]
+
+        self.assertIn("for _ in 1 2 3", settings)
+        self.assertIn('resource-id="theme"', settings)
+        self.assertIn("KEYCODE_BACK", settings)
+
     def test_acceptance_uses_the_manifest_activity_class_not_the_application_id(self):
         podman_test = PODMAN_TEST.read_text(encoding="utf-8")
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         qualified = (
-            "app.locuspebble.bridge/"
-            "io.github.christianherget.locuspebble.bridge.MainActivity"
+            "app.trackglance.bridge/"
+            "io.github.christianherget.trackglance.bridge.MainActivity"
         )
         self.assertIn(qualified, podman_test)
         self.assertIn(qualified, e2e_stage)
-        self.assertNotIn("app.locuspebble.bridge/.MainActivity", e2e_stage)
+        self.assertNotIn("app.trackglance.bridge/.MainActivity", e2e_stage)
 
     def test_e2e_sideloads_the_pbw_with_coreapps_private_selinux_label(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
-        self.assertIn("push \"$pbw\" /data/local/tmp/locuspebble.pbw", e2e_stage)
+        self.assertIn("push \"$pbw\" /data/local/tmp/trackglance.pbw", e2e_stage)
         self.assertIn(
-            "run-as coredevices.coreapp \\\n  cp /data/local/tmp/locuspebble.pbw cache/locuspebble.pbw",
+            "run-as coredevices.coreapp \\\n  cp /data/local/tmp/trackglance.pbw cache/trackglance.pbw",
             e2e_stage,
         )
         self.assertIn(
-            "file:///data/user/0/coredevices.coreapp/cache/locuspebble.pbw",
+            "file:///data/user/0/coredevices.coreapp/cache/trackglance.pbw",
             e2e_stage,
         )
         self.assertNotIn("/sdcard/Android/data/coredevices.coreapp/cache", e2e_stage)
@@ -322,13 +348,19 @@ class StaticPreflightTest(unittest.TestCase):
         self.assertGreaterEqual(e2e_stage.count("pebble://navbar/apps"), 2)
         self.assertLess(
             e2e_stage.index("complete_coreapp_onboarding 90"),
-            e2e_stage.index('tap_text "LocusPebble"'),
+            e2e_stage.index('tap_text "TrackGlance"'),
         )
 
     def test_e2e_polls_until_the_watch_settings_webview_is_rendered(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         self.assertIn("settings_deadline=$((SECONDS + 30))", e2e_stage)
-        self.assertIn("grep -Fq 'text=\"THEME\"'", e2e_stage)
+        self.assertIn("grep -Fq 'resource-id=\"theme\"'", e2e_stage)
+
+    def test_e2e_starts_recording_through_the_debug_only_locus_api_surface(self):
+        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
+        self.assertIn("--method acceptance-start-recording", e2e_stage)
+        self.assertIn("recording_profile=$(cut -d'|' -f2", e2e_stage)
+        self.assertNotIn("adb_device shell input tap 73 1992", e2e_stage)
 
     def test_emery_retries_the_streamed_heart_rate_during_locus_ingestion(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
@@ -345,13 +377,11 @@ class StaticPreflightTest(unittest.TestCase):
         )
         self.assertLess(emery.index(recording), emery.index(heart_rate))
         self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
-        self.assertGreaterEqual(
-            e2e_stage.count("relayctl heart-rate 123 --quality excellent"),
-            3,
-        )
+        self.assertIn("watch_heart_rate_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
         self.assertLess(
             e2e_stage.index('tap_text "Apps"'),
-            e2e_stage.index('tap_text "LocusPebble"'),
+            e2e_stage.index('tap_text "TrackGlance"'),
         )
 
     def test_static_path_does_not_require_acceptance_inputs(self):
@@ -399,6 +429,31 @@ class StaticPreflightTest(unittest.TestCase):
         self.assertIn('manifest=$(aapt2 dump xmltree', release_body)
         self.assertNotIn('aapt2 dump badging "$release_apk" |', release_body)
 
+    def test_acceptance_release_expectations_come_from_package_metadata(self):
+        result = subprocess.run(
+            [
+                "bash", "-euo", "pipefail", "-c",
+                'source "$1"; load_release_metadata "$2"; '
+                'printf "%s|%s|%s|%s\\n" "$RELEASE_ANDROID_VERSION" '
+                '"$RELEASE_ANDROID_CODE" "$RELEASE_WATCH_VERSION" "$RELEASE_PROTOCOL_VERSION"',
+                "release-metadata", str(RELEASE_METADATA), str(ROOT),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        android_version, android_code, watch_version, protocol_version = result.stdout.strip().split("|")
+        self.assertEqual(android_version, watch_version)
+        self.assertTrue(android_code.isdecimal())
+        self.assertTrue(protocol_version.isdecimal())
+        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
+        for variable in (
+            "RELEASE_ANDROID_VERSION", "RELEASE_ANDROID_CODE",
+            "RELEASE_WATCH_VERSION", "RELEASE_PROTOCOL_VERSION",
+        ):
+            self.assertIn(f'"${variable}"', e2e_stage)
+
     def test_acceptance_doctor_reports_provisioning_without_burdening_static(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         acceptance_body = source.split("doctor_acceptance() {", 1)[1].split("\n}", 1)[0]
@@ -416,7 +471,7 @@ class StaticPreflightTest(unittest.TestCase):
             "emulator_config=",
             "system_image=",
             "core_apk=",
-            "bridge=0.1.9",
+            "bridge=$RELEASE_VERSION",
             "locus_fixture_config=",
             "locus=",
         )
@@ -425,7 +480,7 @@ class StaticPreflightTest(unittest.TestCase):
         bootstrap = source.split("bootstrap() {", 1)[1].split("\n}", 1)[0]
         self.assertLess(
             bootstrap.index("wait_nonempty_status locus_profiles"),
-            bootstrap.index("> /golden/.locuspebble-bootstrap"),
+            bootstrap.index("> /golden/.trackglance-bootstrap"),
         )
 
 

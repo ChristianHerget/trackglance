@@ -109,12 +109,32 @@ static bool profile_name_valid(const char *value) {
       true);
 }
 
-static bool locus_name_valid(const char *value) {
-  return value && field_valid(value, strlen(value), WATCH_LOCUS_NAME_SIZE - 1, 0, true);
-}
-
 static bool id_valid(const char *value) {
   return value && field_valid(value, strlen(value), WATCH_PROFILE_ID_SIZE - 1, 0, true);
+}
+
+static bool locus_id_bytes_valid(const char *value, size_t length) {
+  if (!value || !length || length >= WATCH_LOCUS_ID_SIZE) return false;
+  if (length == 1 && value[0] == '0') return true;
+  const bool negative = value[0] == '-';
+  const size_t offset = negative ? 1 : 0;
+  const size_t digits = length - offset;
+  if (!digits || digits > 19 || value[offset] == '0') return false;
+  for (size_t i = offset; i < length; i++) {
+    if (value[i] < '0' || value[i] > '9') return false;
+  }
+  const char *limit = negative ? "9223372036854775808" : "9223372036854775807";
+  if (digits == 19 && memcmp(value + offset, limit, 19) > 0) return false;
+  return true;
+}
+
+static bool locus_id_valid(const char *value) {
+  return value && locus_id_bytes_valid(value, strlen(value));
+}
+
+bool watch_locus_profile_valid(const char *id, const char *name) {
+  return locus_id_valid(id) && name &&
+      field_valid(name, strlen(name), WATCH_LOCUS_NAME_SIZE - 1, 0, true);
 }
 
 static uint32_t simple_case_fold(uint32_t value) {
@@ -166,15 +186,6 @@ static bool copy_field(char *destination, size_t size, const char *source) {
   return true;
 }
 
-static uint32_t stable_id_hash(const char *value) {
-  uint32_t hash = 2166136261u;
-  for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-    hash ^= *p;
-    hash *= 16777619u;
-  }
-  return hash;
-}
-
 static bool parse_metrics(char *value, WatchProfile *profile) {
   if (!value || !profile) return false;
   char *cursor = value;
@@ -195,37 +206,20 @@ static bool parse_profile(char *line, int index, WatchConfig *output) {
   if (!line || !output || index < 0 || index >= WATCH_MAX_PROFILES) return false;
   char *cursor = line;
   char *name = next_token(&cursor, '|');
-  char *locus = next_token(&cursor, '|');
-  char *protected_text = next_token(&cursor, '|');
   char *metrics = next_token(&cursor, '|');
   char *id = next_token(&cursor, '|');
-  if (!name || !locus || !protected_text || !metrics || cursor ||
-      !profile_name_valid(name) || !locus_name_valid(locus)) {
+  if (!name || !metrics || !id || cursor || !profile_name_valid(name)) {
     return false;
   }
-  uint32_t protected_value = 0;
-  if (!parse_uint(protected_text, &protected_value) || protected_value > 1) return false;
 
   WatchProfile *profile = &output->profiles[index];
-  if (!copy_field(profile->name, sizeof(profile->name), name) ||
-      !copy_field(profile->locus, sizeof(profile->locus), locus)) {
+  if (!copy_field(profile->name, sizeof(profile->name), name)) {
     return false;
   }
   profile->protected_profile = false;
   if (!parse_metrics(metrics, profile)) return false;
 
-  if (id && *id) {
-    if (!id_valid(id)) return false;
-    if (!copy_field(profile->id, sizeof(profile->id), id)) return false;
-  } else {
-    const int written = snprintf(
-        profile->id,
-        sizeof(profile->id),
-        "legacy-%d-%08lx",
-        index,
-        (unsigned long)stable_id_hash(name));
-    if (written < 0 || written >= (int)sizeof(profile->id)) return false;
-  }
+  if (!id_valid(id) || !copy_field(profile->id, sizeof(profile->id), id)) return false;
 
   for (int i = 0; i < index; i++) {
     if (watch_profile_names_equal(output->profiles[i].name, profile->name) ||
@@ -245,16 +239,24 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
   if (!header) return false;
   char *header_cursor = header;
   char *theme = next_token(&header_cursor, '|');
-  char *selected_text = next_token(&header_cursor, '|');
   char *watch_hr_text = next_token(&header_cursor, '|');
   char *interval_text = next_token(&header_cursor, '|');
-  if (!theme || !selected_text || header_cursor ||
+  char *locus_id = next_token(&header_cursor, '|');
+  char *fingerprint_a_text = next_token(&header_cursor, '|');
+  char *fingerprint_b_text = next_token(&header_cursor, '|');
+  if (!theme || !watch_hr_text || !interval_text || !locus_id ||
+      !fingerprint_a_text || !fingerprint_b_text || header_cursor ||
       (strcmp(theme, "dark") != 0 && strcmp(theme, "light") != 0)) {
     return false;
   }
 
-  uint32_t selected = 0;
-  if (!parse_uint(selected_text, &selected) || selected >= WATCH_MAX_PROFILES) return false;
+  uint32_t fingerprint_a = 0;
+  uint32_t fingerprint_b = 0;
+  if (!locus_id_valid(locus_id) || !parse_uint(fingerprint_a_text, &fingerprint_a) ||
+      !parse_uint(fingerprint_b_text, &fingerprint_b) ||
+      !copy_field(output->locus_id, sizeof(output->locus_id), locus_id)) return false;
+  output->fingerprint_a = fingerprint_a;
+  output->fingerprint_b = fingerprint_b;
   output->dark = strcmp(theme, "dark") == 0;
   output->heart_rate_interval = 5;
   if (watch_hr_text) {
@@ -276,7 +278,7 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
     }
     output->profile_count++;
   }
-  if (output->profile_count < 1 || selected >= (uint32_t)output->profile_count) return false;
+  if (output->profile_count < 1) return false;
 
   int active_index = -1;
   if (active_id && *active_id) {
@@ -284,7 +286,7 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
       if (strcmp(active_id, output->profiles[i].id) == 0) active_index = i;
     }
   }
-  output->selected = active_index >= 0 ? active_index : ((active_id && *active_id) ? 0 : (int)selected);
+  output->selected = active_index >= 0 ? active_index : 0;
   return true;
 }
 
@@ -295,13 +297,24 @@ bool watch_profile_list_valid(const char *data, size_t length) {
   while (start < length) {
     size_t end = start;
     while (end < length && data[end] != '\n') end++;
-    if (!field_valid(data + start, end - start, WATCH_LOCUS_NAME_SIZE - 1, 0, true)) return false;
+    const char *separator = memchr(data + start, '|', end - start);
+    if (!separator || separator == data + start ||
+        memchr(separator + 1, '|', (data + end) - separator - 1) ||
+        !field_valid(
+            separator + 1,
+            (data + end) - separator - 1,
+            WATCH_LOCUS_NAME_SIZE - 1,
+            0,
+            true)) return false;
+    const size_t id_length = (size_t)(separator - (data + start));
+    if (!locus_id_bytes_valid(data + start, id_length)) return false;
     size_t previous = 0;
     while (previous < start) {
       size_t previous_end = previous;
       while (previous_end < start && data[previous_end] != '\n') previous_end++;
-      if (previous_end - previous == end - start &&
-          memcmp(data + previous, data + start, end - start) == 0) {
+      const char *previous_separator = memchr(data + previous, '|', previous_end - previous);
+      if (previous_separator && (size_t)(previous_separator - (data + previous)) == id_length &&
+          memcmp(data + previous, data + start, id_length) == 0) {
         return false;
       }
       previous = previous_end + 1;

@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ADB_SERIAL=${ADB_SERIAL:-127.0.0.1:5555}
-STATUS_URI=content://app.locuspebble.bridge.debug-status/status
+STATUS_URI=content://app.trackglance.bridge.debug-status/status
 EMULATOR_TEST_LATITUDE=50.9662
 EMULATOR_TEST_LONGITUDE=10.3065
-EMULATOR_CONSOLE_TOKEN=/run/locuspebble/emulator-console-auth-token
+EMULATOR_CONSOLE_TOKEN=/run/trackglance/emulator-console-auth-token
 LOCUS_START_ACTIVITY=menion.android.locus/com.asamm.android.library.androidCore.features.startScreen.StartScreen
 
 adb_device() {
@@ -90,12 +90,12 @@ complete_locus_onboarding() {
   while (( SECONDS < deadline )); do
     dump_ui || true
     if grep -Fq 'resource-id="menion.android.locus:id/drawer_layout"' \
-      /tmp/locuspebble-window.xml; then
+      /tmp/trackglance-window.xml; then
       return 0
     fi
-    if grep -Fq 'text="START"' /tmp/locuspebble-window.xml; then
+    if grep -Fq 'text="START"' /tmp/trackglance-window.xml; then
       tap_text START 10
-    elif grep -Fq 'text="Problem with working directory"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="Problem with working directory"' /tmp/trackglance-window.xml; then
       working_directory_retries=$((working_directory_retries + 1))
       if (( working_directory_retries > 3 )); then
         echo "Locus could not initialize its API-32 working directory after three clean relaunches" >&2
@@ -116,21 +116,21 @@ complete_coreapp_onboarding() {
   local deadline=$((SECONDS + ${1:-90}))
   while (( SECONDS < deadline )); do
     dump_ui || true
-    if grep -Fq 'text="Apps"' /tmp/locuspebble-window.xml; then
+    if grep -Fq 'text="Apps"' /tmp/trackglance-window.xml; then
       return 0
     fi
-    if grep -Fq 'text="Get Started"' /tmp/locuspebble-window.xml; then
+    if grep -Fq 'text="Get Started"' /tmp/trackglance-window.xml; then
       tap_text "Get Started" 10
-    elif grep -Fq 'text="Connect a Pebble"' /tmp/locuspebble-window.xml \
-      || grep -Fq 'text="Connect a Pebble!"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="Connect a Pebble"' /tmp/trackglance-window.xml \
+      || grep -Fq 'text="Connect a Pebble!"' /tmp/trackglance-window.xml; then
       tap_text "Connect a Pebble" 10
-    elif grep -Fq 'text="I have a:"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="I have a:"' /tmp/trackglance-window.xml; then
       tap_text Watch 10
-    elif grep -Fq 'text="Skip"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="Skip"' /tmp/trackglance-window.xml; then
       tap_text Skip 10
-    elif grep -Fq 'text="Finished"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="Finished"' /tmp/trackglance-window.xml; then
       tap_text Finished 10
-    elif grep -Fq 'text="Get Started!"' /tmp/locuspebble-window.xml; then
+    elif grep -Fq 'text="Get Started!"' /tmp/trackglance-window.xml; then
       adb_device shell input swipe 540 2100 540 400 200
     else
       adb_device shell input swipe 540 2100 540 400 200
@@ -175,7 +175,7 @@ wait_nonempty_status() {
 }
 
 relayctl() {
-  python3 /workspace/tools/podman/relayctl.py --socket /run/locuspebble/relay.sock "$@"
+  python3 /workspace/tools/podman/relayctl.py --socket /run/trackglance/relay.sock "$@"
 }
 
 watch_button() {
@@ -201,8 +201,8 @@ android_screenshot() {
 }
 
 dump_ui() {
-  adb_device_timeout 15 shell uiautomator dump /sdcard/locuspebble-window.xml >/dev/null
-  adb_device_timeout 10 pull /sdcard/locuspebble-window.xml /tmp/locuspebble-window.xml >/dev/null
+  adb_device_timeout 15 shell uiautomator dump /sdcard/trackglance-window.xml >/dev/null
+  adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null
 }
 
 tap_text() {
@@ -217,7 +217,7 @@ import sys
 import xml.etree.ElementTree as ET
 needle = sys.argv[1].casefold()
 try:
-    root = ET.parse('/tmp/locuspebble-window.xml').getroot()
+    root = ET.parse('/tmp/trackglance-window.xml').getroot()
 except Exception:
     raise SystemExit
 parents = {child: parent for parent in root.iter() for child in parent}

@@ -36,7 +36,7 @@ RUN sed -i \
     cd /opt/aemu/js && \
     python3 eslint_prefix.py src/proto/emulator_controller_pb.js && \
     npm ci --prefix /opt/aemu/js/example
-COPY tools/podman/web-entrypoint.sh /usr/local/bin/locuspebble-web
-RUN chmod 0755 /usr/local/bin/locuspebble-web
+COPY tools/podman/web-entrypoint.sh /usr/local/bin/trackglance-web
+RUN chmod 0755 /usr/local/bin/trackglance-web
 EXPOSE 5173
-ENTRYPOINT ["/usr/local/bin/locuspebble-web"]
+ENTRYPOINT ["/usr/local/bin/trackglance-web"]

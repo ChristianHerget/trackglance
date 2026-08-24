@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+tag=${1:-}
+[[ "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || {
+  echo "Tag must have the strict form vMAJOR.MINOR.PATCH." >&2
+  exit 1
+}
+version=${tag#v}
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+
+values=(
+  "$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' android/app/build.gradle.kts)"
+  "$(node -p "require('./watchapp/package.json').version")"
+  "$(node -p "require('./watchapp/package-lock.json').version")"
+  "$(sed -nE 's/^#define RELEASE_VERSION "([^"]+)"/\1/p' watchapp/src/c/main.c)"
+  "$(sed -nE "s/^  var RELEASE = '([^']+)';/\1/p" watchapp/src/pkjs/index.js)"
+  "$(sed -nE "s/^version = '([^']+)'/\1/p" docs/sphinx/conf.py)"
+  "$(sed -nE 's/^Protocol v[0-9]+ is retained for release ([0-9.]+).*/\1/p' protocol/README.md)"
+)
+for actual in "${values[@]}"; do
+  [[ "$actual" == "$version" ]] || {
+    echo "Version mismatch: tag $version but a release source says ${actual:-<missing>}." >&2
+    exit 1
+  }
+done
+
+git fetch --quiet origin main
+commit=$(git rev-list -n 1 "$tag^{commit}")
+git merge-base --is-ancestor "$commit" origin/main || {
+  echo "Tag commit is not an ancestor of origin/main." >&2
+  exit 1
+}
+echo "Release preflight passed for $tag at $commit."

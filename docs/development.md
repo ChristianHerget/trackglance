@@ -7,6 +7,28 @@ For the automated rootless Android 12L environment, see [Podman test environment
 The bridge supports API 24 and newer. Android 12L/API 32 is the sole automated acceptance runtime,
 not the product installation minimum. Platform 36 remains the compile and target SDK.
 
+## Private Locus acceptance fixture
+
+On the primary development machine, keep the regular Locus Map 4 Google Play APK outside the
+repository in:
+
+```text
+/home/christian/.local/share/trackglance-acceptance/locus-apks
+```
+
+Pass that directory to the container wrapper; the filename inside it is not significant because
+the wrapper validates the APK against `tools/locus-test-apk.properties`:
+
+```sh
+./tools/podman-test bootstrap \
+  --locus-apks /home/christian/.local/share/trackglance-acceptance/locus-apks
+./tools/podman-test acceptance \
+  --locus-apks /home/christian/.local/share/trackglance-acceptance/locus-apks
+```
+
+The APK is private input. Never copy it into this repository, a container image, an Actions
+artifact, or a persistent cache.
+
 ## Chromebook Linux and ARCVM
 
 Enable ChromeOS **Develop Android apps / ADB debugging**, then connect from the normal Linux
@@ -15,7 +37,7 @@ terminal. This does not require full ChromeOS Developer Mode.
 ```sh
 adb connect arc
 adb devices -l
-adb -s arc:5555 install -r android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
+adb -s arc:5555 install -r android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk
 ```
 
 If both `arc:5555` and `emulator-5554` appear, use an explicit `-s` selector. ADB daemon socket
@@ -116,20 +138,20 @@ separate. Full KVM acceptance is manual: an ephemeral GitHub-hosted Docker job d
 public Locus fixture and bootstraps from scratch, while the protected self-hosted job remains the
 fallback.
 
-The real Locus contract test is deliberately opt-in. It requires an idle Locus Map installation,
-creates a short recording using Locus's active profile, and saves the recording. It refuses to run
-if a recording is already active:
+The real Locus contract test is deliberately opt-in and non-mutating. It requires idle Locus,
+validates numeric recording-profile identities, and confirms that obsolete Start command `1` is
+rejected without changing recording state:
 
 ```sh
 adb connect arc
 ./tools/podman-test dev bash -c 'ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true \
-  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000'
+  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true'
 ```
 
-The test waits for and asserts every observable state transition: start, pause, resume, and stop.
-The optional observation delay (capped at ten seconds) keeps each confirmed state visible in the
-Locus UI for manual inspection.
+Recording lifecycle acceptance is manual because recording start is owned by Locus Map. Start in
+Locus, then verify page selection, 60-second configuration reconciliation, pause/resume, stop/save,
+heart rate, quick waypoint, and dictation on physical Emery. Smoke-test launch, stopped state,
+settings opening, active pages, controls, and page wrapping on both Emery and Gabbro QEMU.
 The watch's plain waypoint command saves a point named `Pebble waypoint` immediately
 (`autoSave=true`). On microphone-capable watches, the second waypoint command uses Pebble
 dictation confirmation and saves the accepted text as the waypoint name. Dictation needs the

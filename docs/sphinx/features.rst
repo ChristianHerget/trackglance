@@ -1,7 +1,7 @@
 Features
 ========
 
-The Pebble Locus Map bridge connects your Pebble smartwatch to the Locus Map app on your Android phone, bringing recording data and controls directly to your wrist.
+The TrackGlance bridge connects your Pebble smartwatch to the Locus Map app on your Android phone, bringing recording data and controls directly to your wrist.
 
 Pebble Time 2
 -------------
@@ -52,9 +52,9 @@ Watchapp Capabilities
 - **No HR sensor scenario**: On Pebble Time 2, if the watch cannot produce valid heart-rate samples,
   the watch shows `Heart rate unavailable` and no watch-originated sample is forwarded to Locus.
   Session HR data remains whatever Locus provides in its own telemetry stream.
-- **Navigation Waypoints**: Send a quick waypoint or dictate a note for a waypoint directly from the watch.
-- **Locus Commands**: Start, Pause, Resume, and Stop recording in the Locus Map application.
-- **Profiles**: Select between different recording profiles configured within Locus Map.
+- **Activity pages**: Automatically choose one to four pages for the recording profile started in Locus.
+- **Navigation Waypoints**: Open a waypoint submenu to save a quick point or dictated note.
+- **Locus Commands**: Pause, Resume, and Stop & save the recording started in Locus Map.
 
 See :doc:`watchapp-options` for every watch control and :doc:`watch-settings` for the settings
 available through the phone.
@@ -69,3 +69,35 @@ Locus Map Integration
 ---------------------
 - Fully integrated with Locus Map's native GPS recording engine.
 - Supports mapping, active tracks, and waypoint drops seamlessly via intent broadcasts.
+
+.. _locus-units:
+
+Locus units and formatting
+--------------------------
+
+The Android bridge reads Locus Map's separate preferences for distance, altitude, speed, slope,
+and energy. The watch therefore uses the same unit families you selected in Locus, including
+metric, feet/miles, yards/miles, and nautical distance; metres or feet for altitude and vertical
+speed; km/h, mi/h, nmi/h, or knots; percent or degrees; and kJ or kcal. There is no second unit
+setting in TrackGlance.
+
+The bridge also mirrors Locus's compact medium-precision display rules: short distances remain in
+metres, feet, or yards, longer distances change to kilometres, miles, or nautical miles at Locus's
+thresholds, decimals decrease as values grow, and speed drops its decimal only above 100. Total and
+moving distance choose their formats independently. Pace follows the selected length family.
+
+.. list-table:: The same watch profile with different Locus unit preferences
+   :widths: 50 50
+
+   * - **Feet, miles, mi/h, and kcal**
+     - **Nautical miles and knots**
+   * - .. image:: _static/screenshot_emery_units_imperial.png
+          :alt: Pebble Time 2 dashboard displaying imperial units read from Locus
+          :width: 260px
+     - .. image:: _static/screenshot_emery_units_nautical.png
+          :alt: Pebble Time 2 dashboard displaying nautical units read from Locus
+          :width: 260px
+
+Locus preference changes are picked up within about 60 seconds. If Locus cannot be queried, the
+last valid choices remain active; a cold start or an invalid individual preference uses the metric
+default for that preference.

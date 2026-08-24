@@ -4,55 +4,58 @@ Getting Started
 What You Need
 -------------
 
-* A phone running **Android 7.0 or newer** with a compatible Locus Map release. Automated acceptance
-  uses Android 12L independently of the bridge installation minimum.
-* An Android phone with `Locus Map on Google Play
-  <https://play.google.com/store/apps/details?id=menion.android.locus>`_ and the `Pebble App on
-  Google Play <https://play.google.com/store/apps/details?id=coredevices.coreapp>`_ installed.
-* A Pebble Time 2 or Pebble Round 2 paired with the Pebble App.
-* The Android bridge APK and Pebble watchapp PBW from the same Pebble Locus Map release.
+* A phone running **Android 7.0 or newer** with Locus Map and the Pebble App.
+* A Pebble Time 2 or Pebble Round 2.
+* The Android APK and PBW from the same release.
 
-Install the Apps
-----------------
+Install the Android bridge, install the PBW through the Pebble App, open Locus Map once, and launch
+TrackGlance on the watch. The bridge status screen should report Locus as available, the watch as
+connected, the watchapp as open, and matching bridge/watch versions.
 
-1. Install the Android bridge APK on the phone.
-2. Open the PBW file on the phone and install the watchapp through the Pebble App.
-3. Open Locus Map, then open **LocusPebble** on the phone.
-4. Start the LocusPebble watchapp on the watch.
+Start in Locus
+--------------
 
-The bridge connects to the Pebble App automatically. Its status screen should show:
+Recording is owned by Locus Map. Start the desired recording profile in Locus. While no recording
+is active, the watch deliberately hides all metrics and controls and says **No recording. Start
+recording in Locus Map.** Select does nothing on this screen.
 
-* **Pebble App** with the app package instead of ``Not selected``.
-* **Pebble watch** as ``Connected``.
-* **Pebble watchapp** as ``Open`` while the watchapp is visible.
-* **Locus Map** as ``Available``.
-* Matching bridge and watchapp versions.
+.. list-table:: Stopped screen on both supported watches
+   :widths: 50 50
 
-Before starting a recording from the watch, bring Locus Map to the foreground and leave it visible
-until its map has finished loading. Then select **Start recording** and leave Locus visible until the
-recording has started. On some recent Android and Locus combinations, Locus receives a background
-START command but Android prevents the new recording service from accessing location or sensors.
-Once Locus shows that recording is active, you can use the phone normally.
+   * - .. image:: _static/screenshot_emery_stopped.png
+          :alt: Stopped instruction on Pebble Time 2
+          :width: 240px
+     - .. image:: _static/screenshot_gabbro_stopped.png
+          :alt: Stopped instruction on Pebble Round 2
+          :width: 240px
 
-Choose Watch Settings
----------------------
+As soon as Locus starts recording, the bridge identifies its numeric recording-profile ID and the
+watch loads the pages for that activity. The first page is selected for every new recording. If
+Locus itself is unavailable, the watch gives a separate instruction to open Locus on the phone.
 
-Open the watchapp settings through the Pebble App on the phone. Choose the watch theme, configure display
-profiles, map each display profile to a Locus recording profile, and select one to six metrics. See
-:doc:`watch-settings` for every option.
+Automatic Activity Pages
+------------------------
 
-Start Using the Watch
----------------------
+Open Watch Settings once after installation. Every installed Locus activity receives a localized
+**Default** (English) or **Standard** (German) page. The six initial metrics are chosen from the
+activity name:
 
-Start a recording from Locus or press **Select** on the watch and choose **Start recording**. The
-dashboard then shows the recording state and the metrics selected for the active display profile.
-See :doc:`watchapp-options` for recording controls, profiles, waypoints, and dictation.
+* walking or hiking: elapsed, distance, altitude, ascent, current speed, current HR;
+* running: elapsed, distance, current pace, average pace, ascent, current HR;
+* cycling: elapsed, distance, current, average and maximum speed, current HR;
+* all other activities: elapsed, distance, current and average speed, altitude, current HR.
 
-If Something Is Missing
------------------------
+English and German walking, hiking, running, jogging, cycling and bicycle keywords are recognized.
+Generated page names are saved as ordinary data and are not translated later when the watch
+language changes.
 
-Keep Locus Map and the Pebble App allowed to run in the background. If **Start recording** does not
-produce a working recording, open Locus in the foreground and retry. If the watch does not update,
-open the Android bridge and use its connection status to identify whether the Pebble App, the watch,
-the watchapp, or Locus is unavailable. See :doc:`configuration` for the status fields and refresh
-modes.
+Using the Watch
+---------------
+
+During recording or pause, **Up** and **Down** switch between one to four pages and wrap at the
+ends. The header always shows the state and position, for example ``Recording · 2/4``. The page
+name appears briefly after a switch. **Select** opens recording controls. See
+:doc:`watchapp-options` and :doc:`watch-settings`.
+
+If a new Locus profile has not synchronized yet, the watch shows ``Preparing profile...``. After
+15 seconds it asks you to open Watch Settings, while synchronization continues once per minute.

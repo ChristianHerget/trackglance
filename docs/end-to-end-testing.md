@@ -1,6 +1,6 @@
 # End-to-end development and testing
 
-This guide describes a version-pinned environment for building Locus Pebble Bridge and testing the
+This guide describes a version-pinned environment for building TrackGlance Bridge and testing the
 complete path from a PebbleOS watchapp to Locus Map. It records the setup that was proven on a
 Chromebook with Linux, ChromeOS ARCVM, CoreApp, and PebbleOS QEMU.
 
@@ -50,8 +50,8 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.1.9 |
-| Wire protocol | v3 |
+| Bridge and watchapp | 0.2.2 |
+| Wire protocol | v4 |
 | CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
 
@@ -81,7 +81,7 @@ wrapper prefers Docker when installed and otherwise uses rootless Podman. Select
 `DEV_CONTAINER_ENGINE=docker` or `DEV_CONTAINER_ENGINE=podman`. Use `dev COMMAND...` for focused
 commands instead of installing their tools on the host.
 
-## 2. Build and test Locus Pebble Bridge
+## 2. Build and test TrackGlance Bridge
 
 From the repository root:
 
@@ -94,7 +94,7 @@ From the repository root:
 The outputs are:
 
 ```text
-android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
+android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk
 watchapp/build/watchapp.pbw
 ```
 
@@ -103,7 +103,7 @@ and contents manually as needed before installation:
 
 ```sh
 ./tools/podman-test dev bash -c '
-  aapt2 dump badging android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk | head
+  aapt2 dump badging android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk | head
   unzip -p watchapp/build/watchapp.pbw appinfo.json
   unzip -l watchapp/build/watchapp.pbw
 '
@@ -118,7 +118,7 @@ Kotlin, C, `watchapp/package.json`, and `protocol/README.md`.
 The Android target must run all three apps:
 
 1. CoreApp (`coredevices.coreapp`)
-2. Locus Pebble Bridge (`app.locuspebble.bridge`)
+2. TrackGlance Bridge (`app.trackglance.bridge`)
 3. Locus Map 4 (`menion.android.locus`)
 
 ### Chromebook ARCVM
@@ -137,7 +137,7 @@ Always use an explicit serial if another emulator is present:
 ```sh
 adb -s "$ANDROID_SERIAL" shell getprop ro.product.cpu.abilist
 adb -s "$ANDROID_SERIAL" install -r \
-  android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk
+  android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk
 ```
 
 Install Locus Map from Google Play where possible. Launch it once, complete onboarding, grant the
@@ -173,7 +173,7 @@ The resulting x86_64 debug APK is
 `build/podman/images/pebble-app-x86_64-debug.apk`. Install it using the ADB connection for the
 chosen Android target; the automated Podman workflow performs this installation itself.
 
-Open **Locus Pebble Bridge** after installing CoreApp. The bridge disables PebbleKit auto-selection
+Open **TrackGlance Bridge** after installing CoreApp. The bridge disables PebbleKit auto-selection
 and selects the exact `coredevices.coreapp` package automatically. Diagnostics should show that
 package under **Pebble/Core app**. Incoming Binder calls must resolve to the installed package UID;
 no separate signing-certificate enrollment is required.
@@ -191,7 +191,7 @@ Confirm installed packages and versions:
 ```sh
 adb -s "$ANDROID_SERIAL" shell dumpsys package coredevices.coreapp \
   | grep -E 'versionName=|versionCode='
-adb -s "$ANDROID_SERIAL" shell dumpsys package app.locuspebble.bridge \
+adb -s "$ANDROID_SERIAL" shell dumpsys package app.trackglance.bridge \
   | grep -E 'versionName=|versionCode='
 adb -s "$ANDROID_SERIAL" shell pm path menion.android.locus
 ```
@@ -328,7 +328,7 @@ After launch, open the bridge diagnostics screen:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity
+  -n app.trackglance.bridge/io.github.christianherget.trackglance.bridge.MainActivity
 ```
 
 Expected values are:
@@ -341,52 +341,44 @@ Expected values are:
 - Recording: Stopped, Recording, or Paused as appropriate
 - Locus profiles: the exact names returned by Locus
 
-Return Locus to the foreground before sending recording commands:
+Start the chosen recording profile in Locus itself:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
   -n menion.android.locus/com.asamm.android.library.androidCore.features.startScreen.StartScreen
 ```
 
-This is an empirically required compatibility setup, not a precondition documented by the Locus
-API. Locus documents `ACTION_TRACK_RECORD_START` as a broadcast, and its API implementation sends
-that package-targeted broadcast without starting a Locus activity. On the API-32 target, sending
-START while Locus is backgrounded produced Android's
-`Foreground service started from background can not have location/camera/microphone access`
-diagnostic for Locus's `TrackRecordingService`. Foregrounding Locus before START avoids creating the
-recording service in that restricted state. See [Track Recording Background
-Execution](design-decisions.md#2-track-recording-background-execution) for the source links and
-product decision.
+Release 0.2.1 never starts a recording from the watch or bridge. Confirm the stopped instruction on
+both platforms, then use Locus UI to start the desired activity.
 
 The delivered activity may be reported as
 `menion.android.locus/com.asamm.locus.basic.features.mainActivity.MainActivityMap`; that is normal.
 
-## 7. Configure profiles and verify settings
+## 7. Configure activity pages and verify settings
 
-Open the watchapp settings from CoreApp while the watchapp is running. With a valid same-version
-cache, the page opens immediately with a stale-data notice while a refresh is queued. Without a
-valid cache, it waits for a fresh response for up to 500 ms and then opens with either fresh data or
-an unavailable notice. A response received after a page is already open is stored atomically for
-the next opening; the data URL cannot update the already-open page. A complete empty response also
-replaces the old cache and is shown explicitly instead of retaining stale profile names.
+Open the watchapp settings from CoreApp while the watchapp is running. It waits up to 500 ms for the
+fresh catalog requested by that opening, then falls back to a valid same-version phone cache or an
+unavailable notice. A response received after the page is already open is stored atomically for the
+next opening; the data URL cannot update an already-open page. Empty, failed, and malformed
+responses never replace canonical activity settings.
 
 Verify all of the following:
 
 1. CoreApp, watchapp, and Android bridge versions match.
 2. The settings page opens on the first click.
-3. Every Locus dropdown contains the exact profile names from Locus.
-4. No required mapping shows the warning prefix.
-5. Saving closes the settings page and transfers all configuration chunks sequentially.
-6. Reopening settings preserves names, mappings, order, metrics, and theme.
+3. Fully expanded activity groups are alphabetical and match Locus IDs and names.
+4. Direct edit, clone, delete, reset, page drag, group move, and metric drag work within bounds.
+5. Saving stores canonical configuration and pushes the active activity projection.
+6. Reopening preserves names, mappings, order, metrics, theme, and stable page IDs.
 
-Fresh defaults use `Gehen` and `Radfahren` for German, and `Walking` and `Cycling` for English.
-Existing profile names are user data and are never translated automatically.
+Fresh groups use `Standard` in German and `Default` in English with heuristic metrics. Generated
+and edited page names are user data and are never translated automatically.
 
 If settings says no profile response has arrived:
 
 ```sh
 adb -s "$ANDROID_SERIAL" shell am start -W \
-  -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity
+  -n app.trackglance.bridge/io.github.christianherget.trackglance.bridge.MainActivity
 adb -s "$ANDROID_SERIAL" logcat -d \
   | grep -E 'AppMessagePush|PROFILE|QemuTransport|PebbleProtocol'
 ```
@@ -402,35 +394,28 @@ Never begin if the user has an active recording. Starting, stopping, or saving a
 Locus data. Check the bridge diagnostics and Locus UI first. Decide explicitly whether a successful
 test recording should be left running or stopped and saved.
 
-### Start recording
+### Start in Locus and select pages
 
-1. Select a watch profile whose exact Locus mapping exists. In the known-good German setup this was
-   `Gehen`.
-2. Bring Locus to the foreground.
+1. Confirm the watch shows the stopped instruction and Select has no action.
+2. In Locus, start a known recording profile.
 3. Clear logcat so the command is easy to identify:
 
    ```sh
    adb -s "$ANDROID_SERIAL" logcat -c
    ```
 
-4. On the QEMU watch dashboard, press Select once to open **Controls**.
-5. Press Select on **Start recording**.
-6. Inspect the command and response:
+4. Confirm page 1 appears automatically, the header reads ``Recording · 1/N``, and Up/Down wrap.
+5. Inspect telemetry, recording-context type 10, and runtime-config request type 11:
 
    ```sh
    adb -s "$ANDROID_SERIAL" logcat -d -v time \
      | grep -E 'AppMessagePush|PebbleProtocol|Locus'
    ```
 
-The command dictionary must contain protocol v3, message type 2, command 1, a command ID, a session
-ID, the matching release version, and the exact Locus profile name. Before the result dictionary, the
-bridge must successfully deliver a message-type-1 snapshot whose state is **Recording** and whose
-snapshot delivery epoch is strictly newer than every snapshot delivery issued before the command.
-This value is a durable ordering stamp and may be ahead of wall time; it is not the Locus observation
-timestamp. Only then may
-it send message type 3 with result 0. Confirm that no older snapshot is accepted afterward and that
-the bridge diagnostics and watch remain **Recording**. An OK result without that prior authoritative
-state snapshot is not a complete pass.
+Context must carry the decimal Locus profile ID and current name separately from telemetry. Runtime
+config must carry the same ID and dual canonical fingerprints. Command value 1 must never appear.
+Keep a manually selected page through pause/resume and verify configuration changes reconcile within
+60 seconds without changing the selected stable page.
 
 Large snapshot dictionaries can exceed Android logcat's per-line display limit. When the recording
 state tuple is truncated, use the bridge diagnostics or watch dashboard as the authoritative
@@ -447,9 +432,9 @@ observable state.
 
 While recording:
 
-- **Add waypoint** must create the normal `Pebble waypoint` immediately.
-- On a microphone-capable watch, **Add waypoint + note** must open Pebble dictation, show the
-  transcribed text for confirmation, and use the accepted text as the waypoint name.
+- **Quick waypoint** must create the normal `Pebble waypoint` immediately.
+- On a microphone-capable watch, **Waypoints → Dictated waypoint** must open Pebble dictation, show
+  the transcribed text for confirmation, and use the accepted text as the waypoint name.
 
 QEMU can exercise the plain command. Dictation confirmation and phone transcription should also be
 tested on physical microphone hardware.
@@ -465,17 +450,16 @@ Only perform this step when saving a test track is intended:
 
 ### Opt-in Android instrumentation test
 
-The repository also has an opt-in Locus test. It refuses to run when recording is already active,
-then creates and saves a short track:
+The repository also has an opt-in, non-mutating Locus contract test. It refuses to run when a
+recording is active, verifies numeric catalog identities, verifies obsolete Start rejection, and
+leaves Locus stopped:
 
 ```sh
 ./tools/podman-test dev bash -c 'ANDROID_SERIAL=arc:5555 ./gradlew :android:app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true \
-  -Pandroid.testInstrumentationRunnerArguments.observationDelayMillis=3000'
+  -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true'
 ```
 
-The observation delay is optional and capped at ten seconds. Normal verification compiles this test
-but never runs it.
+Normal verification compiles this test but never runs it.
 
 ## 9. Runtime smoke tests for both platforms
 
@@ -488,7 +472,8 @@ runtime test. For each platform verify:
 - German and English labels do not clip;
 - Gabbro content remains inside round-screen safe insets;
 - controls and confirmations are readable;
-- profile selection is locked while recording;
+- the stopped instruction hides metrics and Select has no action;
+- active page navigation wraps and preserves selection through pause/resume;
 - the five-item layout emphasizes slot 1.
 
 Large C arrays must remain in static storage. The repository's stack regression complements this

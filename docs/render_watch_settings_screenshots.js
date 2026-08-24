@@ -8,21 +8,22 @@ async function main() {
     throw new Error('Output directory is required');
   }
 
-  const configuration = JSON.parse(JSON.stringify(settings.defaults));
+  const catalog = [
+    {id: '2', name: 'Cycling'},
+    {id: '1', name: 'Hiking'},
+    {id: '3', name: 'Running'},
+  ];
+  const configuration = settings.reconcile(settings.defaultsFor('en'), catalog, 'en').config;
   configuration.watchHrToLocus = true;
   configuration.heartRateIntervalSeconds = 5;
-  settings.add(configuration, {
-    name: 'Hiking',
-    locus: 'Hiking',
-    metrics: [1, 3, 5, 10, 11, 22],
-  });
+  settings.add(configuration, '1', settings.activity(configuration, '1').pages[0], 'en');
+  settings.activity(configuration, '1').pages[1].name = 'Climb';
 
-  const settingsUrl = settings.page(
+  const settingsUrl = settings.settingsPage(
     configuration,
-    ['Walking', 'Cycling', 'Hiking'],
+    catalog,
     'en',
     'fresh',
-    true,
     null,
   );
   const browser = await chromium.launch({ headless: true });
@@ -36,7 +37,7 @@ async function main() {
     path: path.join(outputDirectory, 'watch_settings_overview.png'),
   });
 
-  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.getByRole('button', { name: 'Default' }).first().click();
   await page.screenshot({
     path: path.join(outputDirectory, 'watch_settings_profile.png'),
   });

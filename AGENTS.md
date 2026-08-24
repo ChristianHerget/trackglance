@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 
 - `android/app/` contains the Kotlin Android bridge. Production code is under
-  `src/main/java/io/github/christianherget/locuspebble/bridge/`; JVM tests use `src/test/`, and real-device Locus tests
+  `src/main/java/io/github/christianherget/trackglance/bridge/`; JVM tests use `src/test/`, and real-device Locus tests
   use `src/androidTest/`.
 - `watchapp/` contains the Pebble C application. Cohesive modules under `src/c/` own AppMessage
   parsing, metrics, configuration, persistence, and transfer state; platform declarations and
@@ -40,7 +40,7 @@ sanitizer, protocol, Pebble build, and PBW checks inside it. `documentation` val
 screenshots without regenerating them. `release-check` assembles the release APK and verifies its
 application ID, API 24 minimum, and absence of `DebugStatusProvider`. Generated outputs go under
 `build/`, `android/app/build/`, and `watchapp/build/`; the APK is written to
-`android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk`. Run
+`android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk`. Run
 `./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally
 updating tracked images. Use `dev bash` for an interactive container shell or prefix any focused
 repository command with `./tools/podman-test dev`; do not reproduce its toolchain on the host.

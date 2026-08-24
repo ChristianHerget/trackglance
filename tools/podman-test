@@ -4,10 +4,12 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$SCRIPT_DIR/podman/versions.env"
+source "$SCRIPT_DIR/podman/release-metadata.sh"
+load_release_metadata "$PROJECT_DIR"
 
 BUILD_ROOT="$PROJECT_DIR/build/podman"
-IMAGE_PREFIX=localhost/locuspebble
-BUILD_IMAGE="$IMAGE_PREFIX/build:0.1.9"
+IMAGE_PREFIX=localhost/trackglance
+BUILD_IMAGE="$IMAGE_PREFIX/build:$RELEASE_VERSION"
 GENERATOR_IMAGE="$IMAGE_PREFIX/emulator-generator:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
 GENERATED_EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32-generated:15917651"
 GENERATED_EMULATOR_LATEST="$IMAGE_PREFIX/android-api32-generated:latest"
@@ -16,11 +18,11 @@ GENERATED_SYSTEM_IMAGE="$IMAGE_PREFIX/sys-32-google-x64:latest"
 GENERATED_SYSTEM_IMAGE_BARE=sys-32-google-x64:latest
 EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32:$ANDROID_EMULATOR_VERSION"
 WEB_IMAGE="$IMAGE_PREFIX/android-webrtc:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
-NETWORK=locuspebble-test
-GOLDEN_VOLUME=locuspebble-android-api32-golden
-DOWNLOAD_VOLUME=locuspebble-android-downloads
-GRADLE_CACHE=locuspebble-gradle-cache
-NPM_CACHE=locuspebble-npm-cache
+NETWORK=trackglance-test
+GOLDEN_VOLUME=trackglance-android-api32-golden
+DOWNLOAD_VOLUME=trackglance-android-downloads
+GRADLE_CACHE=trackglance-gradle-cache
+NPM_CACHE=trackglance-npm-cache
 BOOTSTRAP_SCHEMA=3
 LOCUS_FIXTURE_CONFIG="$SCRIPT_DIR/locus-test-apk.properties"
 ACTIVE_POD=
@@ -216,6 +218,12 @@ build_container_args() {
     --volume "$GRADLE_CACHE:/root/.gradle" \
     --volume "$NPM_CACHE:/root/.npm" \
     --workdir /workspace
+  if [[ -n "${ANDROID_RELEASE_KEYSTORE_PATH:-}" ]]; then
+    printf '%s\n' \
+      --env ANDROID_RELEASE_KEYSTORE_PATH=/run/trackglance-release.p12 \
+      --env ANDROID_RELEASE_KEYSTORE_PASSWORD \
+      --volume "$ANDROID_RELEASE_KEYSTORE_PATH:/run/trackglance-release.p12:ro"
+  fi
 }
 
 run_build_container() {
@@ -324,7 +332,7 @@ build_emulator_image() {
     || acceptance_engine volume create "$DOWNLOAD_VOLUME" >/dev/null
   local socket
   if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
-    SOCKET_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/locuspebble-podman.XXXXXX")
+    SOCKET_DIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/trackglance-podman.XXXXXX")
     socket="$SOCKET_DIR/docker.sock"
     podman system service --time=0 "unix://$socket" >"$BUILD_ROOT/podman-service.log" 2>&1 &
     SERVICE_PID=$!
@@ -361,7 +369,7 @@ build_emulator_image() {
       echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
       echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
       emu-docker create "$emulator_zip" "$system_zip" \
-        --dest /generated --repo localhost/locuspebble \
+        --dest /generated --repo localhost/trackglance \
         --name android-api32-generated --no-metrics
     '
   local status=$?
@@ -414,7 +422,7 @@ docker_emulator_probe() {
     --tag "$GENERATOR_IMAGE" "$PROJECT_DIR"
 
   probe_id="${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
-  PROBE_DOWNLOAD_VOLUME="locuspebble-emulator-probe-downloads-$probe_id"
+  PROBE_DOWNLOAD_VOLUME="trackglance-emulator-probe-downloads-$probe_id"
   docker volume create "$PROBE_DOWNLOAD_VOLUME" >/dev/null
   docker run --rm \
     --env DOCKER_HOST=unix:///var/run/docker.sock \
@@ -433,7 +441,7 @@ docker_emulator_probe() {
       echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
       echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
       emu-docker create "$emulator_zip" "$system_zip" \
-        --dest /generated --repo localhost/locuspebble \
+        --dest /generated --repo localhost/trackglance \
         --name android-api32-generated --no-metrics
     '
   if ! docker image inspect "$GENERATED_EMULATOR_IMAGE" >/dev/null 2>&1; then
@@ -446,14 +454,14 @@ docker_emulator_probe() {
     --file "$SCRIPT_DIR/podman/Containerfile.emulator" \
     --tag "$EMULATOR_IMAGE" "$PROJECT_DIR"
 
-  PROBE_DATA_VOLUME="locuspebble-emulator-probe-data-$probe_id"
-  PROBE_RUNTIME_VOLUME="locuspebble-emulator-probe-runtime-$probe_id"
-  PROBE_CONTAINER="locuspebble-emulator-probe-$probe_id"
+  PROBE_DATA_VOLUME="trackglance-emulator-probe-data-$probe_id"
+  PROBE_RUNTIME_VOLUME="trackglance-emulator-probe-runtime-$probe_id"
+  PROBE_CONTAINER="trackglance-emulator-probe-$probe_id"
   docker volume create "$PROBE_DATA_VOLUME" >/dev/null
   docker volume create "$PROBE_RUNTIME_VOLUME" >/dev/null
   docker run --detach --name "$PROBE_CONTAINER" --device /dev/kvm \
     --volume "$PROBE_DATA_VOLUME:/data" \
-    --volume "$PROBE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$PROBE_RUNTIME_VOLUME:/run/trackglance" \
     "$EMULATOR_IMAGE" >/dev/null
 
   local deadline=$((SECONDS + 240)) booted=false value
@@ -549,12 +557,21 @@ run_static_container() {
     return
   fi
   local cache_root="$PROJECT_DIR/build/dev-container-cache"
+  local -a signing_args=()
+  if [[ -n "${ANDROID_RELEASE_KEYSTORE_PATH:-}" ]]; then
+    signing_args=(
+      --env ANDROID_RELEASE_KEYSTORE_PATH=/run/trackglance-release.p12
+      --env ANDROID_RELEASE_KEYSTORE_PASSWORD
+      --volume "$ANDROID_RELEASE_KEYSTORE_PATH:/run/trackglance-release.p12:ro"
+    )
+  fi
   mkdir -p "$cache_root/gradle" "$cache_root/npm"
   docker run --rm \
     --user "$(id -u):$(id -g)" \
     --env HOME=/tmp \
     --env GRADLE_USER_HOME=/workspace/build/dev-container-cache/gradle \
     --env npm_config_cache=/workspace/build/dev-container-cache/npm \
+    "${signing_args[@]}" \
     --volume "$PROJECT_DIR:/workspace" \
     --workdir /workspace \
     "$BUILD_IMAGE" "$@"
@@ -607,7 +624,7 @@ require_images() {
   done
   test -s "$BUILD_ROOT/images/pebble-app-x86_64-debug.apk" \
     || die "Missing Pebble App build; run ./tools/podman-test build first."
-  test -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" \
+  test -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk" \
     || die "Missing bridge APK; run ./tools/podman-test build first."
   test -s "$PROJECT_DIR/watchapp/build/watchapp.pbw" \
     || die "Missing PBW; run ./tools/podman-test build first."
@@ -655,7 +672,7 @@ golden_marker() {
   mapfile -t security < <(acceptance_security_args)
   acceptance_engine run --rm --network none "${security[@]}" \
     --volume "$GOLDEN_VOLUME:/data:ro" "$BASE_IMAGE" \
-    sh -c 'test -f /data/.locuspebble-bootstrap && cat /data/.locuspebble-bootstrap'
+    sh -c 'test -f /data/.trackglance-bootstrap && cat /data/.trackglance-bootstrap'
 }
 
 require_current_golden() {
@@ -680,7 +697,7 @@ require_current_golden() {
   core_apk_sha256=$(sha256sum "$BUILD_ROOT/images/pebble-app-x86_64-debug.apk" | cut -d' ' -f1)
   grep -qx "core_apk=$core_apk_sha256" <<<"$marker" \
     || die "Golden Android state uses a stale Pebble App build; clean and bootstrap again."
-  grep -qx "bridge=0.1.9" <<<"$marker" \
+  grep -qx "bridge=$RELEASE_VERSION" <<<"$marker" \
     || die "Golden Android state uses a stale bridge; clean and bootstrap again."
   fixture_config_sha256=$(sha256sum "$LOCUS_FIXTURE_CONFIG" | cut -d' ' -f1)
   grep -qx "locus_fixture_config=$fixture_config_sha256" <<<"$marker" \
@@ -715,7 +732,7 @@ start_android() {
   fi
   acceptance_engine run --detach "${network[@]}" "${publish[@]}" --name "$name" \
     --device /dev/kvm "${security[@]}" \
-    --volume "$data_volume:/data" --volume "$runtime_volume:/run/locuspebble" \
+    --volume "$data_volume:/data" --volume "$runtime_volume:/run/trackglance" \
     "$EMULATOR_IMAGE" >/dev/null
   ACTIVE_ANDROID_CONTAINER=$name
   register_active_container "$name"
@@ -729,7 +746,7 @@ runner_in_pod() {
   local -a network
   mapfile -t network < <(active_network_args)
   acceptance_engine run "${arguments[@]}" "${network[@]}" \
-    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
     --volume "$artifacts:/artifacts" \
     "$BUILD_IMAGE" "$@"
 }
@@ -770,23 +787,23 @@ bootstrap() {
 
   acceptance_engine volume create "$GOLDEN_VOLUME" >/dev/null
   ACTIVE_DATA_VOLUME=$GOLDEN_VOLUME
-  ACTIVE_RUNTIME_VOLUME=locuspebble-bootstrap-runtime
+  ACTIVE_RUNTIME_VOLUME=trackglance-bootstrap-runtime
   acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
-  ACTIVE_POD=locuspebble-bootstrap
+  ACTIVE_POD=trackglance-bootstrap
   if [[ "$automated" == 1 ]]; then
     create_test_pod "$ACTIVE_POD" false
   else
     create_test_pod "$ACTIVE_POD" true
   fi
-  start_android locuspebble-bootstrap-android "$GOLDEN_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
+  start_android trackglance-bootstrap-android "$GOLDEN_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
   local -a security network
   mapfile -t security < <(acceptance_security_args)
   mapfile -t network < <(active_network_args)
   if [[ "$automated" != 1 ]]; then
-    acceptance_engine run --detach "${network[@]}" --name locuspebble-bootstrap-web \
-      "${security[@]}" --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble:ro" \
+    acceptance_engine run --detach "${network[@]}" --name trackglance-bootstrap-web \
+      "${security[@]}" --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance:ro" \
       "$WEB_IMAGE" >/dev/null
-    register_active_container locuspebble-bootstrap-web
+    register_active_container trackglance-bootstrap-web
   fi
 
   local artifacts="$BUILD_ROOT/bootstrap-artifacts"
@@ -795,7 +812,7 @@ bootstrap() {
   mapfile -t runner_args < <(build_container_args)
   acceptance_engine run "${runner_args[@]}" "${network[@]}" \
     --env "ACCEPTANCE_BOOTSTRAP_AUTOMATED=$automated" \
-    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
     --volume "$locus_dir:/private:ro" \
     --volume "$artifacts:/artifacts" \
     "$BUILD_IMAGE" bash -euo pipefail -c '
@@ -806,7 +823,7 @@ bootstrap() {
       (( ${#apks[@]} > 0 ))
       adb_device_timeout 300 install-multiple -r "${apks[@]}" >/dev/null
       grant_locus_test_permissions
-      adb_device_timeout 180 install -r /workspace/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk >/dev/null
+      adb_device_timeout 180 install -r /workspace/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk >/dev/null
       adb_device shell monkey -p coredevices.coreapp 1 >/dev/null
       adb_device shell monkey -p menion.android.locus 1 >/dev/null
       if [[ "$ACCEPTANCE_BOOTSTRAP_AUTOMATED" == 1 ]]; then
@@ -816,7 +833,7 @@ bootstrap() {
         foreground_locus 30
       fi
       adb_device shell am start -W \
-        -n app.locuspebble.bridge/io.github.christianherget.locuspebble.bridge.MainActivity >/dev/null
+        -n app.trackglance.bridge/io.github.christianherget.trackglance.bridge.MainActivity >/dev/null
     '
 
   if [[ "$automated" != 1 ]]; then
@@ -829,7 +846,7 @@ bootstrap() {
   fi
 
   acceptance_engine run "${runner_args[@]}" "${network[@]}" \
-    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
     --volume "$locus_dir:/private:ro" \
     --volume "$GOLDEN_VOLUME:/golden" \
     "$BUILD_IMAGE" bash -euo pipefail -c "
@@ -837,16 +854,16 @@ bootstrap() {
       wait_status locus_available true 45
       wait_status recording_state STOPPED 15
       wait_nonempty_status locus_profiles 30 >/dev/null
-      adb_device uninstall app.locuspebble.bridge >/dev/null 2>&1 || true
+      adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
       fingerprint=\$(python3 /workspace/tools/podman/validate-locus-apks.py --fingerprint-only /private)
       core_apk=\$(sha256sum /workspace/build/podman/images/pebble-app-x86_64-debug.apk | cut -d' ' -f1)
       emulator_config=\$(sha256sum /workspace/tools/podman/android-emulator-entrypoint.sh | cut -d' ' -f1)
       fixture_config=\$(sha256sum /workspace/tools/locus-test-apk.properties | cut -d' ' -f1)
-      printf 'bootstrap_schema=%s\\napi=32\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=0.1.9\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
+      printf 'bootstrap_schema=%s\\napi=32\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=$RELEASE_VERSION\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
         '$BOOTSTRAP_SCHEMA' '$ANDROID_EMULATOR_VERSION' '$ANDROID_SYSTEM_IMAGE_SHA256' \\
         \"\$emulator_config\" '$CORE_APP_COMMIT' \"\$core_apk\" \\
         \"\$fixture_config\" \"\$fingerprint\" \\
-        > /golden/.locuspebble-bootstrap
+        > /golden/.trackglance-bootstrap
       adb_device emu kill >/dev/null 2>&1 || true
     "
   stop_active_pod
@@ -880,8 +897,8 @@ static_tests() {
   ' 2>&1 | tee "$RUN_ARTIFACTS/static.log"
   local status=${PIPESTATUS[0]}
   set -e
-  [[ ! -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" ]] \
-    || cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" "$RUN_ARTIFACTS/"
+  [[ ! -s "$PROJECT_DIR/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk" ]] \
+    || cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk" "$RUN_ARTIFACTS/"
   [[ ! -s "$PROJECT_DIR/watchapp/build/watchapp.pbw" ]] \
     || cp "$PROJECT_DIR/watchapp/build/watchapp.pbw" "$RUN_ARTIFACTS/"
   [[ ! -d "$PROJECT_DIR/docs/sphinx/_build/html" ]] \
@@ -904,15 +921,29 @@ release_check() {
   run_static_container bash -euo pipefail -c '
     mkdir -p "$HOME"
     ./gradlew :android:app:assembleRelease
-    release_apk=android/app/build/outputs/apk/release/locuspebble-bridge-release-unsigned.apk
+    if [[ -n "${ANDROID_RELEASE_KEYSTORE_PATH:-}" ]]; then
+      release_apk=android/app/build/outputs/apk/release/trackglance-bridge-release.apk
+    else
+      release_apk=android/app/build/outputs/apk/release/trackglance-bridge-release-unsigned.apk
+    fi
     test -s "$release_apk"
     badging=$(aapt2 dump badging "$release_apk")
-    grep -Fq "package: name='\''app.locuspebble.bridge'\''" <<<"$badging"
+    grep -Fq "package: name='\''app.trackglance.bridge'\''" <<<"$badging"
+    grep -Fq "versionCode='\''13'\''" <<<"$badging"
+    grep -Fq "versionName='\''0.2.2'\''" <<<"$badging"
     grep -Fq "minSdkVersion:'\''24'\''" <<<"$badging"
     manifest=$(aapt2 dump xmltree --file AndroidManifest.xml "$release_apk")
     if grep -Fq DebugStatusProvider <<<"$manifest"; then
       echo "DebugStatusProvider leaked into the release APK." >&2
       exit 1
+    fi
+    if [[ -n "${ANDROID_RELEASE_KEYSTORE_PATH:-}" ]]; then
+      expected=$(tr -d "[:space:]" < trackglance-release-certificate.sha256)
+      actual=$(apksigner verify --verbose --print-certs "$release_apk" |
+        sed -n "s/^Signer #1 certificate SHA-256 digest: //p" |
+        tr -d ":[:space:]" | tr "[:lower:]" "[:upper:]")
+      test -n "$actual"
+      test "$actual" = "$expected"
     fi
   '
 }
@@ -930,11 +961,11 @@ run_android_tests() {
   require_current_golden "$locus_dir"
   ensure_cache_volumes
   new_run android
-  ACTIVE_DATA_VOLUME="locuspebble-${RUN_ID}-android"
-  ACTIVE_RUNTIME_VOLUME="locuspebble-${RUN_ID}-runtime"
+  ACTIVE_DATA_VOLUME="trackglance-${RUN_ID}-android"
+  ACTIVE_RUNTIME_VOLUME="trackglance-${RUN_ID}-runtime"
   acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
   clone_volume "$GOLDEN_VOLUME" "$ACTIVE_DATA_VOLUME"
-  ACTIVE_POD="locuspebble-${RUN_ID}"
+  ACTIVE_POD="trackglance-${RUN_ID}"
   create_test_pod "$ACTIVE_POD"
   start_android "${ACTIVE_POD}-android" "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
   set +e
@@ -944,14 +975,14 @@ run_android_tests() {
       set +e
       adb_device_timeout 10 exec-out screencap -p > /artifacts/android-instrumentation.png
       adb_device_timeout 15 logcat -d > /artifacts/android-logcat.txt
-      cp /workspace/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk /artifacts/
+      cp /workspace/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk /artifacts/
       cp /workspace/watchapp/build/watchapp.pbw /artifacts/
       cp -a /workspace/android/app/build/outputs/androidTest-results /artifacts/
       true
     }
     trap capture_artifacts EXIT
     wait_for_android 180
-    adb_device uninstall app.locuspebble.bridge >/dev/null 2>&1 || true
+    adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
     grant_locus_test_permissions
     foreground_locus
     # Refresh the boot-time console fix after Locus is active. The emulator retains it until the
@@ -975,13 +1006,13 @@ run_android_tests() {
 
 run_e2e_platform() {
   local platform=$1 artifacts=$2
-  ACTIVE_DATA_VOLUME="locuspebble-${RUN_ID}-${platform}-android"
-  ACTIVE_WATCH_VOLUME="locuspebble-${RUN_ID}-${platform}-watch"
-  ACTIVE_RUNTIME_VOLUME="locuspebble-${RUN_ID}-${platform}-runtime"
+  ACTIVE_DATA_VOLUME="trackglance-${RUN_ID}-${platform}-android"
+  ACTIVE_WATCH_VOLUME="trackglance-${RUN_ID}-${platform}-watch"
+  ACTIVE_RUNTIME_VOLUME="trackglance-${RUN_ID}-${platform}-runtime"
   clone_volume "$GOLDEN_VOLUME" "$ACTIVE_DATA_VOLUME"
   acceptance_engine volume create "$ACTIVE_WATCH_VOLUME" >/dev/null
   acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
-  ACTIVE_POD="locuspebble-${RUN_ID}-${platform}"
+  ACTIVE_POD="trackglance-${RUN_ID}-${platform}"
   create_test_pod "$ACTIVE_POD"
   start_android "${ACTIVE_POD}-android" "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
   local -a security network
@@ -992,7 +1023,7 @@ run_e2e_platform() {
     --env "PEBBLE_PLATFORM=$platform" --env "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
     --volume "$PROJECT_DIR:/workspace" \
     --volume "$ACTIVE_WATCH_VOLUME:/pebble-state" \
-    --volume "$ACTIVE_RUNTIME_VOLUME:/run/locuspebble" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
     --volume "$artifacts:/artifacts" \
     --entrypoint /workspace/tools/podman/watch-qemu-entrypoint.sh \
     "$BUILD_IMAGE" >/dev/null
@@ -1021,7 +1052,7 @@ e2e_tests() {
   require_current_golden "$locus_dir"
   ensure_cache_volumes
   new_run e2e
-  cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk" "$RUN_ARTIFACTS/"
+  cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk" "$RUN_ARTIFACTS/"
   cp "$PROJECT_DIR/watchapp/build/watchapp.pbw" "$RUN_ARTIFACTS/"
   run_e2e_platform emery "$RUN_ARTIFACTS"
   run_e2e_platform gabbro "$RUN_ARTIFACTS"
@@ -1039,18 +1070,18 @@ clean() {
   local pod container volume image
   if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
     while read -r pod; do
-      [[ "$pod" == locuspebble-* ]] && podman pod rm --force "$pod" >/dev/null
-    done < <(podman pod ps --format '{{.Name}}' --filter 'name=^locuspebble-')
+      [[ "$pod" == trackglance-* ]] && podman pod rm --force "$pod" >/dev/null
+    done < <(podman pod ps --format '{{.Name}}' --filter 'name=^trackglance-')
   else
     while read -r container; do
-      [[ "$container" == locuspebble-* ]] \
+      [[ "$container" == trackglance-* ]] \
         && docker container rm --force "$container" >/dev/null
-    done < <(docker container ls -a --format '{{.Names}}' --filter name=locuspebble-)
+    done < <(docker container ls -a --format '{{.Names}}' --filter name=trackglance-)
   fi
   while read -r volume; do
-    [[ "$volume" == locuspebble-* ]] \
+    [[ "$volume" == trackglance-* ]] \
       && acceptance_engine volume rm --force "$volume" >/dev/null
-  done < <(acceptance_engine volume ls --format '{{.Name}}' --filter name=locuspebble-)
+  done < <(acceptance_engine volume ls --format '{{.Name}}' --filter name=trackglance-)
   if [[ -d "$BUILD_ROOT" ]]; then
     [[ "$BUILD_ROOT" == "$PROJECT_DIR/build/podman" ]] || die "Refusing unexpected clean path."
     if [[ "$ACCEPTANCE_ENGINE" == docker ]] && acceptance_image_exists "$GENERATOR_IMAGE"; then

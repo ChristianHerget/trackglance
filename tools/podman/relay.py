@@ -322,7 +322,7 @@ def main() -> None:
     parser.add_argument("--listen-port", type=int, default=12344)
     parser.add_argument("--qemu-host", default="127.0.0.1")
     parser.add_argument("--qemu-port", type=int, default=12345)
-    parser.add_argument("--control-socket", default="/run/locuspebble/relay.sock")
+    parser.add_argument("--control-socket", default="/run/trackglance/relay.sock")
     parser.add_argument("--transcript")
     parser.add_argument("--watch-platform", choices=sorted(WATCH_HARDWARE_BY_PLATFORM))
     asyncio.run(run(parser.parse_args()))

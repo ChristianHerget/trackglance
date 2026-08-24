@@ -12,7 +12,7 @@ sdk_dir="$pebble_data_root/SDKs/${PEBBLE_SDK_VERSION:-4.33.1}"
 board_dir="$sdk_dir/sdk-core/pebble/$platform"
 state_dir="/pebble-state/$platform"
 flash="$state_dir/qemu_spi_flash.bin"
-mkdir -p "$state_dir" /run/locuspebble /artifacts
+mkdir -p "$state_dir" /run/trackglance /artifacts
 if [[ ! -s "$flash" ]]; then
   bzip2 -dc "$board_dir/qemu/qemu_spi_flash.bin.bz2" > "$flash.partial"
   test "$(stat -c %s "$flash.partial")" -eq 33554432
@@ -50,5 +50,5 @@ done
 exec python3 /workspace/tools/podman/relay.py \
   --qemu-port 12345 \
   --watch-platform "$platform" \
-  --control-socket /run/locuspebble/relay.sock \
+  --control-socket /run/trackglance/relay.sock \
   --transcript "/artifacts/relay-${platform}.jsonl"

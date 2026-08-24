@@ -1,15 +1,20 @@
-# Locus Pebble Bridge
+# TrackGlance
+
+**For Locus Map and Pebble smartwatches.**
 
 An Android companion and native Pebble watchapp that display live Locus Map 4 track-recording
-statistics and control recording from a Pebble Time 2 or Pebble Round 2.
+statistics and control an active recording from a Pebble Time 2 or Pebble Round 2.
 
 The bridge supports Android 7.0 (API 24) or newer. The containerized acceptance environment uses
 Android 12L (API 32), independently of the bridge's installation minimum.
 
 Fresh dashboards show elapsed time, distance, current speed, average speed, altitude, and current
-heart rate. Select opens state-aware controls for start, pause/resume, stop-and-save, profile
-selection, and adding a waypoint. Pebble Time 2 can optionally forward its raw heart rate to Locus
-while recording; navigation and map previews remain out of scope.
+heart rate. Units and compact precision follow the granular preferences read from Locus Map; the
+bridge performs conversion and the watch only renders the selected value and suffix. Recording is
+started in Locus Map. During an active recording, Select opens state-aware controls for
+pause/resume, stop-and-save, and adding a waypoint. Up and Down wrap through the one-to-four pages
+created for the active Locus activity. Pebble Time 2 can optionally forward its raw heart rate to
+Locus while recording; navigation and map previews remain out of scope.
 
 The Android bridge explicitly selects the local `coredevices.coreapp` package and verifies that
 incoming Binder calls resolve to that installed package and UID. Android's package manager enforces
@@ -23,14 +28,14 @@ coordinated new snapshot and profile-transfer ordering baseline.
 
 - `android/app` — Kotlin/Compose Android bridge using Locus API and PebbleKit Android 2.
 - `watchapp` — native C Pebble Time 2 (`emery`) and Round 2 (`gabbro`) application.
-- `protocol` — stable AppMessage v3 wire contract.
+- `protocol` — stable AppMessage v4 wire contract.
 - `docs/development.md` — Chromebook, ARCVM, Core, and QEMU setup.
 - `docs/design-decisions.md` — log of architectural choices regarding Locus API integration and background execution.
 - `docs/end-to-end-testing.md` — complete installation, acceptance-test, troubleshooting, and
   containerization guide.
 - `docs/podman-testing.md` — rootless API 32 Podman build, provisioning, and automated-test workflow.
 
-The Android application ID is `app.locuspebble.bridge`; the PBW companion metadata points to that
+The Android application ID is `app.trackglance.bridge`; the PBW companion metadata points to that
 package and this repository as the project/download page. A fork that changes the ID must update
 both values. There is no published GitHub release yet, so the metadata does not claim a working
 latest-release artifact URL.
@@ -75,7 +80,18 @@ as a fallback while hosted runtime and reliability are evaluated.
 
 Artifacts:
 
-- `android/app/build/outputs/apk/debug/locuspebble-bridge-debug.apk`
+- `android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk`
+- `android/app/build/outputs/apk/release/trackglance-bridge-release-unsigned.apk`
 - `watchapp/build/watchapp.pbw`
+- `docs/sphinx/_build/html/index.html`
 
 Licensed under Apache-2.0.
+
+## Legal and trademarks
+
+TrackGlance is an independent, unofficial project. It is not affiliated with, endorsed by,
+sponsored by, or associated with Core Devices LLC, Pebble Technology Corp., or Asamm Software,
+s.r.o. Pebble is a trademark of Pebble Technology Corp. Locus Map is a brand of Asamm Software,
+s.r.o. Those names are used solely to identify compatibility: TrackGlance connects supported
+Pebble smartwatches with Locus Map. No ownership of those names or marks, or endorsement by their
+owners, is claimed.
