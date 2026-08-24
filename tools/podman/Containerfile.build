@@ -14,6 +14,8 @@ ARG PEBBLE_TOOL_VERSION
 ARG PEBBLE_SDK_VERSION
 ARG UV_VERSION
 ARG UV_X86_64_SHA256
+ARG ACTIONLINT_VERSION
+ARG ACTIONLINT_X86_64_SHA256
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ANDROID_SDK_ROOT=/opt/android-sdk \
@@ -69,6 +71,14 @@ RUN curl --fail --location --retry 4 \
     uv tool install "pebble-tool==${PEBBLE_TOOL_VERSION}" --python 3.13 && \
     pebble sdk install "${PEBBLE_SDK_VERSION}" && \
     pebble sdk activate "${PEBBLE_SDK_VERSION}"
+
+RUN curl --fail --location --retry 4 \
+      "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+      --output /tmp/actionlint.tar.gz && \
+    echo "${ACTIONLINT_X86_64_SHA256}  /tmp/actionlint.tar.gz" | sha256sum --check --strict && \
+    tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint && \
+    install -m 0755 /tmp/actionlint /usr/local/bin/actionlint && \
+    rm -f /tmp/actionlint.tar.gz /tmp/actionlint
 
 # Docker runs this image as the invoking host UID so generated files stay
 # user-owned. Pebble Tool also writes small settings/telemetry state here. The

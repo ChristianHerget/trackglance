@@ -74,9 +74,10 @@ verification data with the repository wrapper, for example:
 ```
 
 `./tools/podman-test static` runs the public development-container suite without KVM or Locus
-inputs. Public CI runs that entry point and documentation separately. Manual CI also has an
-ephemeral GitHub-hosted Docker/KVM acceptance job; the protected self-hosted job remains available
-as a fallback while hosted runtime and reliability are evaluated.
+inputs. For fast local end-to-end feedback, `acceptance-suite --locus-apks /absolute/private/path`
+reuses the validated API 32 golden state and runs Android, Emery, and Gabbro once. Every pull request
+must also pass the ephemeral GitHub-hosted Docker/KVM suite from a fresh bootstrap; manual dispatch
+can request a second watch pass as a soak test.
 
 Artifacts:
 

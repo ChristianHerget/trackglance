@@ -35,10 +35,8 @@ ACTIVE_RUNTIME_VOLUME=
 SERVICE_PID=
 SOCKET_DIR=
 LOCUS_INPUT_DIR=
-PROBE_CONTAINER=
-PROBE_DATA_VOLUME=
-PROBE_RUNTIME_VOLUME=
-PROBE_DOWNLOAD_VOLUME=
+ACCEPTANCE_DIAGNOSTICS_ROOT="$PROJECT_DIR/build/acceptance-diagnostics"
+SUITE_CLEANUP_ON_EXIT=false
 PULL_POLICY=missing
 STATIC_ENGINE=
 ACCEPTANCE_ENGINE=
@@ -50,7 +48,6 @@ Usage: ./tools/podman-test COMMAND [OPTIONS]
 Commands:
   doctor static                  Validate only prerequisites for static checks
   doctor acceptance              Validate the complete rootless x86_64/KVM host
-  emulator-probe                 Build and cold-boot only the pinned API 32 emulator with Docker/KVM
   build-static [--refresh]       Build only the version-pinned development image
   dev COMMAND [ARGUMENTS...]     Run an arbitrary command in the development container
   build [--refresh]              Build pinned images; refresh explicitly pulls pinned inputs
@@ -61,6 +58,7 @@ Commands:
   release-check                  Assemble release and reject debug-only provider leakage
   android --locus-apks DIR       Run every instrumentation test, including Locus
   acceptance --locus-apks DIR    Run Emery acceptance and Gabbro smoke automation
+  acceptance-suite [OPTIONS]     Run Android plus Emery/Gabbro acceptance from warm or fresh state
   all --locus-apks DIR           Run static, android, and e2e in order
   clean                          Remove this workflow's generated state and images
 
@@ -75,7 +73,6 @@ die() {
 
 cleanup_active() {
   set +e
-  cleanup_emulator_probe
   if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
     local container index
     for ((index=${#ACTIVE_CONTAINERS[@]} - 1; index >= 0; index--)); do
@@ -107,20 +104,14 @@ cleanup_active() {
   ACTIVE_RUNTIME_VOLUME=
   SERVICE_PID=
   SOCKET_DIR=
+  if [[ "$SUITE_CLEANUP_ON_EXIT" == true ]]; then
+    stage_acceptance_diagnostics
+    SUITE_CLEANUP_ON_EXIT=false
+    clean
+  fi
   set -e
 }
 trap cleanup_active EXIT INT TERM HUP
-
-cleanup_emulator_probe() {
-  [[ -z "$PROBE_CONTAINER" ]] || docker rm --force "$PROBE_CONTAINER" >/dev/null 2>&1
-  for volume in "$PROBE_DATA_VOLUME" "$PROBE_RUNTIME_VOLUME" "$PROBE_DOWNLOAD_VOLUME"; do
-    [[ -z "$volume" ]] || docker volume rm --force "$volume" >/dev/null 2>&1
-  done
-  PROBE_CONTAINER=
-  PROBE_DATA_VOLUME=
-  PROBE_RUNTIME_VOLUME=
-  PROBE_DOWNLOAD_VOLUME=
-}
 
 select_acceptance_engine() {
   [[ -z "$ACCEPTANCE_ENGINE" ]] || return 0
@@ -395,106 +386,6 @@ build_emulator_image() {
     --tag "$EMULATOR_IMAGE" "$PROJECT_DIR"
 }
 
-docker_emulator_probe() {
-  [[ "${ACCEPTANCE_CONTAINER_ENGINE:-docker}" == docker ]] \
-    || die "emulator-probe currently requires ACCEPTANCE_CONTAINER_ENGINE=docker."
-  [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] \
-    || die "The emulator probe requires x86_64 Linux."
-  command -v docker >/dev/null || die "Docker is not installed."
-  docker info >/dev/null || die "The current user cannot use the Docker daemon."
-  [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] \
-    || die "The current user cannot access /dev/kvm."
-
-  local cpus memory_kib free_kib probe_id status=0
-  cpus=$(getconf _NPROCESSORS_ONLN)
-  (( cpus >= 4 )) || die "At least four logical CPUs are required (found $cpus)."
-  memory_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
-  (( memory_kib >= 8 * 1024 * 1024 )) || die "At least 8 GiB RAM is required."
-  free_kib=$(df -Pk "$PROJECT_DIR" | awk 'NR==2 {print $4}')
-  (( free_kib >= 20 * 1024 * 1024 )) \
-    || die "At least 20 GiB free disk is required for the isolated emulator probe."
-
-  mkdir -p "$BUILD_ROOT/generated"
-  docker build --pull=false \
-    --build-arg "BASE_IMAGE=$BASE_IMAGE" \
-    --build-arg "ANDROID_EMULATOR_SCRIPTS_COMMIT=$ANDROID_EMULATOR_SCRIPTS_COMMIT" \
-    --file "$SCRIPT_DIR/podman/Containerfile.generator" \
-    --tag "$GENERATOR_IMAGE" "$PROJECT_DIR"
-
-  probe_id="${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
-  PROBE_DOWNLOAD_VOLUME="trackglance-emulator-probe-downloads-$probe_id"
-  docker volume create "$PROBE_DOWNLOAD_VOLUME" >/dev/null
-  docker run --rm \
-    --env DOCKER_HOST=unix:///var/run/docker.sock \
-    --env ANDROID_EMULATOR_URL="$ANDROID_EMULATOR_URL" \
-    --env ANDROID_EMULATOR_SHA256="$ANDROID_EMULATOR_SHA256" \
-    --env ANDROID_SYSTEM_IMAGE_URL="$ANDROID_SYSTEM_IMAGE_URL" \
-    --env ANDROID_SYSTEM_IMAGE_SHA256="$ANDROID_SYSTEM_IMAGE_SHA256" \
-    --volume /var/run/docker.sock:/var/run/docker.sock \
-    --volume "$PROBE_DOWNLOAD_VOLUME:/downloads" \
-    --volume "$BUILD_ROOT/generated:/generated" \
-    "$GENERATOR_IMAGE" bash -euo pipefail -c '
-      emulator_zip=/downloads/emulator-linux_x64-15917651.zip
-      system_zip=/downloads/x86_64-32_r08.zip
-      curl --fail --location --retry 4 "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
-      curl --fail --location --retry 4 "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
-      echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
-      echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
-      emu-docker create "$emulator_zip" "$system_zip" \
-        --dest /generated --repo localhost/trackglance \
-        --name android-api32-generated --no-metrics
-    '
-  if ! docker image inspect "$GENERATED_EMULATOR_IMAGE" >/dev/null 2>&1; then
-    docker image inspect "$GENERATED_EMULATOR_LATEST" >/dev/null 2>&1 \
-      || die "Google's generator did not produce the expected Docker image."
-    docker tag "$GENERATED_EMULATOR_LATEST" "$GENERATED_EMULATOR_IMAGE"
-  fi
-  docker build --pull=false \
-    --build-arg "GENERATED_IMAGE=$GENERATED_EMULATOR_IMAGE" \
-    --file "$SCRIPT_DIR/podman/Containerfile.emulator" \
-    --tag "$EMULATOR_IMAGE" "$PROJECT_DIR"
-
-  PROBE_DATA_VOLUME="trackglance-emulator-probe-data-$probe_id"
-  PROBE_RUNTIME_VOLUME="trackglance-emulator-probe-runtime-$probe_id"
-  PROBE_CONTAINER="trackglance-emulator-probe-$probe_id"
-  docker volume create "$PROBE_DATA_VOLUME" >/dev/null
-  docker volume create "$PROBE_RUNTIME_VOLUME" >/dev/null
-  docker run --detach --name "$PROBE_CONTAINER" --device /dev/kvm \
-    --volume "$PROBE_DATA_VOLUME:/data" \
-    --volume "$PROBE_RUNTIME_VOLUME:/run/trackglance" \
-    "$EMULATOR_IMAGE" >/dev/null
-
-  local deadline=$((SECONDS + 240)) booted=false value
-  while (( SECONDS < deadline )); do
-    if ! docker inspect --format '{{.State.Running}}' "$PROBE_CONTAINER" 2>/dev/null \
-      | grep -qx true; then
-      echo "The Android emulator container exited before boot completed." >&2
-      status=1
-      break
-    fi
-    value=$(docker exec "$PROBE_CONTAINER" /android/sdk/platform-tools/adb \
-      -s emulator-5556 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
-    if [[ "$value" == 1 ]]; then
-      booted=true
-      break
-    fi
-    sleep 2
-  done
-  if [[ "$booted" != true ]]; then
-    echo "Android API 32 did not reach sys.boot_completed=1 within 240 seconds." >&2
-    status=1
-  else
-    docker exec "$PROBE_CONTAINER" /android/sdk/emulator/emulator -accel-check
-    echo "Pinned Android API 32 cold boot reached sys.boot_completed=1 with Docker and KVM."
-  fi
-  if (( status != 0 )); then
-    docker logs "$PROBE_CONTAINER" || true
-    docker inspect "$PROBE_CONTAINER" || true
-  fi
-  cleanup_emulator_probe
-  return "$status"
-}
-
 build_static_image() {
   [[ -n "$STATIC_ENGINE" ]] || select_static_engine
   local -a pull=()
@@ -518,6 +409,8 @@ build_static_image() {
     --build-arg "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
     --build-arg "UV_VERSION=$UV_VERSION" \
     --build-arg "UV_X86_64_SHA256=$UV_X86_64_SHA256" \
+    --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" \
+    --build-arg "ACTIONLINT_X86_64_SHA256=$ACTIONLINT_X86_64_SHA256" \
     --file "$SCRIPT_DIR/podman/Containerfile.build" \
     --tag "$BUILD_IMAGE" "$PROJECT_DIR"
 }
@@ -888,6 +781,7 @@ static_tests() {
   run_static_container bash -euo pipefail -c '
     mkdir -p "$HOME"
     bash -n tools/podman-test tools/podman/*.sh docs/*.sh
+    actionlint .github/workflows/*.yml
     python3 -m unittest discover -s tools/podman -p "test_*.py"
     ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
       :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
@@ -1065,6 +959,122 @@ all_tests() {
   e2e_tests "$locus_dir"
 }
 
+stage_acceptance_diagnostics() {
+  local destination=$ACCEPTANCE_DIAGNOSTICS_ROOT file relative
+  mkdir -p "$destination"
+  [[ "$destination" == "$PROJECT_DIR/build/acceptance-diagnostics" ]] \
+    || die "Refusing unexpected diagnostics path."
+  find "$destination" -mindepth 1 -delete
+  [[ -d "$BUILD_ROOT" ]] || return 0
+  while IFS= read -r -d '' file; do
+    relative=${file#"$BUILD_ROOT"/}
+    mkdir -p "$destination/$(dirname "$relative")"
+    cp "$file" "$destination/$relative"
+  done < <(
+    find "$BUILD_ROOT" -path "$BUILD_ROOT/generated" -prune -o -type f \
+      \( -name '*.log' -o -name '*.txt' -o -name '*.jsonl' -o -name '*.xml' \
+         -o -name '*.png' -o -name '*.ppm' \) -print0
+  )
+  if find "$destination" -type f \
+    \( -name '*.apk' -o -name '*.pbw' -o -name '*.p12' -o -name '*.keystore' \) \
+    -print -quit | grep -q .; then
+    die "A forbidden binary was staged as acceptance diagnostics."
+  fi
+}
+
+report_acceptance_resources() {
+  [[ "${ACCEPTANCE_REPORT_RESOURCES:-0}" == 1 ]] || return 0
+  df -h "$PROJECT_DIR"
+  acceptance_engine system df || true
+  du -sh "$BUILD_ROOT" "$PROJECT_DIR/android/app/build" \
+    "$PROJECT_DIR/watchapp/build" "$LOCUS_INPUT_DIR" 2>/dev/null || true
+}
+
+assert_no_active_acceptance_runtime() {
+  local active
+  if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
+    active=$(docker container ls -a --format '{{.Names}}' --filter name=trackglance-)
+  else
+    active=$(podman pod ps --format '{{.Name}}' --filter 'name=^trackglance-')
+  fi
+  [[ -z "$active" ]] || {
+    echo "Acceptance left active runtime resources:" >&2
+    echo "$active" >&2
+    return 1
+  }
+}
+
+acceptance_suite() {
+  local fresh=false cleanup=false watch_passes=1 status cleanup_status pass
+  local -a locus_options=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --fresh)
+        fresh=true
+        shift
+        ;;
+      --cleanup)
+        cleanup=true
+        shift
+        ;;
+      --watch-passes)
+        [[ $# -ge 2 ]] || die "--watch-passes requires 1 or 2"
+        watch_passes=$2
+        shift 2
+        ;;
+      --locus-apks)
+        [[ $# -ge 2 ]] || die "--locus-apks requires a directory"
+        locus_options=(--locus-apks "$2")
+        shift 2
+        ;;
+      *) die "Unknown acceptance-suite option: $1" ;;
+    esac
+  done
+  [[ "$watch_passes" == 1 || "$watch_passes" == 2 ]] \
+    || die "--watch-passes must be 1 or 2"
+  parse_locus_apk_options "${locus_options[@]}"
+  local locus_dir=$LOCUS_INPUT_DIR
+  export LOCUS_APKS_DIR=$locus_dir
+  [[ "$cleanup" == true ]] && SUITE_CLEANUP_ON_EXIT=true
+
+  set +e
+  (
+    set -e
+    if [[ "$fresh" == true ]]; then
+      clean
+      build_acceptance_all
+      ACCEPTANCE_BOOTSTRAP_AUTOMATED=1 bootstrap --locus-apks "$locus_dir"
+    else
+      doctor_acceptance
+    fi
+    report_acceptance_resources
+    run_android_tests "$locus_dir"
+    assert_no_active_acceptance_runtime
+    report_acceptance_resources
+    for ((pass=1; pass <= watch_passes; pass++)); do
+      echo "Running Emery and Gabbro acceptance pass $pass of $watch_passes."
+      e2e_tests "$locus_dir"
+      assert_no_active_acceptance_runtime
+      report_acceptance_resources
+    done
+  )
+  status=$?
+  set -e
+
+  if (( status != 0 )); then
+    stage_acceptance_diagnostics
+  fi
+  if [[ "$cleanup" == true ]]; then
+    SUITE_CLEANUP_ON_EXIT=false
+    set +e
+    clean
+    cleanup_status=$?
+    set -e
+    (( status != 0 )) || status=$cleanup_status
+  fi
+  return "$status"
+}
+
 clean() {
   select_acceptance_engine
   local pod container volume image
@@ -1110,7 +1120,6 @@ main() {
   shift
   case "$command" in
     doctor) [[ $# -eq 1 ]] || die "doctor requires static or acceptance"; doctor "$1" ;;
-    emulator-probe) [[ $# -eq 0 ]] || die "emulator-probe takes no options"; docker_emulator_probe ;;
     build)
       if [[ $# -eq 1 && "$1" == --refresh ]]; then
         PULL_POLICY=always
@@ -1143,6 +1152,7 @@ main() {
     release-check) [[ $# -eq 0 ]] || die "release-check takes no options"; release_check ;;
     android) parse_locus_apk_options "$@"; run_android_tests "$LOCUS_INPUT_DIR" ;;
     acceptance|e2e) parse_locus_apk_options "$@"; e2e_tests "$LOCUS_INPUT_DIR" ;;
+    acceptance-suite) acceptance_suite "$@" ;;
     all) parse_locus_apk_options "$@"; all_tests "$LOCUS_INPUT_DIR" ;;
     clean) [[ $# -eq 0 ]] || die "clean takes no options"; clean ;;
     -h|--help|help) usage ;;

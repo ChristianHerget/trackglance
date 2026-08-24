@@ -18,6 +18,10 @@ EMULATOR_CONSOLE = ROOT / "tools" / "podman" / "emulator-console.py"
 E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+BUILD_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.build"
+VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
@@ -32,6 +36,64 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertLess(certificate, checksums)
         self.assertLess(fingerprint, checksums)
         self.assertLess(checksums, private_key_removal)
+
+    def test_pages_actions_use_the_node24_compatible_major_versions(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0",
+            source,
+        )
+        self.assertIn(
+            "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0",
+            source,
+        )
+        self.assertIn(
+            "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0",
+            source,
+        )
+
+
+class ContinuousIntegrationWorkflowTest(unittest.TestCase):
+    def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
+        source = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("github.event_name == 'pull_request'", source)
+        self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
+        self.assertIn("tools/podman-test acceptance-suite", source)
+        self.assertIn("--fresh --cleanup --watch-passes", source)
+
+    def test_obsolete_probe_and_self_hosted_jobs_are_absent(self):
+        source = CI_WORKFLOW.read_text(encoding="utf-8")
+        for obsolete in (
+            "run_acceptance_probe", "emulator-probe", "run_acceptance:",
+            "self-hosted", "Protected KVM acceptance",
+        ):
+            self.assertNotIn(obsolete, source)
+
+    def test_failure_artifact_is_short_lived_and_binary_free_by_construction(self):
+        source = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
+            source,
+        )
+        self.assertIn("path: build/acceptance-diagnostics", source)
+        self.assertIn("retention-days: 7", source)
+        self.assertNotIn("path: build/podman", source)
+
+    def test_dependabot_tracks_github_actions_weekly(self):
+        source = DEPENDABOT.read_text(encoding="utf-8")
+        self.assertIn("package-ecosystem: github-actions", source)
+        self.assertIn("interval: weekly", source)
+
+    def test_actionlint_is_checksum_pinned_in_the_build_container(self):
+        containerfile = BUILD_CONTAINERFILE.read_text(encoding="utf-8")
+        versions = VERSIONS.read_text(encoding="utf-8")
+        self.assertIn("actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz", containerfile)
+        self.assertIn("ACTIONLINT_VERSION=1.7.12", versions)
+        self.assertIn(
+            "ACTIONLINT_X86_64_SHA256="
+            "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+            versions,
+        )
 
 
 class DeviceReadinessTest(unittest.TestCase):
@@ -247,16 +309,6 @@ class StaticPreflightTest(unittest.TestCase):
         build = source.split("build_acceptance_all() {", 1)[1].split("\n}", 1)[0]
         self.assertIn("build_project_inputs false", build)
 
-    def test_hosted_probe_uses_the_acceptance_emulator_and_cleans_ephemeral_state(self):
-        source = PODMAN_TEST.read_text(encoding="utf-8")
-        probe = source.split("docker_emulator_probe() {", 1)[1].split("\n}", 1)[0]
-        self.assertIn('"$EMULATOR_IMAGE"', probe)
-        self.assertIn("--device /dev/kvm", probe)
-        self.assertIn("sys.boot_completed", probe)
-        self.assertIn("cleanup_emulator_probe", probe)
-        self.assertNotIn("LOCUS_INPUT_DIR", probe)
-        self.assertNotIn("GOLDEN_VOLUME", probe)
-
     def test_emulator_handles_the_fallback_discovery_path(self):
         entrypoint = EMULATOR_ENTRYPOINT.read_text(encoding="utf-8")
         self.assertIn("/root/.android/avd/running", entrypoint)
@@ -405,6 +457,72 @@ class StaticPreflightTest(unittest.TestCase):
             static_body.index("npm ci --prefix watchapp"),
             static_body.index("npm test --prefix watchapp"),
         )
+        self.assertIn("actionlint .github/workflows/*.yml", static_body)
+
+    def test_acceptance_suite_shares_warm_and_fresh_test_stages(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        suite = source.split("acceptance_suite() {", 1)[1].split("\nclean() {", 1)[0]
+        self.assertIn("build_acceptance_all", suite)
+        self.assertIn("ACCEPTANCE_BOOTSTRAP_AUTOMATED=1 bootstrap", suite)
+        self.assertIn('run_android_tests "$locus_dir"', suite)
+        self.assertIn('e2e_tests "$locus_dir"', suite)
+        self.assertIn("export LOCUS_APKS_DIR=$locus_dir", suite)
+        self.assertIn("for ((pass=1; pass <= watch_passes; pass++))", suite)
+        self.assertNotIn("run_android_tests \"$locus_dir\" || run_android_tests", suite)
+        self.assertNotIn("e2e_tests \"$locus_dir\" || e2e_tests", suite)
+
+    def test_acceptance_suite_rejects_more_than_two_watch_passes(self):
+        result = subprocess.run(
+            [
+                "bash", str(PODMAN_TEST), "acceptance-suite",
+                "--watch-passes", "3", "--locus-apks", "/tmp",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--watch-passes must be 1 or 2", result.stderr)
+
+    def test_sanitized_diagnostics_allowlist_excludes_installable_binaries(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        diagnostics = source.split("stage_acceptance_diagnostics() {", 1)[1].split(
+            "\nreport_acceptance_resources() {", 1
+        )[0]
+        for allowed in ("*.log", "*.txt", "*.jsonl", "*.xml", "*.png", "*.ppm"):
+            self.assertIn(allowed, diagnostics)
+        for forbidden in ("*.apk", "*.pbw", "*.p12", "*.keystore"):
+            self.assertIn(forbidden, diagnostics)
+
+    def test_diagnostics_staging_copies_only_the_allowlist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {**os.environ, "DIAGNOSTICS_TEST_ROOT": directory}
+            script = textwrap.dedent(
+                """\
+                source "$PODMAN_TEST"
+                PROJECT_DIR=$DIAGNOSTICS_TEST_ROOT
+                BUILD_ROOT=$PROJECT_DIR/build/podman
+                ACCEPTANCE_DIAGNOSTICS_ROOT=$PROJECT_DIR/build/acceptance-diagnostics
+                mkdir -p "$BUILD_ROOT/run/results"
+                printf 'result\n' > "$BUILD_ROOT/run/results/test.xml"
+                printf 'log\n' > "$BUILD_ROOT/run/runtime.log"
+                printf 'private\n' > "$BUILD_ROOT/run/locus.apk"
+                printf 'watch\n' > "$BUILD_ROOT/run/watch.pbw"
+                stage_acceptance_diagnostics
+                test -f "$ACCEPTANCE_DIAGNOSTICS_ROOT/run/results/test.xml"
+                test -f "$ACCEPTANCE_DIAGNOSTICS_ROOT/run/runtime.log"
+                test ! -e "$ACCEPTANCE_DIAGNOSTICS_ROOT/run/locus.apk"
+                test ! -e "$ACCEPTANCE_DIAGNOSTICS_ROOT/run/watch.pbw"
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                env={**environment, "PODMAN_TEST": str(PODMAN_TEST)},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_doctor_requires_an_explicit_scope(self):
         result = subprocess.run(

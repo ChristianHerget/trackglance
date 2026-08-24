@@ -54,12 +54,15 @@ into an image, repository, Actions artifact, or persistent cache:
 ./tools/podman-test build
 ./tools/podman-test bootstrap --locus-apks /absolute/private/path
 ./tools/podman-test acceptance --locus-apks /absolute/private/path
+./tools/podman-test acceptance-suite --locus-apks /absolute/private/path
 ```
 
-The manual GitHub-hosted path uses Docker, downloads the official public fixture with
+The required pull-request GitHub-hosted path uses Docker, downloads the official public fixture with
 `tools/download-locus-apk` into `$RUNNER_TEMP`, validates every pin in
-`tools/locus-test-apk.properties`, performs headless bootstrap, and runs acceptance twice. Keep the
-protected self-hosted path until hosted acceptance has proved reliable over time.
+`tools/locus-test-apk.properties`, performs headless bootstrap, and runs Android, Emery, and Gabbro
+acceptance once. Manual dispatch can select a second Emery/Gabbro pass as a soak test. The local
+`acceptance-suite` command reuses the validated golden state by default; `--fresh --cleanup` matches
+the hosted provisioning lifecycle but is intentionally slower and removes generated acceptance state.
 
 The API 32 image includes Google Play services, so use the regular Locus Map 4 Google Play APK for
 acceptance. Do not use the `GooglePlayAfa` all-files-access build unless that permission is the
