@@ -134,9 +134,11 @@ intentional and reviewed:
 
 The first resolution may use the network; a populated cache can subsequently run the lightweight
 Gradle tasks with `--offline`. CI mirrors this split: public static checks and documentation are
-separate. Full KVM acceptance is manual: an ephemeral GitHub-hosted Docker job downloads the pinned
-public Locus fixture and bootstraps from scratch, while the protected self-hosted job remains the
-fallback.
+separate. Every pull request also runs full KVM acceptance on an ephemeral GitHub-hosted Docker
+runner, downloads the pinned public Locus fixture, and bootstraps from scratch. The same test stages
+run locally with the private fixture through `./tools/podman-test acceptance-suite --locus-apks
+/home/christian/.local/share/trackglance-acceptance/locus-apks`; this warm path preserves caches and
+the validated golden state for fast feedback.
 
 The real Locus contract test is deliberately opt-in and non-mutating. It requires idle Locus,
 validates numeric recording-profile identities, and confirms that obsolete Start command `1` is

@@ -127,17 +127,30 @@ provenance; the APK remains read-only and is not mounted into the test pod.
 ## GitHub-hosted acceptance
 
 Fast CI runs `static`, documentation, and the release check on GitHub-hosted Ubuntu without KVM or
-Locus. Full hosted acceptance is a separate manual `workflow_dispatch` job selected with
-`run_hosted_acceptance`. It uses `ubuntu-24.04`, Docker, and `/dev/kvm`, downloads the official
-public fixture only into `$RUNNER_TEMP`, builds headless inputs, creates its golden volume from
-scratch, runs every Android/Locus instrumentation test, and runs Emery plus Gabbro acceptance
-twice. The second pass uses new golden clones and detects state leakage and cleanup regressions.
+Locus. Every pull request also runs hosted acceptance on `ubuntu-24.04` with Docker and `/dev/kvm`.
+It downloads the official public fixture only into `$RUNNER_TEMP`, builds headless inputs, creates
+its golden volume from scratch, runs every Android/Locus instrumentation test, and runs Emery plus
+Gabbro acceptance once. The check is required before merging to `main`.
 
 The workflow prints `df -h`, `docker system df`, and relevant directory sizes after each major
-stage. Failure handling prints only bounded text logs; it does not upload the APK. Its final step
-removes all `trackglance-` containers, volumes, networks, images, build output, and the downloaded
-fixture even when an earlier stage fails. The probe input `run_acceptance_probe` exercises only the
-pinned emulator cold boot and creates no golden state.
+stage. On failure it uploads a seven-day diagnostic bundle containing only bounded logs, JUnit/XML
+results, UI dumps, and screenshots. APKs, PBWs, Locus fixtures, emulator state, caches, and signing
+material are excluded. Its final step removes all `trackglance-` containers, volumes, networks,
+images, generated build output, and the downloaded fixture even when an earlier stage fails.
+
+Both local and hosted execution use `acceptance-suite`. The default local mode reuses current pinned
+images, caches, and the validated golden state, then runs Android, Emery, and Gabbro once:
+
+```sh
+./tools/podman-test acceptance-suite \
+  --locus-apks /home/christian/.local/share/trackglance-acceptance/locus-apks
+```
+
+Use `--fresh --cleanup` to reproduce the hosted provisioning lifecycle locally. This deliberately
+removes generated TrackGlance acceptance state, rebuilds and bootstraps from scratch, and cleans up
+again. It may need network access unless every pinned input is already cached. `--watch-passes 2`
+adds a second Emery/Gabbro pass for a release-candidate soak or flake investigation; it is not an
+automatic retry, and a failure in either pass fails the suite immediately.
 
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
 [run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
@@ -154,10 +167,9 @@ runner's preinstalled/shared Docker state. Allow about 35 minutes and 28 GB of i
 a cold hosted run; the acceptance doctor retains a 35-GiB free-space requirement rather than
 tuning to this single observation.
 
-The protected self-hosted job remains available as a fallback. One cold hosted workflow, including
-its clean-clone repeat, proves feasibility but not reliability over time. Retire the protected job
-only after another complete cold hosted run (or a short sequence of such runs) succeeds without an
-environment-specific workaround.
+The earlier emulator-only probe and protected self-hosted fallback were retired after repeated
+complete GitHub-hosted runs proved the Docker/KVM path. The required pull-request job is now the
+authoritative clean acceptance environment.
 
 ## Automated stages
 
@@ -168,6 +180,7 @@ environment-specific workaround.
 ./tools/podman-test release-check
 ./tools/podman-test android --locus-apks /absolute/private/path
 ./tools/podman-test acceptance --locus-apks /absolute/private/path
+./tools/podman-test acceptance-suite --locus-apks /absolute/private/path
 ./tools/podman-test all --locus-apks /absolute/private/path
 ```
 
