@@ -30,7 +30,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class BridgeRuntime internal constructor(
+class BridgeRuntime
+internal constructor(
     private val scope: CoroutineScope,
     private val locus: LocusBridgeGateway,
     private val transport: ReliablePebbleTransport,
@@ -40,14 +41,20 @@ class BridgeRuntime internal constructor(
     private val monotonicMillis: () -> Long = SystemClock::elapsedRealtime,
     private val wallMillis: () -> Long = System::currentTimeMillis,
     private val delayMillis: suspend (Long) -> Unit = { delay(it) },
-    private val trustedMutationGate: suspend (
-        TrustAdmission,
-        suspend () -> Unit,
-    ) -> TrustLeaseResult<Unit> = { _, block -> TrustLeaseResult.Admitted(block()) },
-    private val trustedPublicationGate: (suspend (
-        TrustAdmission,
-        suspend () -> Unit,
-    ) -> TrustLeaseResult<Unit>)? = null,
+    private val trustedMutationGate:
+        suspend (
+            TrustAdmission,
+            suspend () -> Unit,
+        ) -> TrustLeaseResult<Unit> =
+        { _, block ->
+            TrustLeaseResult.Admitted(block())
+        },
+    private val trustedPublicationGate:
+        (suspend (
+            TrustAdmission,
+            suspend () -> Unit,
+        ) -> TrustLeaseResult<Unit>)? =
+        null,
     private val admissionCurrent: (TrustAdmission) -> Boolean = { true },
 ) : AutoCloseable {
     private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
@@ -55,24 +62,25 @@ class BridgeRuntime internal constructor(
     private val childJobs = mutableSetOf<Job>()
     private val heartRateGate = HeartRateSampleGate()
     private val heartRateSamples = Channel<HeartRateSample>(Channel.CONFLATED)
-    private val operations = BridgeOperationCoordinator<AdmittedWatch, BridgeProtocol.Snapshot>(
-        read = ::readSnapshotForDelivery,
-        updateStatus = { snapshot, targets ->
-            targets.singleAdmissionOrNull()?.let { admission ->
-                publishIfCurrent(admission) { updateStatus(snapshot) }
-            }
-        },
-        send = ::sendSnapshotAndContext,
-    )
+    private val operations =
+        BridgeOperationCoordinator<AdmittedWatch, BridgeProtocol.Snapshot>(
+            read = ::readSnapshotForDelivery,
+            updateStatus = { snapshot, targets ->
+                targets.singleAdmissionOrNull()?.let { admission ->
+                    publishIfCurrent(admission) { updateStatus(snapshot) }
+                }
+            },
+            send = ::sendSnapshotAndContext,
+        )
     private var updateJob: Job? = null
     private var heartRateJob: Job? = null
-    
+
     @Volatile private var transitioningUntil = 0L
     @Volatile private var recordingCatalog: List<BridgeProtocol.RecordingProfile>? = null
     @Volatile private var unresolvedProfileRefreshName: String? = null
 
     init {
-        
+
         synchronized(lifecycleLock) { ensureHeartRateConsumerLocked() }
     }
 
@@ -85,15 +93,16 @@ class BridgeRuntime internal constructor(
         admission: TrustAdmission,
     ): Boolean {
         if (!admissionCurrent(admission)) return false
-        val accepted = heartRateGate.accept(
-            watchId = watch.value,
-            session = sessionId,
-            sequence = sequence,
-            bpm = bpm,
-            sampledAt = sampledAtEpochSeconds,
-            now = wallMillis() / 1000,
-            trustGeneration = admission.generation,
-        )
+        val accepted =
+            heartRateGate.accept(
+                watchId = watch.value,
+                session = sessionId,
+                sequence = sequence,
+                bpm = bpm,
+                sampledAt = sampledAtEpochSeconds,
+                now = wallMillis() / 1000,
+                trustGeneration = admission.generation,
+            )
         if (!accepted) return false
         val sample = HeartRateSample(watch, bpm, admission)
         if (heartRateSamples.trySend(sample).isFailure) return false
@@ -103,24 +112,29 @@ class BridgeRuntime internal constructor(
     private suspend fun forwardHeartRate(sample: HeartRateSample) {
         val source = AdmittedWatch(sample.watch, sample.admission)
         if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
-        if (!publishIfCurrent(sample.admission) {
+        if (
+            !publishIfCurrent(sample.admission) {
                 BridgeState.update { it.copy(lastWatchHeartRate = sample.bpm) }
             }
-        ) return
+        )
+            return
         val initial = readSnapshot(sample.admission)
         if (initial.state != BridgeProtocol.RecordingState.RECORDING) return
         if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
         var forwarded = false
-        val admitted = trustedMutationGate(sample.admission) {
-            forwarded = withContext(ioDispatcher) { locus.sendHeartRate(sample.bpm) }
-        }
+        val admitted =
+            trustedMutationGate(sample.admission) {
+                forwarded = withContext(ioDispatcher) { locus.sendHeartRate(sample.bpm) }
+            }
         if (admitted !is TrustLeaseResult.Admitted || !forwarded) return
         if (!admissionCurrent(sample.admission)) return
 
-        if (!publishIfCurrent(sample.admission) {
+        if (
+            !publishIfCurrent(sample.admission) {
                 BridgeState.update { it.copy(lastHeartRateForwardedEpochMillis = wallMillis()) }
             }
-        ) return
+        )
+            return
         val deadline = monotonicMillis() + HEART_RATE_CONFIRMATION_MILLIS
         var snapshot = initial
         do {
@@ -148,12 +162,13 @@ class BridgeRuntime internal constructor(
     private fun observeWatch(target: AdmittedWatch, markTransition: Boolean): Boolean {
         synchronized(lifecycleLock) {
             ensureHeartRateConsumerLocked()
-            val newlyOpened = if (markTransition) {
-                activeWatches.opened(target)
-            } else {
-                if (!activeWatches.observed(target)) return false
-                false
-            }
+            val newlyOpened =
+                if (markTransition) {
+                    activeWatches.opened(target)
+                } else {
+                    if (!activeWatches.observed(target)) return false
+                    false
+                }
             BridgeState.update {
                 it.copy(watchAppOpen = true, lastError = if (markTransition) null else it.lastError)
             }
@@ -226,72 +241,83 @@ class BridgeRuntime internal constructor(
         admission: TrustAdmission,
     ): Boolean {
         val key = CommandJournal.Key(watch.value, sessionId, commandId)
-        val fingerprint = CommandJournal.fingerprint(
-            command,
-            profileName.takeIf { command == BridgeProtocol.Command.START },
-            waypointName.takeIf { command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE },
-        )
+        val fingerprint =
+            CommandJournal.fingerprint(
+                command,
+                profileName.takeIf { command == BridgeProtocol.Command.START },
+                waypointName.takeIf { command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE },
+            )
         val target = AdmittedWatch(watch, admission)
-        val delivered = operations.mutateAndDeliver(
-            targets = listOf(target),
-            observedEpochSeconds = wallMillis() / 1_000L,
-            mutate = {
-                val begun = withContext(ioDispatcher) { commandJournal.begin(key, fingerprint) }
-                    
-                    val mutation = when (begun) {
-                        is CommandJournal.BeginResult.Completed -> CommandMutation(begun.result)
-                        is CommandJournal.BeginResult.Execute -> {
-                            transitioningUntil = monotonicMillis() + TRANSITION_REFRESH_MILLIS
-                            val executed = executeUnderAdmission(
-                                admission = admission,
-                                command = command,
-                                profileName = profileName,
-                                waypointName = waypointName,
-                            )
-                            val confirmed = executed?.let { confirmExecution(admission, command, it) }
-                                ?: CommandMutation(BridgeProtocol.Result.FAILED)
-                            val completed = withContext(ioDispatcher) {
-                                commandJournal.complete(begun.key, confirmed.result)
+        val delivered =
+            operations.mutateAndDeliver(
+                targets = listOf(target),
+                observedEpochSeconds = wallMillis() / 1_000L,
+                mutate = {
+                    val begun = withContext(ioDispatcher) { commandJournal.begin(key, fingerprint) }
+
+                    val mutation =
+                        when (begun) {
+                            is CommandJournal.BeginResult.Completed -> CommandMutation(begun.result)
+                            is CommandJournal.BeginResult.Execute -> {
+                                transitioningUntil = monotonicMillis() + TRANSITION_REFRESH_MILLIS
+                                val executed =
+                                    executeUnderAdmission(
+                                        admission = admission,
+                                        command = command,
+                                        profileName = profileName,
+                                        waypointName = waypointName,
+                                    )
+                                val confirmed =
+                                    executed?.let { confirmExecution(admission, command, it) }
+                                        ?: CommandMutation(BridgeProtocol.Result.FAILED)
+                                val completed =
+                                    withContext(ioDispatcher) {
+                                        commandJournal.complete(begun.key, confirmed.result)
+                                    }
+
+                                if (completed) {
+                                    confirmed
+                                } else {
+                                    confirmed.copy(result = BridgeProtocol.Result.FAILED)
+                                }
                             }
-                            
-                            if (completed) {
-                                confirmed
-                            } else {
-                                confirmed.copy(result = BridgeProtocol.Result.FAILED)
-                            }
+                            CommandJournal.BeginResult.Collision,
+                            CommandJournal.BeginResult.Pending ->
+                                CommandMutation(BridgeProtocol.Result.FAILED)
                         }
-                        CommandJournal.BeginResult.Collision,
-                        CommandJournal.BeginResult.Pending,
-                        
-                        -> CommandMutation(BridgeProtocol.Result.FAILED)
-                    }
                     publishIfCurrent(admission) {
                         BridgeState.update {
                             it.copy(
                                 lastCommand = command,
                                 lastCommandResult = mutation.result,
-                                lastWaypointName = waypointName.takeIf {
-                                    command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE
-                                },
+                                lastWaypointName =
+                                    waypointName.takeIf {
+                                        command == BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE
+                                    },
                             )
                         }
                     }
-                mutation
-            },
-            readAfterMutation = { epoch, mutation ->
-                (mutation.latestSnapshot ?: readSnapshot(admission)).copy(sampledAtEpochSeconds = epoch)
-            },
-            finish = { mutation, snapshotDelivered ->
-                snapshotDelivered && isActiveOrUntracked(target) && transport.send(
-                    PebbleMessages.result(sessionId, commandId, mutation.result),
-                    watch,
-                    admission,
-                )
-            },
-        )
-        if (!delivered) publishIfCurrent(admission) {
-            reportError(BridgeFailure(BridgeFailureKind.COMMAND_RESULT_DELIVERY_FAILED))
-        }
+                    mutation
+                },
+                readAfterMutation = { epoch, mutation ->
+                    (mutation.latestSnapshot ?: readSnapshot(admission)).copy(
+                        sampledAtEpochSeconds = epoch
+                    )
+                },
+                finish = { mutation, snapshotDelivered ->
+                    snapshotDelivered &&
+                        isActiveOrUntracked(target) &&
+                        transport.send(
+                            PebbleMessages.result(sessionId, commandId, mutation.result),
+                            watch,
+                            admission,
+                        )
+                },
+            )
+        if (!delivered)
+            publishIfCurrent(admission) {
+                reportError(BridgeFailure(BridgeFailureKind.COMMAND_RESULT_DELIVERY_FAILED))
+            }
         return delivered
     }
 
@@ -304,15 +330,17 @@ class BridgeRuntime internal constructor(
     ): CommandExecution? {
         var executed: CommandExecution? = null
         return try {
-            when (trustedMutationGate(admission) {
-                executed = withContext(ioDispatcher) {
-                    locus.executeWithExpectedState(command, profileName, waypointName)
+            when (
+                trustedMutationGate(admission) {
+                    executed =
+                        withContext(ioDispatcher) {
+                            locus.executeWithExpectedState(command, profileName, waypointName)
+                        }
                 }
-            }) {
+            ) {
                 is TrustLeaseResult.Admitted -> executed
                 TrustLeaseResult.Stale,
-                TrustLeaseResult.Untrusted,
-                -> null
+                TrustLeaseResult.Untrusted -> null
             }
         } catch (error: CancellationException) {
             throw error
@@ -328,29 +356,30 @@ class BridgeRuntime internal constructor(
         executed: CommandExecution,
     ): CommandMutation {
         if (executed.result != BridgeProtocol.Result.OK) return CommandMutation(executed.result)
-        val expectedState = executed.expectedState ?: when (command) {
-            BridgeProtocol.Command.ADD_WAYPOINT,
-            BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
-            -> return CommandMutation(executed.result)
-            else -> return CommandMutation(BridgeProtocol.Result.FAILED)
-        }
+        val expectedState =
+            executed.expectedState
+                ?: when (command) {
+                    BridgeProtocol.Command.ADD_WAYPOINT,
+                    BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE ->
+                        return CommandMutation(executed.result)
+                    else -> return CommandMutation(BridgeProtocol.Result.FAILED)
+                }
         val deadline = monotonicMillis() + BridgeProtocol.COMMAND_CONFIRMATION_MILLIS
         var pollsRemaining = COMMAND_CONFIRMATION_MAX_POLLS
         var latest = readSnapshot(admission)
         while (
-            latest.state != expectedState &&
-            pollsRemaining-- > 0 &&
-            monotonicMillis() < deadline
+            latest.state != expectedState && pollsRemaining-- > 0 && monotonicMillis() < deadline
         ) {
             delayMillis(COMMAND_CONFIRMATION_POLL_MILLIS)
             latest = readSnapshot(admission)
         }
         return CommandMutation(
-            result = if (latest.state == expectedState) {
-                BridgeProtocol.Result.OK
-            } else {
-                BridgeProtocol.Result.FAILED
-            },
+            result =
+                if (latest.state == expectedState) {
+                    BridgeProtocol.Result.OK
+                } else {
+                    BridgeProtocol.Result.FAILED
+                },
             latestSnapshot = latest,
         )
     }
@@ -359,29 +388,29 @@ class BridgeRuntime internal constructor(
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ): Boolean = operations.serialized {
-        val query = try {
-            withContext(ioDispatcher) { locus.recordingProfiles() }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            RecordingProfilesResult.Failure(
-                BridgeFailure.technical(error),
-            )
-        }
-        val profiles = when (query) {
-            is RecordingProfilesResult.Success -> query.profiles
-            is RecordingProfilesResult.Failure -> {
-                publishIfCurrent(admission) {
-                    BridgeState.update {
-                        it.copy(
-                            lastProfileRequestEpochMillis = wallMillis(),
-                            lastError = query.failure,
-                        )
-                    }
-                }
-                return@serialized false
+        val query =
+            try {
+                withContext(ioDispatcher) { locus.recordingProfiles() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                RecordingProfilesResult.Failure(BridgeFailure.technical(error))
             }
-        }
+        val profiles =
+            when (query) {
+                is RecordingProfilesResult.Success -> query.profiles
+                is RecordingProfilesResult.Failure -> {
+                    publishIfCurrent(admission) {
+                        BridgeState.update {
+                            it.copy(
+                                lastProfileRequestEpochMillis = wallMillis(),
+                                lastError = query.failure,
+                            )
+                        }
+                    }
+                    return@serialized false
+                }
+            }
         val transfer = BridgeProtocol.profileTransfer(profiles)
         if (transfer == null) {
             publishIfCurrent(admission) {
@@ -394,19 +423,23 @@ class BridgeRuntime internal constructor(
             }
             return@serialized false
         }
-        if (!publishIfCurrent(admission) {
+        if (
+            !publishIfCurrent(admission) {
                 BridgeState.update {
                     it.copy(
                         locusProfiles = profiles.map { it.name },
                         lastProfileRequestEpochMillis = wallMillis(),
-                        lastError = when {
-                            profiles.isEmpty() -> BridgeFailure(BridgeFailureKind.LOCUS_RETURNED_NO_PROFILES)
-                            else -> null
-                        },
+                        lastError =
+                            when {
+                                profiles.isEmpty() ->
+                                    BridgeFailure(BridgeFailureKind.LOCUS_RETURNED_NO_PROFILES)
+                                else -> null
+                            },
                     )
                 }
             }
-        ) return@serialized false
+        )
+            return@serialized false
         if (profiles.isNotEmpty()) {
             recordingCatalog = profiles
             unresolvedProfileRefreshName = null
@@ -414,8 +447,9 @@ class BridgeRuntime internal constructor(
         val transferId = reserveProfileTransferId()
         val messages = PebbleMessages.profileListChunks(transfer, transferId)
         messages.forEach { message ->
-            if (!isActiveOrUntracked(AdmittedWatch(watch, admission)) ||
-                !transport.send(message, watch, admission)
+            if (
+                !isActiveOrUntracked(AdmittedWatch(watch, admission)) ||
+                    !transport.send(message, watch, admission)
             ) {
                 publishIfCurrent(admission) {
                     reportError(BridgeFailure(BridgeFailureKind.PROFILE_LIST_DELIVERY_FAILED))
@@ -431,12 +465,16 @@ class BridgeRuntime internal constructor(
         targets: Collection<AdmittedWatch>,
     ): Boolean {
         if (!sendToAdmittedTargets(PebbleMessages.snapshot(snapshot), targets)) return false
-        if (snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
-            snapshot.state != BridgeProtocol.RecordingState.PAUSED
-        ) return true
+        if (
+            snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
+                snapshot.state != BridgeProtocol.RecordingState.PAUSED
+        )
+            return true
         var profile = resolveActiveProfile(snapshot)
-        if (profile == null && snapshot.locusProfileName != unresolvedProfileRefreshName &&
-            refreshCatalogForContext(snapshot.locusProfileName, targets)
+        if (
+            profile == null &&
+                snapshot.locusProfileName != unresolvedProfileRefreshName &&
+                refreshCatalogForContext(snapshot.locusProfileName, targets)
         ) {
             profile = resolveActiveProfile(snapshot)
         }
@@ -448,7 +486,7 @@ class BridgeRuntime internal constructor(
     }
 
     private fun resolveActiveProfile(
-        snapshot: BridgeProtocol.Snapshot,
+        snapshot: BridgeProtocol.Snapshot
     ): BridgeProtocol.RecordingProfile? {
         val name = snapshot.locusProfileName ?: return null
         return recordingCatalog?.filter { it.name == name }?.singleOrNull()
@@ -459,21 +497,24 @@ class BridgeRuntime internal constructor(
         targets: Collection<AdmittedWatch>,
     ): Boolean {
         unresolvedProfileRefreshName = profileName
-        val query = try {
-            withContext(ioDispatcher) { locus.recordingProfiles() }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            return false
-        }
-        val fresh = (query as? RecordingProfilesResult.Success)?.profiles
-            ?.takeIf { it.isNotEmpty() } ?: return false
+        val query =
+            try {
+                withContext(ioDispatcher) { locus.recordingProfiles() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return false
+            }
+        val fresh =
+            (query as? RecordingProfilesResult.Success)?.profiles?.takeIf { it.isNotEmpty() }
+                ?: return false
         val transfer = BridgeProtocol.profileTransfer(fresh) ?: return false
         recordingCatalog = fresh
-        val messages = PebbleMessages.profileListChunks(
-            transfer,
-            operations.reserveProfileTransferId(),
-        )
+        val messages =
+            PebbleMessages.profileListChunks(
+                transfer,
+                operations.reserveProfileTransferId(),
+            )
         for (message in messages) {
             if (!sendToAdmittedTargets(message, targets)) return false
         }
@@ -505,27 +546,26 @@ class BridgeRuntime internal constructor(
         return delivered
     }
 
-    private suspend fun readSnapshot(
-        admission: TrustAdmission? = null,
-    ): BridgeProtocol.Snapshot = try {
-        val now = wallMillis()
-        withContext(ioDispatcher) { locus.readSnapshot(now) }
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Exception) {
-        if (admission == null) {
-            reportError(error)
-        } else {
-            publishIfCurrent(admission) { reportError(error) }
+    private suspend fun readSnapshot(admission: TrustAdmission? = null): BridgeProtocol.Snapshot =
+        try {
+            val now = wallMillis()
+            withContext(ioDispatcher) { locus.readSnapshot(now) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (admission == null) {
+                reportError(error)
+            } else {
+                publishIfCurrent(admission) { reportError(error) }
+            }
+            BridgeProtocol.Snapshot(
+                state = BridgeProtocol.RecordingState.UNAVAILABLE,
+                sampledAtEpochSeconds = wallMillis() / 1000,
+            )
         }
-        BridgeProtocol.Snapshot(
-            state = BridgeProtocol.RecordingState.UNAVAILABLE,
-            sampledAtEpochSeconds = wallMillis() / 1000,
-        )
-    }
 
     private suspend fun readSnapshotForDelivery(
-        targets: Collection<AdmittedWatch>,
+        targets: Collection<AdmittedWatch>
     ): BridgeProtocol.Snapshot? {
         val admission = targets.singleAdmissionOrNull() ?: return null
         val snapshot = readSnapshot(admission)
@@ -561,11 +601,12 @@ class BridgeRuntime internal constructor(
             activeLocusProfile = snapshot.locusProfileName,
             lastUpdateEpochMillis = wallMillis(),
             currentLocusHeartRate = snapshot.currentHeartRate,
-            lastError = if (snapshot.state == BridgeProtocol.RecordingState.UNAVAILABLE) {
-                BridgeFailure(BridgeFailureKind.LOCUS_UNAVAILABLE)
-            } else {
-                null
-            },
+            lastError =
+                if (snapshot.state == BridgeProtocol.RecordingState.UNAVAILABLE) {
+                    BridgeFailure(BridgeFailureKind.LOCUS_UNAVAILABLE)
+                } else {
+                    null
+                },
         )
     }
 
@@ -584,8 +625,9 @@ class BridgeRuntime internal constructor(
 
     private fun reportError(error: Throwable) = reportError(BridgeFailure.technical(error))
 
-    private fun reportError(failure: BridgeFailure) = BridgeState.update { it.copy(lastError = failure) }
-
+    private fun reportError(failure: BridgeFailure) = BridgeState.update {
+        it.copy(lastError = failure)
+    }
 
     private fun ensureHeartRateConsumerLocked() {
         if (heartRateJob?.isActive == true) return
@@ -629,12 +671,14 @@ class BridgeRuntime internal constructor(
         private const val COMMAND_CONFIRMATION_POLL_MILLIS = 100L
         private const val COMMAND_CONFIRMATION_MAX_POLLS = 15
         private const val POLL_FAILURE_DELAY_MILLIS = 1_000L
-                
+
         @Volatile private var instance: BridgeRuntime? = null
 
-        fun get(context: Context): BridgeRuntime = instance ?: synchronized(this) {
-            instance ?: create(context.applicationContext).also { instance = it }
-        }
+        fun get(context: Context): BridgeRuntime =
+            instance
+                ?: synchronized(this) {
+                    instance ?: create(context.applicationContext).also { instance = it }
+                }
 
         internal fun resetForCompanionTrustLoss() {
             val current = instance
@@ -645,20 +689,21 @@ class BridgeRuntime internal constructor(
             }
         }
 
-        private fun create(context: Context): BridgeRuntime = BridgeRuntime(
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            locus = LocusGateway(context),
-            transport = ReliablePebbleTransport(DefaultPebbleDictionarySender(context)),
-            commandJournal = CommandJournal(),
-            refreshMode = { Preferences.refreshMode(context) },
-            trustedMutationGate = { admission, block ->
-                TrustedPebbleCompanionProvider.withInboundAdmission(context, admission, block)
-            },
-            trustedPublicationGate = { admission, block ->
-                TrustedPebbleCompanionProvider.withOutboundAdmission(context, admission, block)
-            },
-            admissionCurrent = TrustedPebbleCompanionProvider::isAdmissionCurrent,
-        )
+        private fun create(context: Context): BridgeRuntime =
+            BridgeRuntime(
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                locus = LocusGateway(context),
+                transport = ReliablePebbleTransport(DefaultPebbleDictionarySender(context)),
+                commandJournal = CommandJournal(),
+                refreshMode = { Preferences.refreshMode(context) },
+                trustedMutationGate = { admission, block ->
+                    TrustedPebbleCompanionProvider.withInboundAdmission(context, admission, block)
+                },
+                trustedPublicationGate = { admission, block ->
+                    TrustedPebbleCompanionProvider.withOutboundAdmission(context, admission, block)
+                },
+                admissionCurrent = TrustedPebbleCompanionProvider::isAdmissionCurrent,
+            )
     }
 }
 
@@ -687,10 +732,13 @@ object Preferences {
 
     fun refreshMode(context: Context): RefreshMode {
         return runCatching {
-            val name = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-                .getString(KEY_REFRESH_MODE, RefreshMode.ADAPTIVE.name)
-            RefreshMode.valueOf(name ?: RefreshMode.ADAPTIVE.name)
-        }.getOrDefault(RefreshMode.ADAPTIVE)
+                val name =
+                    context
+                        .getSharedPreferences(FILE, Context.MODE_PRIVATE)
+                        .getString(KEY_REFRESH_MODE, RefreshMode.ADAPTIVE.name)
+                RefreshMode.valueOf(name ?: RefreshMode.ADAPTIVE.name)
+            }
+            .getOrDefault(RefreshMode.ADAPTIVE)
     }
 
     fun setRefreshMode(context: Context, mode: RefreshMode) {

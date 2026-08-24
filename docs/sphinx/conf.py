@@ -10,8 +10,8 @@ project = 'TrackGlance'
 copyright = '2026, Christian Herget'
 author = 'Christian Herget'
 
-version = '0.2.2'
-release = '0.2.2'
+version = '0.2.3'
+release = '0.2.3'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

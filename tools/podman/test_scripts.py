@@ -30,7 +30,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         stage = source.split("- name: Stage public assets and remove private key", 1)[1]
         certificate = stage.index("cp trackglance-release-certificate.pem build/release-assets/")
         fingerprint = stage.index("cp trackglance-release-certificate.sha256 build/release-assets/")
-        checksums = stage.index("sha256sum * > SHA256SUMS")
+        checksums = stage.index("sha256sum ./* > SHA256SUMS")
         private_key_removal = stage.index("rm -f build/release-private/trackglance-release.p12")
 
         self.assertLess(certificate, checksums)

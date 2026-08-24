@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+./gradlew spotlessCheck
+ndk=$(sed -nE 's/^ANDROID_NDK_VERSION=(.*)/\1/p' tools/podman/versions.env)
+formatter="${ANDROID_SDK_ROOT:?}/ndk/$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang-format"
+mapfile -t sources < <(find watchapp/src/c watchapp/test -type f \( -name '*.c' -o -name '*.h' \) -print | sort)
+"$formatter" --dry-run --Werror --style=file "${sources[@]}"

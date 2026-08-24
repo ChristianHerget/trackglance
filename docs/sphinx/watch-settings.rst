@@ -28,9 +28,9 @@ Editing Pages
 -------------
 
 Edit changes the display name, metric list, or Locus activity mapping. The same accessible ``☰``
-handle orders metrics. Moving the final source page recreates its Default page; moving into an
-activity that already has four pages is rejected. Pages keep stable IDs so an in-progress watch
-refresh can preserve the selected page.
+handle orders metrics. Moving the final page recreates a default page; moving into an activity
+that already has four pages is rejected. Updating settings keeps the selected page when it still
+exists.
 
 .. image:: _static/watch_settings_profile.png
    :alt: Direct page editor with activity mapping and metric drag handles
@@ -44,21 +44,10 @@ Units come from Locus rather than a second setting.
 Synchronization and Reset Behavior
 ----------------------------------
 
-The phone owns the complete canonical library and saves it immediately. Only global settings and
-the active activity's pages are sent to the watch. The watch caches that most recent activity and
-reconciles its canonical fingerprint once per minute.
-
-A successful, nonempty fresh Locus catalog updates retained names, creates missing defaults, and
-automatically deletes groups whose numeric IDs disappeared. Failed, empty, or malformed responses
-never delete settings. Removing and later recreating a Locus profile therefore creates a new
-Default page if its ID changed.
-
-Version 0.2.0 name mappings are migrated against the first confirmed fresh catalog. The numeric
-Locus profile ID is primary identity and the name is display data. The official
-`TrackRecordProfileSimple model
-<https://github.com/asamm/locus-api/blob/0.10.1/locus-api-android/src/main/java/locus/api/android/objects/TrackRecordProfileSimple.kt>`_
-calls the field ``Profile ID`` but does not explicitly guarantee that an ID survives a rename; an
-ID change is handled deterministically as removal plus addition.
+Settings are saved on the phone and the active activity's pages are sent to the watch. TrackGlance
+automatically adds newly created Locus activities and removes activities that no longer exist. If
+Locus is temporarily unavailable, saved settings are kept. Renaming a Locus activity keeps its
+TrackGlance pages and settings.
 
 Storage failure keeps the previous canonical configuration and reports a localized error. The
 **Reset** button removes all page customization and restores global settings; the current confirmed

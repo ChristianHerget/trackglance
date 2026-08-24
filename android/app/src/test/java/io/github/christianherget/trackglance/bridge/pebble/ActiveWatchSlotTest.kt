@@ -6,7 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActiveWatchSlotTest {
-    @Test fun openingAnotherWatchReplacesTheActiveWatch() {
+    @Test
+    fun openingAnotherWatchReplacesTheActiveWatch() {
         val registry = ActiveWatchSlot<String>()
         assertTrue(registry.opened("watch-a"))
         assertTrue(registry.opened("watch-b"))
@@ -17,14 +18,16 @@ class ActiveWatchSlotTest {
         assertTrue(registry.isEmpty())
     }
 
-    @Test fun observationRecoversAnEmptySlotButCannotDisplaceAnOpenWatch() {
+    @Test
+    fun observationRecoversAnEmptySlotButCannotDisplaceAnOpenWatch() {
         val registry = ActiveWatchSlot<String>()
         assertTrue(registry.observed("watch-a"))
         assertFalse(registry.observed("watch-b"))
         assertEquals(setOf("watch-a"), registry.snapshot())
     }
 
-    @Test fun selectionLossClearsTheActiveWatch() {
+    @Test
+    fun selectionLossClearsTheActiveWatch() {
         val registry = ActiveWatchSlot<String>()
         registry.opened("watch-a")
 

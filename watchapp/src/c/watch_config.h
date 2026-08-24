@@ -77,12 +77,6 @@ bool watch_profile_names_equal(const char *left, const char *right);
 void watch_config_transfer_initialize(WatchConfigTransfer *transfer);
 void watch_config_transfer_reset(WatchConfigTransfer *transfer);
 bool watch_config_transfer_may_start(const WatchConfigTransfer *transfer, int32_t id);
-WatchTransferOutcome watch_config_transfer_accept(
-    WatchConfigTransfer *transfer,
-    char *buffer,
-    size_t buffer_size,
-    int32_t id,
-    int index,
-    int count,
-    const char *data,
-    size_t length);
+WatchTransferOutcome watch_config_transfer_accept(WatchConfigTransfer *transfer, char *buffer,
+                                                  size_t buffer_size, int32_t id, int index,
+                                                  int count, const char *data, size_t length);

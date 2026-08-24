@@ -32,7 +32,7 @@ emulator/emulator \
 emulator_pid=$!
 trap 'kill "$emulator_pid" 2>/dev/null || true; wait "$emulator_pid" 2>/dev/null || true' EXIT INT TERM
 
-for attempt in $(seq 1 300); do
+for _ in $(seq 1 300); do
   discovery=$(find /tmp /root/.android/avd/running -name 'pid_*.ini' \
     -type f -print -quit 2>/dev/null || true)
   if [[ -n "$discovery" ]]; then
@@ -46,7 +46,7 @@ for attempt in $(seq 1 300); do
   sleep 0.1
 done
 test -s /run/trackglance/android-discovery.ini
-for attempt in $(seq 1 100); do
+for _ in $(seq 1 100); do
   if [[ -s /root/.emulator_console_auth_token ]]; then
     install -m 600 /root/.emulator_console_auth_token \
       /run/trackglance/emulator-console-auth-token

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bridge TrackGlance</string><string name="title">Bridge TrackGlance</string>
+    <string name="app_description">Affiche et contrôle les enregistrements Locus Map sur Pebble Time 2 et Pebble Round 2.</string>
+    <string name="legal_footer">Projet indépendant et non officiel. Mentions légales et marques</string>
+    <string name="recent_diagnostics">Avertissements et erreurs récents</string><string name="no_recent_diagnostics">Aucun avertissement ni erreur récent.</string>
+    <string name="clear">Effacer</string><string name="warning">Avertissement</string><string name="error">Erreur</string>
+    <string name="last_seen">Dernière occurrence</string><string name="occurrences">Occurrences</string><string name="version">Version %1$s</string>
+    <string name="pebble_watchapp">Application Pebble</string><string name="pebble_app">Pebble App</string><string name="pebble_watch">Montre Pebble</string>
+    <string name="watchapp_auto_start">Démarrage automatique</string><string name="watchapp_version">Version de l’application</string>
+    <string name="locus_map">Locus Map</string><string name="recording">Enregistrement</string><string name="locus_profiles">Profils Locus</string>
+    <string name="last_profile_request">Dernière demande de profils</string><string name="last_update">Dernière mise à jour</string>
+    <string name="last_watch_hr">Dernier pouls de la montre</string><string name="last_hr_forwarded">Dernier pouls transmis</string><string name="current_locus_hr">Pouls Locus actuel</string>
+    <string name="technical_detail">Détail technique</string><string name="open">Ouverte</string><string name="closed">Fermée</string>
+    <string name="connected">Connectée</string><string name="not_connected">Non connectée</string><string name="available">Disponible</string><string name="unavailable">Indisponible</string>
+    <string name="no_pebble_app_selected">Non sélectionnée</string><string name="not_requested">Non demandé</string><string name="not_reported">Non signalé</string><string name="not_queried">Non interrogé</string>
+    <string name="never">Jamais</string><string name="none_returned">Aucun résultat</string><string name="profile_count">%1$d : %2$s</string><string name="heart_rate_value">%1$d bpm</string>
+    <string name="version_expected">%1$s (attendue %2$s)</string><string name="state_stopped">Arrêté</string><string name="state_recording">Enregistrement</string><string name="state_paused">En pause</string><string name="state_unavailable">Indisponible</string>
+    <string name="launch_started">Démarrée</string><string name="launch_no_watch">Aucune montre connectée</string><string name="launch_lookup_failed">Recherche de montre échouée</string><string name="launch_failed">Échec du démarrage</string><string name="launch_timed_out">Délai dépassé</string><string name="launch_untrusted">Pebble App non approuvée</string>
+    <string name="refresh_title">Actualiser lorsque l’application est ouverte</string><string name="refresh_adaptive">Adaptatif</string><string name="refresh_five">5 secondes</string><string name="refresh_ten">10 secondes</string><string name="refresh_explanation">Le mode adaptatif actualise toutes les 2 secondes après l’ouverture ou une commande, puis toutes les 10 secondes.</string>
+    <string name="failure_locus_unavailable">Locus est indisponible</string><string name="failure_profile_query">Impossible de lire les profils Locus</string><string name="failure_profile_invalid">La liste des profils Locus est incorrecte ou trop longue</string><string name="failure_no_profiles">Locus n’a renvoyé aucun profil</string>
+    <string name="failure_watch_lookup">Impossible de trouver les montres Pebble connectées</string><string name="failure_watchapp_launch">Impossible de démarrer l’application Pebble</string><string name="failure_watchapp_timeout">Délai de démarrage dépassé</string>
+    <string name="failure_untrusted">Pebble App n’est pas approuvée</string><string name="failure_not_installed">Pebble App n’est pas installée</string><string name="failure_not_selected">Pebble App n’a pas pu être sélectionnée</string><string name="failure_incompatible">La version de l’application Pebble est incompatible</string>
+    <string name="failure_snapshot_delivery">Impossible d’envoyer les données Locus</string><string name="failure_command_delivery">Impossible d’envoyer le résultat de la commande</string><string name="failure_profile_delivery">Impossible d’envoyer la liste des profils</string><string name="failure_third_party">Un composant externe a échoué</string>
+</resources>

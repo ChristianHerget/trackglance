@@ -7,7 +7,8 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class PeriodicDiagnosticsTest {
-    @Test fun diagnosticsRefreshAgainAfterEveryForegroundInterval() = runBlocking {
+    @Test
+    fun diagnosticsRefreshAgainAfterEveryForegroundInterval() = runBlocking {
         var refreshes = 0
         val waits = mutableListOf<Long>()
 

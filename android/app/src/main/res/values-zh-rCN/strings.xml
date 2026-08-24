@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TrackGlance 桥接</string><string name="title">TrackGlance 桥接</string><string name="app_description">在 Pebble Time 2 和 Pebble Round 2 上显示和控制 Locus Map 轨迹记录。</string>
+    <string name="legal_footer">独立的非官方项目。法律与商标信息</string><string name="recent_diagnostics">最近的警告和错误</string><string name="no_recent_diagnostics">没有最近的警告或错误。</string>
+    <string name="clear">清除</string><string name="warning">警告</string><string name="error">错误</string><string name="last_seen">最后出现</string><string name="occurrences">次数</string><string name="version">版本 %1$s</string>
+    <string name="pebble_watchapp">Pebble 手表应用</string><string name="pebble_app">Pebble App</string><string name="pebble_watch">Pebble 手表</string><string name="watchapp_auto_start">自动启动手表应用</string><string name="watchapp_version">手表应用版本</string>
+    <string name="locus_map">Locus Map</string><string name="recording">记录</string><string name="locus_profiles">Locus 配置</string><string name="last_profile_request">上次请求配置</string><string name="last_update">上次更新</string>
+    <string name="last_watch_hr">上次手表心率</string><string name="last_hr_forwarded">上次转发心率</string><string name="current_locus_hr">当前 Locus 心率</string><string name="technical_detail">技术详情</string>
+    <string name="open">已打开</string><string name="closed">已关闭</string><string name="connected">已连接</string><string name="not_connected">未连接</string><string name="available">可用</string><string name="unavailable">不可用</string>
+    <string name="no_pebble_app_selected">未选择</string><string name="not_requested">未请求</string><string name="not_reported">未报告</string><string name="not_queried">未查询</string><string name="never">从未</string><string name="none_returned">没有结果</string>
+    <string name="profile_count">%1$d：%2$s</string><string name="heart_rate_value">%1$d 次/分</string><string name="version_expected">%1$s（应为 %2$s）</string><string name="state_stopped">已停止</string><string name="state_recording">记录中</string><string name="state_paused">已暂停</string><string name="state_unavailable">不可用</string>
+    <string name="launch_started">已启动</string><string name="launch_no_watch">没有已连接的手表</string><string name="launch_lookup_failed">查找手表失败</string><string name="launch_failed">启动失败</string><string name="launch_timed_out">超时</string><string name="launch_untrusted">Pebble App 不受信任</string>
+    <string name="refresh_title">手表应用打开时刷新</string><string name="refresh_adaptive">自适应</string><string name="refresh_five">5 秒</string><string name="refresh_ten">10 秒</string><string name="refresh_explanation">打开或发送命令后每 2 秒刷新，之后每 10 秒刷新。</string>
+    <string name="failure_locus_unavailable">Locus 不可用</string><string name="failure_profile_query">无法查询 Locus 记录配置</string><string name="failure_profile_invalid">Locus 配置列表无效或过大</string><string name="failure_no_profiles">Locus 未返回记录配置</string>
+    <string name="failure_watch_lookup">无法查询已连接的 Pebble 手表</string><string name="failure_watchapp_launch">无法启动 Pebble 手表应用</string><string name="failure_watchapp_timeout">自动启动手表应用超时</string>
+    <string name="failure_untrusted">Pebble App 不受信任</string><string name="failure_not_installed">未安装 Pebble App</string><string name="failure_not_selected">无法选择 Pebble App</string><string name="failure_incompatible">手表应用版本不兼容</string>
+    <string name="failure_snapshot_delivery">无法发送 Locus 数据</string><string name="failure_command_delivery">无法发送命令结果</string><string name="failure_profile_delivery">无法发送配置列表</string><string name="failure_third_party">外部组件失败</string>
+</resources>

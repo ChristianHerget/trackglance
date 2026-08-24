@@ -327,7 +327,7 @@ build_emulator_image() {
     socket="$SOCKET_DIR/docker.sock"
     podman system service --time=0 "unix://$socket" >"$BUILD_ROOT/podman-service.log" 2>&1 &
     SERVICE_PID=$!
-    for attempt in $(seq 1 100); do
+    for _ in $(seq 1 100); do
       [[ -S "$socket" ]] && break
       kill -0 "$SERVICE_PID" 2>/dev/null \
         || die "Podman's temporary Docker-compatible service exited."
@@ -782,11 +782,20 @@ static_tests() {
     mkdir -p "$HOME"
     bash -n tools/podman-test tools/podman/*.sh docs/*.sh
     actionlint .github/workflows/*.yml
+    shellcheck --severity=warning tools/podman-test tools/format tools/check-format tools/check-c tools/podman/*.sh docs/*.sh
+    ruff check tools
     python3 -m unittest discover -s tools/podman -p "test_*.py"
-    ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest \
+    python3 tools/validate-appstore-kit.py
+    version_check=$(./tools/bump-version --check)
+    echo "$version_check"
+    tools/release-notes "${version_check##* }" >/dev/null
+    ./tools/check-format
+    ./tools/check-c
+    ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:lintDebug :android:app:detekt \
       :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
     npm ci --prefix watchapp
     npm test --prefix watchapp
+    npm run lint --prefix watchapp
     (cd watchapp && pebble clean && pebble build && npm run verify:pbw)
   ' 2>&1 | tee "$RUN_ARTIFACTS/static.log"
   local status=${PIPESTATUS[0]}
@@ -823,8 +832,10 @@ release_check() {
     test -s "$release_apk"
     badging=$(aapt2 dump badging "$release_apk")
     grep -Fq "package: name='\''app.trackglance.bridge'\''" <<<"$badging"
-    grep -Fq "versionCode='\''13'\''" <<<"$badging"
-    grep -Fq "versionName='\''0.2.2'\''" <<<"$badging"
+    expected_code=$(sed -nE "s/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p" android/app/build.gradle.kts)
+    expected_version=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" android/app/build.gradle.kts)
+    grep -Fq "versionCode='\''$expected_code'\''" <<<"$badging"
+    grep -Fq "versionName='\''$expected_version'\''" <<<"$badging"
     grep -Fq "minSdkVersion:'\''24'\''" <<<"$badging"
     manifest=$(aapt2 dump xmltree --file AndroidManifest.xml "$release_apk")
     if grep -Fq DebugStatusProvider <<<"$manifest"; then

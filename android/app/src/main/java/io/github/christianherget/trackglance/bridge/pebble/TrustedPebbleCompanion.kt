@@ -28,7 +28,8 @@ internal data class CoreAppConnectionStatus(
     val kind: CoreAppConnectionKind,
     val detail: String? = null,
 ) {
-    val available: Boolean get() = kind == CoreAppConnectionKind.SELECTED
+    val available: Boolean
+        get() = kind == CoreAppConnectionKind.SELECTED
 }
 
 /**
@@ -40,11 +41,12 @@ internal class TrustedCoreCallingUidVerifier(
     private val packagesForUid: (Int) -> Set<String>,
     private val coreApplicationUid: () -> Int,
 ) {
-    fun isTrusted(uid: Int): Boolean = try {
-        TRUSTED_CORE_APP_PACKAGE in packagesForUid(uid) && coreApplicationUid() == uid
-    } catch (_: Exception) {
-        false
-    }
+    fun isTrusted(uid: Int): Boolean =
+        try {
+            TRUSTED_CORE_APP_PACKAGE in packagesForUid(uid) && coreApplicationUid() == uid
+        } catch (_: Exception) {
+            false
+        }
 }
 
 /** Keeps validation and dispatch atomic without retaining the lock across unrelated work. */
@@ -52,9 +54,13 @@ internal class SerializedCoreSessionLeases {
     private val inbound = Mutex()
     private val outbound = Mutex()
 
-    suspend fun <Result> withInbound(block: suspend () -> Result): Result = inbound.withLock { block() }
+    suspend fun <Result> withInbound(block: suspend () -> Result): Result = inbound.withLock {
+        block()
+    }
 
-    suspend fun <Result> withOutbound(block: suspend () -> Result): Result = outbound.withLock { block() }
+    suspend fun <Result> withOutbound(block: suspend () -> Result): Result = outbound.withLock {
+        block()
+    }
 
     suspend fun <Result> mutateSession(block: suspend () -> Result): Result = inbound.withLock {
         outbound.withLock { block() }
@@ -66,13 +72,14 @@ internal class TrustedPebbleCompanionGuard(
     private val initialized: () -> Boolean = { true },
     private val selectedPackage: suspend () -> String?,
 ) {
-    suspend fun isTrusted(): Boolean = try {
-        initialized() && selectedPackage() == TRUSTED_CORE_APP_PACKAGE
-    } catch (error: CancellationException) {
-        throw error
-    } catch (_: Exception) {
-        false
-    }
+    suspend fun isTrusted(): Boolean =
+        try {
+            initialized() && selectedPackage() == TRUSTED_CORE_APP_PACKAGE
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
 }
 
 /** Establishes the exact CoreApp package selection off the main thread. */
@@ -87,10 +94,11 @@ internal class TrustedPebbleCompanionPin(
 
     @Volatile private var pinned = false
 
-    val guard = TrustedPebbleCompanionGuard(
-        initialized = { pinned },
-        selectedPackage = selectedPackage,
-    )
+    val guard =
+        TrustedPebbleCompanionGuard(
+            initialized = { pinned },
+            selectedPackage = selectedPackage,
+        )
 
     fun disableAutoSelection() = disableAutoSelect()
 
@@ -98,27 +106,28 @@ internal class TrustedPebbleCompanionPin(
         pinned = false
     }
 
-    suspend fun initialize(): Boolean = withContext(ioDispatcher) {
-        initializationMutex.withLock {
-            try {
-                disableAutoSelect()
-                if (selectedPackage() == TRUSTED_CORE_APP_PACKAGE) {
-                    pinned = true
-                    return@withLock true
+    suspend fun initialize(): Boolean =
+        withContext(ioDispatcher) {
+            initializationMutex.withLock {
+                try {
+                    disableAutoSelect()
+                    if (selectedPackage() == TRUSTED_CORE_APP_PACKAGE) {
+                        pinned = true
+                        return@withLock true
+                    }
+                    pinned = false
+                    if (TRUSTED_CORE_APP_PACKAGE !in eligiblePackages()) return@withLock false
+                    selectPackage(TRUSTED_CORE_APP_PACKAGE)
+                    (selectedPackage() == TRUSTED_CORE_APP_PACKAGE).also { pinned = it }
+                } catch (error: CancellationException) {
+                    pinned = false
+                    throw error
+                } catch (_: Exception) {
+                    pinned = false
+                    false
                 }
-                pinned = false
-                if (TRUSTED_CORE_APP_PACKAGE !in eligiblePackages()) return@withLock false
-                selectPackage(TRUSTED_CORE_APP_PACKAGE)
-                (selectedPackage() == TRUSTED_CORE_APP_PACKAGE).also { pinned = it }
-            } catch (error: CancellationException) {
-                pinned = false
-                throw error
-            } catch (_: Exception) {
-                pinned = false
-                false
             }
         }
-    }
 
     suspend fun initializeBounded(timeoutMillis: Long = PIN_TIMEOUT_MILLIS): Boolean {
         require(timeoutMillis > 0)
@@ -168,37 +177,41 @@ internal object TrustedPebbleCompanionProvider {
         }
     }
 
-    suspend fun inspect(context: Context): CoreAppConnectionStatus = withContext(Dispatchers.IO) {
-        val installed = try {
-            context.packageManager.getApplicationInfo(TRUSTED_CORE_APP_PACKAGE, 0)
-            true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        } catch (error: Exception) {
-            return@withContext CoreAppConnectionStatus(
-                CoreAppConnectionKind.NOT_INSTALLED,
-                error.message ?: error.javaClass.simpleName,
-            )
+    suspend fun inspect(context: Context): CoreAppConnectionStatus =
+        withContext(Dispatchers.IO) {
+            val installed =
+                try {
+                    context.packageManager.getApplicationInfo(TRUSTED_CORE_APP_PACKAGE, 0)
+                    true
+                } catch (_: PackageManager.NameNotFoundException) {
+                    false
+                } catch (error: Exception) {
+                    return@withContext CoreAppConnectionStatus(
+                        CoreAppConnectionKind.NOT_INSTALLED,
+                        error.message ?: error.javaClass.simpleName,
+                    )
+                }
+            if (!installed) {
+                CoreAppConnectionStatus(
+                    CoreAppConnectionKind.NOT_INSTALLED,
+                    "CoreApp is not installed",
+                )
+            } else if (components(context).pin.guard.isTrusted()) {
+                CoreAppConnectionStatus(CoreAppConnectionKind.SELECTED)
+            } else {
+                CoreAppConnectionStatus(
+                    CoreAppConnectionKind.NOT_SELECTED,
+                    "CoreApp is installed but could not be selected",
+                )
+            }
         }
-        if (!installed) {
-            CoreAppConnectionStatus(CoreAppConnectionKind.NOT_INSTALLED, "CoreApp is not installed")
-        } else if (components(context).pin.guard.isTrusted()) {
-            CoreAppConnectionStatus(CoreAppConnectionKind.SELECTED)
-        } else {
-            CoreAppConnectionStatus(
-                CoreAppConnectionKind.NOT_SELECTED,
-                "CoreApp is installed but could not be selected",
-            )
-        }
-    }
 
     suspend fun captureTrustedAdmission(context: Context): TrustAdmission? {
         val candidate = TrustAdmission(generation.get())
         return when (withInboundAdmission(context, candidate) { Unit }) {
             is TrustLeaseResult.Admitted -> candidate
             TrustLeaseResult.Stale,
-            TrustLeaseResult.Untrusted,
-            -> null
+            TrustLeaseResult.Untrusted -> null
         }
     }
 
@@ -207,8 +220,7 @@ internal object TrustedPebbleCompanionProvider {
         return when (withOutboundAdmission(context, candidate) { Unit }) {
             is TrustLeaseResult.Admitted -> candidate
             TrustLeaseResult.Stale,
-            TrustLeaseResult.Untrusted,
-            -> null
+            TrustLeaseResult.Untrusted -> null
         }
     }
 
@@ -250,26 +262,32 @@ internal object TrustedPebbleCompanionProvider {
         io.github.christianherget.trackglance.bridge.core.BridgeRuntime.resetForCompanionTrustLoss()
     }
 
-    private fun components(context: Context): Components = components ?: synchronized(this) {
-        components ?: create(context.applicationContext).also { components = it }
-    }
+    private fun components(context: Context): Components =
+        components
+            ?: synchronized(this) {
+                components ?: create(context.applicationContext).also { components = it }
+            }
 
     @Suppress("DEPRECATION")
     private fun create(context: Context): Components {
         val picker = DefaultPebbleAndroidAppPicker.getInstance(context)
-        val pin = TrustedPebbleCompanionPin(
-            disableAutoSelect = { picker.enableAutoSelect = false },
-            eligiblePackages = picker::getAllEligibleApps,
-            selectPackage = picker::selectApp,
-            selectedPackage = picker::getCurrentlySelectedApp,
-            ioDispatcher = Dispatchers.IO,
-        )
-        val callingUidVerifier = TrustedCoreCallingUidVerifier(
-            packagesForUid = { uid -> context.packageManager.getPackagesForUid(uid)?.toSet().orEmpty() },
-            coreApplicationUid = {
-                context.packageManager.getApplicationInfo(TRUSTED_CORE_APP_PACKAGE, 0).uid
-            },
-        )
+        val pin =
+            TrustedPebbleCompanionPin(
+                disableAutoSelect = { picker.enableAutoSelect = false },
+                eligiblePackages = picker::getAllEligibleApps,
+                selectPackage = picker::selectApp,
+                selectedPackage = picker::getCurrentlySelectedApp,
+                ioDispatcher = Dispatchers.IO,
+            )
+        val callingUidVerifier =
+            TrustedCoreCallingUidVerifier(
+                packagesForUid = { uid ->
+                    context.packageManager.getPackagesForUid(uid)?.toSet().orEmpty()
+                },
+                coreApplicationUid = {
+                    context.packageManager.getApplicationInfo(TRUSTED_CORE_APP_PACKAGE, 0).uid
+                },
+            )
         return Components(pin, callingUidVerifier)
     }
 }
@@ -294,8 +312,9 @@ internal class SerializedTrustedLifecycleCallbacks(
         block()
     }
 
-    suspend fun runIfTrusted(block: () -> Unit): Boolean = runIfTrusted(false) {
-        block()
-        true
-    }
+    suspend fun runIfTrusted(block: () -> Unit): Boolean =
+        runIfTrusted(false) {
+            block()
+            true
+        }
 }

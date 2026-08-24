@@ -14,12 +14,11 @@
     <string name="recording">Aufzeichnung</string><string name="locus_profiles">Locus-Profile</string>
     <string name="last_profile_request">Letzte Profilabfrage</string><string name="last_update">Letzte Aktualisierung</string>
     <string name="last_watch_hr">Letzter Uhrenpuls</string><string name="last_hr_forwarded">Puls zuletzt weitergegeben</string>
-    <string name="current_locus_hr">Aktueller Locus-Puls</string><string name="diagnostics">Diagnose</string>
-    <string name="last_runtime_error">Letzter Laufzeitfehler</string><string name="technical_detail">Technisches Detail</string>
+    <string name="current_locus_hr">Aktueller Locus-Puls</string><string name="technical_detail">Technisches Detail</string>
     <string name="open">Offen</string><string name="closed">Geschlossen</string>
     <string name="connected">Verbunden</string><string name="not_connected">Nicht verbunden</string>
     <string name="available">Verfügbar</string><string name="unavailable">Nicht verfügbar</string>
-    <string name="not_selected">Nicht ausgewählt</string><string name="not_requested">Nicht angefordert</string>
+    <string name="no_pebble_app_selected">Nicht ausgewählt</string><string name="not_requested">Nicht angefordert</string>
     <string name="not_reported">Nicht gemeldet</string><string name="not_queried">Nicht abgefragt</string>
     <string name="never">Nie</string><string name="none_returned">Keine zurückgegeben</string>
     <string name="profile_count">%1$d: %2$s</string><string name="heart_rate_value">%1$d bpm</string>

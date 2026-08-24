@@ -30,11 +30,8 @@ static bool parse_uint(const char *text, uint32_t *output) {
   return true;
 }
 
-static bool utf8_code_point(
-    const unsigned char *data,
-    size_t length,
-    size_t *width,
-    uint32_t *code_point) {
+static bool utf8_code_point(const unsigned char *data, size_t length, size_t *width,
+                            uint32_t *code_point) {
   if (!data || !length || !width || !code_point) return false;
   const unsigned char a = data[0];
   if (a <= 0x7f) {
@@ -47,22 +44,20 @@ static bool utf8_code_point(
     *code_point = ((uint32_t)(a & 0x1f) << 6) | (data[1] & 0x3f);
     return true;
   }
-  if (a >= 0xe0 && a <= 0xef && length >= 3 &&
-      (data[1] & 0xc0) == 0x80 && (data[2] & 0xc0) == 0x80 &&
-      !(a == 0xe0 && data[1] < 0xa0) && !(a == 0xed && data[1] >= 0xa0)) {
+  if (a >= 0xe0 && a <= 0xef && length >= 3 && (data[1] & 0xc0) == 0x80 &&
+      (data[2] & 0xc0) == 0x80 && !(a == 0xe0 && data[1] < 0xa0) &&
+      !(a == 0xed && data[1] >= 0xa0)) {
     *width = 3;
-    *code_point = ((uint32_t)(a & 0x0f) << 12) |
-        ((uint32_t)(data[1] & 0x3f) << 6) | (data[2] & 0x3f);
+    *code_point =
+        ((uint32_t)(a & 0x0f) << 12) | ((uint32_t)(data[1] & 0x3f) << 6) | (data[2] & 0x3f);
     return true;
   }
-  if (a >= 0xf0 && a <= 0xf4 && length >= 4 &&
-      (data[1] & 0xc0) == 0x80 && (data[2] & 0xc0) == 0x80 &&
-      (data[3] & 0xc0) == 0x80 &&
-      !(a == 0xf0 && data[1] < 0x90) && !(a == 0xf4 && data[1] >= 0x90)) {
+  if (a >= 0xf0 && a <= 0xf4 && length >= 4 && (data[1] & 0xc0) == 0x80 &&
+      (data[2] & 0xc0) == 0x80 && (data[3] & 0xc0) == 0x80 && !(a == 0xf0 && data[1] < 0x90) &&
+      !(a == 0xf4 && data[1] >= 0x90)) {
     *width = 4;
-    *code_point = ((uint32_t)(a & 0x07) << 18) |
-        ((uint32_t)(data[1] & 0x3f) << 12) |
-        ((uint32_t)(data[2] & 0x3f) << 6) | (data[3] & 0x3f);
+    *code_point = ((uint32_t)(a & 0x07) << 18) | ((uint32_t)(data[1] & 0x3f) << 12) |
+                  ((uint32_t)(data[2] & 0x3f) << 6) | (data[3] & 0x3f);
     return true;
   }
   return false;
@@ -70,16 +65,12 @@ static bool utf8_code_point(
 
 static bool unicode_space(uint32_t value) {
   return value == 0x20 || value == 0x85 || value == 0xa0 || value == 0x1680 ||
-      (value >= 0x2000 && value <= 0x200a) || value == 0x2028 || value == 0x2029 ||
-      value == 0x202f || value == 0x205f || value == 0x3000 || value == 0xfeff;
+         (value >= 0x2000 && value <= 0x200a) || value == 0x2028 || value == 0x2029 ||
+         value == 0x202f || value == 0x205f || value == 0x3000 || value == 0xfeff;
 }
 
-static bool field_valid(
-    const char *value,
-    size_t length,
-    size_t max_bytes,
-    size_t max_code_points,
-    bool reject_pipe) {
+static bool field_valid(const char *value, size_t length, size_t max_bytes, size_t max_code_points,
+                        bool reject_pipe) {
   if (!value || !length || length > max_bytes) return false;
   size_t offset = 0;
   size_t count = 0;
@@ -87,7 +78,8 @@ static bool field_valid(
   while (offset < length) {
     size_t width = 0;
     uint32_t code_point = 0;
-    if (!utf8_code_point((const unsigned char *)value + offset, length - offset, &width, &code_point) ||
+    if (!utf8_code_point((const unsigned char *)value + offset, length - offset, &width,
+                         &code_point) ||
         code_point < 0x20 || code_point == 0x7f || (reject_pipe && code_point == '|') ||
         code_point == '\n' || code_point == '\r') {
       return false;
@@ -101,12 +93,8 @@ static bool field_valid(
 }
 
 static bool profile_name_valid(const char *value) {
-  return value && field_valid(
-      value,
-      strlen(value),
-      WATCH_PROFILE_NAME_SIZE - 1,
-      WATCH_PROFILE_NAME_CODEPOINTS,
-      true);
+  return value && field_valid(value, strlen(value), WATCH_PROFILE_NAME_SIZE - 1,
+                              WATCH_PROFILE_NAME_CODEPOINTS, true);
 }
 
 static bool id_valid(const char *value) {
@@ -134,7 +122,7 @@ static bool locus_id_valid(const char *value) {
 
 bool watch_locus_profile_valid(const char *id, const char *name) {
   return locus_id_valid(id) && name &&
-      field_valid(name, strlen(name), WATCH_LOCUS_NAME_SIZE - 1, 0, true);
+         field_valid(name, strlen(name), WATCH_LOCUS_NAME_SIZE - 1, 0, true);
 }
 
 static uint32_t simple_case_fold(uint32_t value) {
@@ -159,16 +147,9 @@ bool watch_profile_names_equal(const char *left, const char *right) {
     size_t right_width = 0;
     uint32_t left_code_point = 0;
     uint32_t right_code_point = 0;
-    if (!utf8_code_point(
-            (const unsigned char *)left,
-            left_length,
-            &left_width,
-            &left_code_point) ||
-        !utf8_code_point(
-            (const unsigned char *)right,
-            right_length,
-            &right_width,
-            &right_code_point) ||
+    if (!utf8_code_point((const unsigned char *)left, left_length, &left_width, &left_code_point) ||
+        !utf8_code_point((const unsigned char *)right, right_length, &right_width,
+                         &right_code_point) ||
         simple_case_fold(left_code_point) != simple_case_fold(right_code_point)) {
       return false;
     }
@@ -244,8 +225,8 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
   char *locus_id = next_token(&header_cursor, '|');
   char *fingerprint_a_text = next_token(&header_cursor, '|');
   char *fingerprint_b_text = next_token(&header_cursor, '|');
-  if (!theme || !watch_hr_text || !interval_text || !locus_id ||
-      !fingerprint_a_text || !fingerprint_b_text || header_cursor ||
+  if (!theme || !watch_hr_text || !interval_text || !locus_id || !fingerprint_a_text ||
+      !fingerprint_b_text || header_cursor ||
       (strcmp(theme, "dark") != 0 && strcmp(theme, "light") != 0)) {
     return false;
   }
@@ -254,7 +235,8 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
   uint32_t fingerprint_b = 0;
   if (!locus_id_valid(locus_id) || !parse_uint(fingerprint_a_text, &fingerprint_a) ||
       !parse_uint(fingerprint_b_text, &fingerprint_b) ||
-      !copy_field(output->locus_id, sizeof(output->locus_id), locus_id)) return false;
+      !copy_field(output->locus_id, sizeof(output->locus_id), locus_id))
+    return false;
   output->fingerprint_a = fingerprint_a;
   output->fingerprint_b = fingerprint_b;
   output->dark = strcmp(theme, "dark") == 0;
@@ -296,22 +278,21 @@ bool watch_profile_list_valid(const char *data, size_t length) {
   size_t start = 0;
   while (start < length) {
     size_t end = start;
-    while (end < length && data[end] != '\n') end++;
+    while (end < length && data[end] != '\n')
+      end++;
     const char *separator = memchr(data + start, '|', end - start);
     if (!separator || separator == data + start ||
         memchr(separator + 1, '|', (data + end) - separator - 1) ||
-        !field_valid(
-            separator + 1,
-            (data + end) - separator - 1,
-            WATCH_LOCUS_NAME_SIZE - 1,
-            0,
-            true)) return false;
+        !field_valid(separator + 1, (data + end) - separator - 1, WATCH_LOCUS_NAME_SIZE - 1, 0,
+                     true))
+      return false;
     const size_t id_length = (size_t)(separator - (data + start));
     if (!locus_id_bytes_valid(data + start, id_length)) return false;
     size_t previous = 0;
     while (previous < start) {
       size_t previous_end = previous;
-      while (previous_end < start && data[previous_end] != '\n') previous_end++;
+      while (previous_end < start && data[previous_end] != '\n')
+        previous_end++;
       const char *previous_separator = memchr(data + previous, '|', previous_end - previous);
       if (previous_separator && (size_t)(previous_separator - (data + previous)) == id_length &&
           memcmp(data + previous, data + start, id_length) == 0) {
@@ -325,12 +306,7 @@ bool watch_profile_list_valid(const char *data, size_t length) {
 }
 
 bool watch_waypoint_name_valid(const char *value) {
-  return value && field_valid(
-      value,
-      strlen(value),
-      WATCH_WAYPOINT_NAME_BYTES,
-      0,
-      false);
+  return value && field_valid(value, strlen(value), WATCH_WAYPOINT_NAME_BYTES, 0, false);
 }
 
 void watch_config_transfer_initialize(WatchConfigTransfer *transfer) {
@@ -353,11 +329,8 @@ bool watch_config_transfer_may_start(const WatchConfigTransfer *transfer, int32_
   return transfer && watch_transfer_serial_may_start(&transfer->serial, id, true);
 }
 
-static void transfer_checksums(
-    const char *data,
-    size_t length,
-    uint32_t *checksum_a,
-    uint32_t *checksum_b) {
+static void transfer_checksums(const char *data, size_t length, uint32_t *checksum_a,
+                               uint32_t *checksum_b) {
   uint32_t fnv = 2166136261u;
   uint32_t crc = UINT32_MAX;
   for (size_t i = 0; i < length; i++) {
@@ -373,11 +346,8 @@ static void transfer_checksums(
   *checksum_b = ~crc;
 }
 
-static bool completed_first_chunk_matches(
-    const WatchConfigTransferIdentity *identity,
-    int count,
-    const char *data,
-    size_t length) {
+static bool completed_first_chunk_matches(const WatchConfigTransferIdentity *identity, int count,
+                                          const char *data, size_t length) {
   if (!identity || !identity->valid || identity->chunk_count != count ||
       identity->first_length != length) {
     return false;
@@ -385,14 +355,11 @@ static bool completed_first_chunk_matches(
   uint32_t checksum_a = 0;
   uint32_t checksum_b = 0;
   transfer_checksums(data, length, &checksum_a, &checksum_b);
-  return checksum_a == identity->first_checksum_a &&
-      checksum_b == identity->first_checksum_b;
+  return checksum_a == identity->first_checksum_a && checksum_b == identity->first_checksum_b;
 }
 
-static bool completed_payload_matches(
-    const WatchConfigTransferIdentity *identity,
-    const char *data,
-    size_t length) {
+static bool completed_payload_matches(const WatchConfigTransferIdentity *identity, const char *data,
+                                      size_t length) {
   if (!identity || !identity->valid || identity->length != length) return false;
   uint32_t checksum_a = 0;
   uint32_t checksum_b = 0;
@@ -408,22 +375,13 @@ static void remember_completed_payload(WatchConfigTransfer *transfer, const char
   identity->length = transfer->length;
   identity->first_length = transfer->lengths[0];
   transfer_checksums(buffer, transfer->length, &identity->checksum_a, &identity->checksum_b);
-  transfer_checksums(
-      buffer + transfer->offsets[0],
-      transfer->lengths[0],
-      &identity->first_checksum_a,
-      &identity->first_checksum_b);
+  transfer_checksums(buffer + transfer->offsets[0], transfer->lengths[0],
+                     &identity->first_checksum_a, &identity->first_checksum_b);
 }
 
-WatchTransferOutcome watch_config_transfer_accept(
-    WatchConfigTransfer *transfer,
-    char *buffer,
-    size_t buffer_size,
-    int32_t id,
-    int index,
-    int count,
-    const char *data,
-    size_t length) {
+WatchTransferOutcome watch_config_transfer_accept(WatchConfigTransfer *transfer, char *buffer,
+                                                  size_t buffer_size, int32_t id, int index,
+                                                  int count, const char *data, size_t length) {
   if (!transfer || !buffer || buffer_size < 1 || id < 0 || count < 1 ||
       count > WATCH_CONFIG_MAX_CHUNKS || index < 0 || index >= count || !data ||
       length > WATCH_CONFIG_CHUNK_BYTES) {
@@ -451,8 +409,8 @@ WatchTransferOutcome watch_config_transfer_accept(
     if (!watch_config_transfer_may_start(transfer, id)) return WATCH_TRANSFER_IGNORED;
     const bool completed_retry =
         transfer->serial.valid && transfer->serial.completed && transfer->serial.id == id;
-    if (completed_retry && !completed_first_chunk_matches(
-            &transfer->completed_identity, count, data, length)) {
+    if (completed_retry &&
+        !completed_first_chunk_matches(&transfer->completed_identity, count, data, length)) {
       return WATCH_TRANSFER_INVALID;
     }
     watch_config_transfer_reset(transfer);
@@ -493,8 +451,7 @@ WatchTransferOutcome watch_config_transfer_accept(
   transfer->next_chunk++;
   if (transfer->next_chunk == transfer->chunk_count) {
     if (transfer->verifying_completed_retry) {
-      if (!completed_payload_matches(
-              &transfer->completed_identity, buffer, transfer->length)) {
+      if (!completed_payload_matches(&transfer->completed_identity, buffer, transfer->length)) {
         watch_config_transfer_reset(transfer);
         return WATCH_TRANSFER_INVALID;
       }

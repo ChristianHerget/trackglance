@@ -5,7 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LocusUnitPreferencesTest {
-    @Test fun everySupportedCodeMapsAndInvalidFieldsFallBackIndividually() {
+    @Test
+    fun everySupportedCodeMapsAndInvalidFieldsFallBackIndividually() {
         BridgeProtocol.LengthFormat.entries.forEachIndexed { code, expected ->
             assertEquals(expected, mapped(length = code).length)
         }
@@ -24,14 +25,19 @@ class LocusUnitPreferencesTest {
         assertEquals(BridgeProtocol.UnitPreferences.METRIC, mapped(-1, 99, -2, 4, 8))
     }
 
-    @Test fun cacheUsesColdMetricFallbackRateLimitsAndRetainsLastValidRead() {
+    @Test
+    fun cacheUsesColdMetricFallbackRateLimitsAndRetainsLastValidRead() {
         var now = 10L
         var calls = 0
         var next: RawLocusUnitPreferences? = null
-        val cache = LocusUnitPreferencesCache(
-            read = { calls++; next },
-            monotonicMillis = { now },
-        )
+        val cache =
+            LocusUnitPreferencesCache(
+                read = {
+                    calls++
+                    next
+                },
+                monotonicMillis = { now },
+            )
         assertEquals(BridgeProtocol.UnitPreferences.METRIC, cache.current())
         assertEquals(1, calls)
         next = RawLocusUnitPreferences(3, 1, 1, 1, 1)
@@ -54,5 +60,8 @@ class LocusUnitPreferencesTest {
         speed: Int = 0,
         slope: Int = 0,
         energy: Int = 0,
-    ) = LocusUnitPreferenceMapper.map(RawLocusUnitPreferences(length, altitude, speed, slope, energy))
+    ) =
+        LocusUnitPreferenceMapper.map(
+            RawLocusUnitPreferences(length, altitude, speed, slope, energy)
+        )
 }

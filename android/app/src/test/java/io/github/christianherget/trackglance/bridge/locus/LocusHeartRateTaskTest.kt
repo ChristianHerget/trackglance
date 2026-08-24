@@ -5,7 +5,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class LocusHeartRateTaskTest {
-    @Test fun emitsExactDataTaskPayload() {
+    @Test
+    fun emitsExactDataTaskPayload() {
         assertEquals("com.asamm.locus.DATA_TASK", LocusHeartRateTask.ACTION)
         assertEquals("tasks", LocusHeartRateTask.EXTRA_TASKS)
         assertEquals("{heart_rate:{data:123.0}}", LocusHeartRateTask.payload(123))

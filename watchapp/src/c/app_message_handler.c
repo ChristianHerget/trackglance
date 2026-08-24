@@ -59,12 +59,8 @@ bool app_message_uint32(DictionaryIterator *iterator, uint32_t key, uint32_t *ou
   return true;
 }
 
-bool app_message_cstring(
-    DictionaryIterator *iterator,
-    uint32_t key,
-    size_t max_bytes,
-    const char **output,
-    size_t *length) {
+bool app_message_cstring(DictionaryIterator *iterator, uint32_t key, size_t max_bytes,
+                         const char **output, size_t *length) {
   Tuple *tuple = iterator ? dict_find(iterator, key) : NULL;
   if (!tuple || tuple->type != TUPLE_CSTRING || tuple->length < 1 ||
       (size_t)tuple->length > max_bytes + 1) {
@@ -82,7 +78,9 @@ int app_message_transfer_generation(DictionaryIterator *iterator, int32_t expect
   if (!iterator || !dict_find(iterator, MESSAGE_KEY_TRANSFER_GENERATION)) return 0;
   int32_t generation = 0;
   return app_message_int32(iterator, MESSAGE_KEY_TRANSFER_GENERATION, &generation) &&
-      generation == expected_generation ? 1 : -1;
+                 generation == expected_generation
+             ? 1
+             : -1;
 }
 
 bool app_message_snapshot(DictionaryIterator *iterator, UiMetricSnapshot *output) {
@@ -115,11 +113,15 @@ bool app_message_snapshot(DictionaryIterator *iterator, UiMetricSnapshot *output
       !app_message_int32(iterator, MESSAGE_KEY_ENERGY_VALUE, &snapshot.energy) ||
       !app_message_int32(iterator, MESSAGE_KEY_ALTITUDE_FORMAT, &snapshot.altitude_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_DISTANCE_FORMAT, &snapshot.distance_format) ||
-      !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_FORMAT, &snapshot.moving_distance_format) ||
-      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_FORMAT, &snapshot.current_speed_format) ||
-      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_FORMAT, &snapshot.average_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_FORMAT,
+                         &snapshot.moving_distance_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_CURRENT_SPEED_FORMAT,
+                         &snapshot.current_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_SPEED_FORMAT,
+                         &snapshot.average_speed_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_MAX_SPEED_FORMAT, &snapshot.max_speed_format) ||
-      !app_message_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_FORMAT, &snapshot.vertical_speed_format) ||
+      !app_message_int32(iterator, MESSAGE_KEY_VERTICAL_SPEED_FORMAT,
+                         &snapshot.vertical_speed_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_SLOPE_FORMAT, &snapshot.slope_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_ENERGY_FORMAT, &snapshot.energy_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_PACE_FORMAT, &snapshot.pace_format)) {

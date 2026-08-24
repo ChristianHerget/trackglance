@@ -19,21 +19,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OffMainAndForeignQueryTest {
-    @Test fun refreshPreferenceConstructorUsesSafeDefaultWithoutReadingStorage() = runBlocking {
-        val dispatcher = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "preference-io")
-        }.asCoroutineDispatcher()
+    @Test
+    fun refreshPreferenceConstructorUsesSafeDefaultWithoutReadingStorage() = runBlocking {
+        val dispatcher =
+            Executors.newSingleThreadExecutor { runnable ->
+                    Thread(runnable, "preference-io")
+                }
+                .asCoroutineDispatcher()
         var reads = 0
         var readThread = ""
         try {
-            val state = RefreshModePreferenceState(
-                readPreference = {
-                    reads++
-                    readThread = Thread.currentThread().name
-                    RefreshMode.TEN_SECONDS
-                },
-                ioDispatcher = dispatcher,
-            )
+            val state =
+                RefreshModePreferenceState(
+                    readPreference = {
+                        reads++
+                        readThread = Thread.currentThread().name
+                        RefreshMode.TEN_SECONDS
+                    },
+                    ioDispatcher = dispatcher,
+                )
 
             assertEquals(0, reads)
             assertEquals(RefreshMode.ADAPTIVE, state.selection.value)
@@ -46,10 +50,13 @@ class OffMainAndForeignQueryTest {
         }
     }
 
-    @Test fun runtimeFactoryHelperExecutesOnItsIoDispatcherNotTheCaller() = runBlocking {
-        val dispatcher = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "runtime-storage-io")
-        }.asCoroutineDispatcher()
+    @Test
+    fun runtimeFactoryHelperExecutesOnItsIoDispatcherNotTheCaller() = runBlocking {
+        val dispatcher =
+            Executors.newSingleThreadExecutor { runnable ->
+                    Thread(runnable, "runtime-storage-io")
+                }
+                .asCoroutineDispatcher()
         try {
             val caller = Thread.currentThread().name
             val constructionThread = loadOffMain(dispatcher) { Thread.currentThread().name }
@@ -60,7 +67,8 @@ class OffMainAndForeignQueryTest {
         }
     }
 
-    @Test fun blockedForeignQueryDoesNotDelaySessionChangeAndQuietlyDiscardsItsResult() = runBlocking {
+    @Test
+    fun blockedForeignQueryDoesNotDelaySessionChangeAndQuietlyDiscardsItsResult() = runBlocking {
         val workers = BoundedAbandonableCallExecutor(1, "provider-query-test")
         val leases = SerializedCoreSessionLeases()
         val queryStarted = CountDownLatch(1)
@@ -68,29 +76,30 @@ class OffMainAndForeignQueryTest {
         var generation = 7L
         var trusted = true
         try {
-            val query = async(start = CoroutineStart.UNDISPATCHED) {
-                generationGuardedForeignQuery(
-                    executor = workers,
-                    timeoutMillis = 2_000,
-                    admit = {
-                        leases.withOutbound { TrustAdmission(generation).takeIf { trusted } }
-                    },
-                    query = {
-                        queryStarted.countDown()
-                        releaseQuery.await()
-                        "stale-watch"
-                    },
-                    publishIfCurrent = { admitted, _ ->
-                        leases.withOutbound {
-                            when {
-                                admitted.generation != generation -> TrustLeaseResult.Stale
-                                !trusted -> TrustLeaseResult.Untrusted
-                                else -> TrustLeaseResult.Admitted(Unit)
+            val query =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    generationGuardedForeignQuery(
+                        executor = workers,
+                        timeoutMillis = 2_000,
+                        admit = {
+                            leases.withOutbound { TrustAdmission(generation).takeIf { trusted } }
+                        },
+                        query = {
+                            queryStarted.countDown()
+                            releaseQuery.await()
+                            "stale-watch"
+                        },
+                        publishIfCurrent = { admitted, _ ->
+                            leases.withOutbound {
+                                when {
+                                    admitted.generation != generation -> TrustLeaseResult.Stale
+                                    !trusted -> TrustLeaseResult.Untrusted
+                                    else -> TrustLeaseResult.Admitted(Unit)
+                                }
                             }
-                        }
-                    },
-                )
-            }
+                        },
+                    )
+                }
             assertTrue(queryStarted.await(2, TimeUnit.SECONDS))
 
             leases.withOutbound {

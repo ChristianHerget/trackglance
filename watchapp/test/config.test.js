@@ -5,7 +5,7 @@ const {JSDOM} = require('jsdom');
 const config = require('../src/pkjs/index.js');
 
 assert.strictEqual(config.VERSION, 4);
-assert.strictEqual(config.RELEASE, '0.2.2');
+assert.strictEqual(config.RELEASE, '0.2.3');
 assert.strictEqual(config.LIMIT.pages, 4);
 assert.strictEqual(config.KEYS.locusId, 51);
 assert.strictEqual(config.KEYS.fingerprintA, 52);
@@ -13,6 +13,11 @@ assert.strictEqual(config.KEYS.fingerprintB, 53);
 assert.strictEqual(config.TYPES.recordingContext, 10);
 assert.strictEqual(config.TYPES.requestRuntimeConfig, 11);
 assert(config.catalogComplete());
+const supportedLocales = ['en_US','fr_FR','de_DE','es_ES','it_IT','pt_PT','zh_CN','zh_TW'];
+assert.deepStrictEqual(supportedLocales.map(config.locale), ['en','fr','de','es','it','pt','zh_CN','zh_TW']);
+assert.strictEqual(config.locale('en_CN'), 'zh_CN');
+assert.strictEqual(config.locale('en_TW'), 'zh_TW');
+assert.strictEqual(config.locale('nl_NL'), 'en');
 assert(config.validLocusId('0'));
 assert(config.validLocusId('-1'));
 assert(config.validLocusId('-9223372036854775808'));
@@ -178,6 +183,19 @@ dom.window.c.activities[0].pages[0].name = '🥾'.repeat(20);
 dom.window.document.querySelector('.clone').click();
 assert(dom.window.c.activities[0].pages.every(page => config.validName(page.name)));
 
-assert(config.validHeartRateMessage({0:4,1:8,35:'0.2.2',7:1,38:2,6:3,37:100}));
+supportedLocales.forEach(language => {
+  const localized = config.reconcile(config.defaultsFor(language), catalog, language).config;
+  const localizedHtml = decodeURIComponent(config.settingsPage(
+    localized, catalog, language, 'fresh', null,
+  ).split(',').slice(1).join(','));
+  const localizedDom = new JSDOM(localizedHtml, {runScripts: 'dangerously'});
+  assert(localizedDom.window.document.querySelector('#save').textContent.trim());
+  const firstPage = localizedDom.window.document.querySelector('.page .name');
+  assert(firstPage, `settings page renders an activity for ${language}`);
+  firstPage.click();
+  assert.strictEqual(localizedDom.window.document.querySelectorAll('.metric').length > 0, true);
+});
+
+assert(config.validHeartRateMessage({0:4,1:8,35:config.RELEASE,7:1,38:2,6:3,37:100}));
 assert(!config.validHeartRateMessage({0:4,1:8,35:'0.2.0',7:1,38:2,6:3,37:100}));
-assert.deepStrictEqual(config.configResultMessage({0:4,1:9,35:'0.2.2',33:4,4:0}), {id:4,result:0});
+assert.deepStrictEqual(config.configResultMessage({0:4,1:9,35:config.RELEASE,33:4,4:0}), {id:4,result:0});

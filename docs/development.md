@@ -1,5 +1,12 @@
 # Development setup
 
+## Preparing a version bump
+
+Run `./tools/bump-version MAJOR.MINOR.PATCH` once. It verifies that the existing release markers
+agree, increments Android's version code, and updates the Android, watch, JavaScript, protocol,
+release-note, and documentation versions together. Use `./tools/bump-version --check` in reviews
+to verify parity without changing files.
+
 For the complete installation, QEMU/CoreApp setup, end-to-end acceptance procedure, troubleshooting,
 and containerization roadmap, see [End-to-end development and testing](end-to-end-testing.md).
 For the automated rootless Android 12L environment, see [Podman test environment](podman-testing.md).

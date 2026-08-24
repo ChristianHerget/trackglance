@@ -8,7 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuthenticatedIngressAndCallbackTest {
-    @Test fun aHungTwoWayCoreCallbackCannotBlockRevocationOrGrowAQueue() {
+    @Test
+    fun aHungTwoWayCoreCallbackCannotBlockRevocationOrGrowAQueue() {
         val executor = BoundedAbandonableCallExecutor(1, "callback-test")
         val delivery = BoundedCallbackDelivery(executor)
         val callbackStarted = CountDownLatch(1)
@@ -22,7 +23,7 @@ class AuthenticatedIngressAndCallbackTest {
                         callbackStarted.countDown()
                         releaseCallback.await()
                     },
-                ),
+                )
             )
             assertTrue(callbackStarted.await(2, TimeUnit.SECONDS))
 
@@ -32,7 +33,7 @@ class AuthenticatedIngressAndCallbackTest {
                 delivery.deliver(
                     stillAuthorized = { authorized },
                     callback = { error("A saturated executor must not queue this callback") },
-                ),
+                )
             )
             assertFalse(authorized)
         } finally {

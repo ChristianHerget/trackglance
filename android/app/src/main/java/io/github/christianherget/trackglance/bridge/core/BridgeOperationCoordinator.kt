@@ -33,27 +33,30 @@ internal class BridgeOperationCoordinator<Target, Snapshot>(
         finish(mutation, delivered)
     }
 
-    suspend fun <Result> serialized(block: suspend BridgeOperationCoordinator<Target, Snapshot>.() -> Result): Result =
-        mutex.withLock { block() }
+    suspend fun <Result> serialized(
+        block: suspend BridgeOperationCoordinator<Target, Snapshot>.() -> Result
+    ): Result = mutex.withLock { block() }
 
     fun reserveSnapshotEpoch(observedEpochSeconds: Long): Long {
         val observed = observedEpochSeconds.coerceIn(0, MAX_EPOCH)
-        val next = if (snapshotEpoch == -1L) {
-            observed
-        } else {
-            check(snapshotEpoch < MAX_EPOCH) { "Snapshot epoch space is exhausted" }
-            maxOf(observed, snapshotEpoch + 1L)
-        }
+        val next =
+            if (snapshotEpoch == -1L) {
+                observed
+            } else {
+                check(snapshotEpoch < MAX_EPOCH) { "Snapshot epoch space is exhausted" }
+                maxOf(observed, snapshotEpoch + 1L)
+            }
         snapshotEpoch = next
         return next
     }
 
     fun reserveProfileTransferId(): Int {
-        profileTransferSerial = if (profileTransferSerial == -1L) {
-            0L
-        } else {
-            (profileTransferSerial + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK
-        }
+        profileTransferSerial =
+            if (profileTransferSerial == -1L) {
+                0L
+            } else {
+                (profileTransferSerial + 1L) and BridgeProtocol.TRANSFER_SERIAL_MASK
+            }
         return profileTransferSerial.toInt()
     }
 

@@ -12,7 +12,9 @@ value class TrustAdmission(val generation: Long) {
 
 internal sealed interface TrustLeaseResult<out Result> {
     data class Admitted<Result>(val value: Result) : TrustLeaseResult<Result>
+
     data object Stale : TrustLeaseResult<Nothing>
+
     data object Untrusted : TrustLeaseResult<Nothing>
 }
 

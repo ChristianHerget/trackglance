@@ -11,18 +11,24 @@ data class RawLocusUnitPreferences(
 )
 
 object LocusUnitPreferenceMapper {
-    fun map(raw: RawLocusUnitPreferences): BridgeProtocol.UnitPreferences = BridgeProtocol.UnitPreferences(
-        length = BridgeProtocol.LengthFormat.entries.getOrNull(raw.length)
-            ?: BridgeProtocol.UnitPreferences.METRIC.length,
-        altitude = BridgeProtocol.AltitudeFormat.entries.getOrNull(raw.altitude)
-            ?: BridgeProtocol.UnitPreferences.METRIC.altitude,
-        speed = BridgeProtocol.SpeedFormat.entries.getOrNull(raw.speed)
-            ?: BridgeProtocol.UnitPreferences.METRIC.speed,
-        slope = BridgeProtocol.SlopeFormat.entries.getOrNull(raw.slope)
-            ?: BridgeProtocol.UnitPreferences.METRIC.slope,
-        energy = BridgeProtocol.EnergyFormat.entries.getOrNull(raw.energy)
-            ?: BridgeProtocol.UnitPreferences.METRIC.energy,
-    )
+    fun map(raw: RawLocusUnitPreferences): BridgeProtocol.UnitPreferences =
+        BridgeProtocol.UnitPreferences(
+            length =
+                BridgeProtocol.LengthFormat.entries.getOrNull(raw.length)
+                    ?: BridgeProtocol.UnitPreferences.METRIC.length,
+            altitude =
+                BridgeProtocol.AltitudeFormat.entries.getOrNull(raw.altitude)
+                    ?: BridgeProtocol.UnitPreferences.METRIC.altitude,
+            speed =
+                BridgeProtocol.SpeedFormat.entries.getOrNull(raw.speed)
+                    ?: BridgeProtocol.UnitPreferences.METRIC.speed,
+            slope =
+                BridgeProtocol.SlopeFormat.entries.getOrNull(raw.slope)
+                    ?: BridgeProtocol.UnitPreferences.METRIC.slope,
+            energy =
+                BridgeProtocol.EnergyFormat.entries.getOrNull(raw.energy)
+                    ?: BridgeProtocol.UnitPreferences.METRIC.energy,
+        )
 }
 
 class LocusUnitPreferencesCache(

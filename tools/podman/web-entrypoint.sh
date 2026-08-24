@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-for attempt in $(seq 1 300); do
+for _ in $(seq 1 300); do
   [[ -s /run/trackglance/android-discovery.ini ]] && break
   sleep 0.1
 done

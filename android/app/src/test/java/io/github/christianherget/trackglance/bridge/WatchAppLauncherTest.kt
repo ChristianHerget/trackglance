@@ -1,8 +1,8 @@
 package io.github.christianherget.trackglance.bridge
 
+import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallExecutor
 import io.github.christianherget.trackglance.bridge.pebble.TrustAdmission
 import io.github.christianherget.trackglance.bridge.pebble.TrustLeaseResult
-import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallExecutor
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -18,7 +18,8 @@ import org.junit.Test
 class WatchAppLauncherTest {
     private val admission = TrustAdmission(1)
 
-    @Test fun trustedConnectedWatchStartsThroughTheAdmittedBoundary() = runBlocking {
+    @Test
+    fun trustedConnectedWatchStartsThroughTheAdmittedBoundary() = runBlocking {
         var started = emptyList<String>()
         val launcher = launcher(start = { started = it })
 
@@ -26,7 +27,8 @@ class WatchAppLauncherTest {
         assertEquals(listOf("watch-a"), started)
     }
 
-    @Test fun noConnectedWatchIsDistinctAndDoesNotStart() = runBlocking {
+    @Test
+    fun noConnectedWatchIsDistinctAndDoesNotStart() = runBlocking {
         var starts = 0
         val launcher = launcher(watches = { emptyList() }, start = { starts++ })
 
@@ -34,7 +36,8 @@ class WatchAppLauncherTest {
         assertEquals(0, starts)
     }
 
-    @Test fun untrustedAndStaleCompanionsAreDistinct() = runBlocking {
+    @Test
+    fun untrustedAndStaleCompanionsAreDistinct() = runBlocking {
         assertEquals(
             WatchAppLaunchResult.UNTRUSTED_COMPANION,
             launcher(trusted = { false }).launch(),
@@ -45,7 +48,8 @@ class WatchAppLauncherTest {
         )
     }
 
-    @Test fun lookupAndLaunchFailuresAreDistinct() = runBlocking {
+    @Test
+    fun lookupAndLaunchFailuresAreDistinct() = runBlocking {
         assertEquals(
             WatchAppLaunchResult.LOOKUP_FAILED,
             launcher(watches = { error("lookup") }).launch(),
@@ -56,10 +60,18 @@ class WatchAppLauncherTest {
         )
     }
 
-    @Test fun timeoutIsReportedAndExternalCancellationIsPreserved() = runBlocking {
+    @Test
+    fun timeoutIsReportedAndExternalCancellationIsPreserved() = runBlocking {
         assertEquals(
             WatchAppLaunchResult.TIMED_OUT,
-            launcher(watches = { delay(100); listOf("late") }, timeoutMillis = 10).launch(),
+            launcher(
+                    watches = {
+                        delay(100)
+                        listOf("late")
+                    },
+                    timeoutMillis = 10,
+                )
+                .launch(),
         )
         val running = async { launcher(watches = { awaitCancellation() }).launch() }
         delay(10)
@@ -72,26 +84,28 @@ class WatchAppLauncherTest {
         assertTrue(running.isCancelled)
     }
 
-    @Test fun blockingLookupIsReallyBoundedAndAReleasedWorkerRecovers() = runBlocking {
+    @Test
+    fun blockingLookupIsReallyBoundedAndAReleasedWorkerRecovers() = runBlocking {
         val workers = BoundedAbandonableCallExecutor(1, "watch-launch-test")
         val lookupStarted = CountDownLatch(1)
         val releaseLookup = CountDownLatch(1)
         val lookupExited = CountDownLatch(1)
         try {
-            val blocked = launcher(
-                watches = {
-                    workers.run {
-                        lookupStarted.countDown()
-                        try {
-                            releaseLookup.await()
-                            listOf("late-watch")
-                        } finally {
-                            lookupExited.countDown()
+            val blocked =
+                launcher(
+                    watches = {
+                        workers.run {
+                            lookupStarted.countDown()
+                            try {
+                                releaseLookup.await()
+                                listOf("late-watch")
+                            } finally {
+                                lookupExited.countDown()
+                            }
                         }
-                    }
-                },
-                timeoutMillis = 25,
-            )
+                    },
+                    timeoutMillis = 25,
+                )
 
             assertEquals(WatchAppLaunchResult.TIMED_OUT, blocked.launch())
             assertTrue(lookupStarted.await(1, TimeUnit.SECONDS))
@@ -107,7 +121,8 @@ class WatchAppLauncherTest {
         }
     }
 
-    @Test fun repeatedLocusIntentsAreSafeAndOtherIntentsAreIgnored() = runBlocking {
+    @Test
+    fun repeatedLocusIntentsAreSafeAndOtherIntentsAreIgnored() = runBlocking {
         var starts = 0
         val launcher = launcher(start = { starts++ })
 
@@ -120,21 +135,24 @@ class WatchAppLauncherTest {
 
     private fun launcher(
         trusted: suspend () -> Boolean = { true },
-        gate: suspend (
-            TrustAdmission,
-            suspend () -> WatchAppLaunchResult,
-        ) -> TrustLeaseResult<WatchAppLaunchResult> = { _, block ->
-            TrustLeaseResult.Admitted(block())
-        },
+        gate:
+            suspend (
+                TrustAdmission,
+                suspend () -> WatchAppLaunchResult,
+            ) -> TrustLeaseResult<WatchAppLaunchResult> =
+            { _, block ->
+                TrustLeaseResult.Admitted(block())
+            },
         watches: suspend () -> List<String> = { listOf("watch-a") },
         start: suspend (List<String>) -> Unit = {},
         timeoutMillis: Long = 1_000,
-    ) = WatchAppLauncher(
-        ensureTrusted = trusted,
-        captureAdmission = { admission },
-        underAdmission = gate,
-        connectedWatchIds = watches,
-        startWatchApp = start,
-        timeoutMillis = timeoutMillis,
-    )
+    ) =
+        WatchAppLauncher(
+            ensureTrusted = trusted,
+            captureAdmission = { admission },
+            underAdmission = gate,
+            connectedWatchIds = watches,
+            startWatchApp = start,
+            timeoutMillis = timeoutMillis,
+        )
 }

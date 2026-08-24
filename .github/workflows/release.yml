@@ -64,19 +64,20 @@ jobs:
           cp watchapp/build/watchapp.pbw "build/release-assets/trackglance-watch-$version.pbw"
           cp trackglance-release-certificate.pem build/release-assets/
           cp trackglance-release-certificate.sha256 build/release-assets/
-          (cd build/release-assets && sha256sum * > SHA256SUMS)
+          (cd build/release-assets && sha256sum ./* > SHA256SUMS)
           rm -f build/release-private/trackglance-release.p12
           rmdir build/release-private
       - name: Create or refresh draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          tools/release-notes "${GITHUB_REF_NAME#v}" > build/release-notes.md
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --draft --title "TrackGlance ${GITHUB_REF_NAME#v}" --notes-file RELEASE.md
+            gh release edit "$GITHUB_REF_NAME" --draft --title "TrackGlance ${GITHUB_REF_NAME#v}" --notes-file build/release-notes.md
           else
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "TrackGlance ${GITHUB_REF_NAME#v}" --notes-file RELEASE.md
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "TrackGlance ${GITHUB_REF_NAME#v}" --notes-file build/release-notes.md
           fi
-          gh release upload "$GITHUB_REF_NAME" build/release-assets/* --clobber
+          gh release upload "$GITHUB_REF_NAME" ./build/release-assets/* --clobber
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

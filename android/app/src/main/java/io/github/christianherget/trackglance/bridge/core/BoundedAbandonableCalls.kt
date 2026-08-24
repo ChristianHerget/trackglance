@@ -1,7 +1,7 @@
 package io.github.christianherget.trackglance.bridge.core
 
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
@@ -24,21 +24,23 @@ internal class BoundedAbandonableCallExecutor(
 ) : AutoCloseable {
     private val threadNumber = AtomicInteger()
     private val permits = Semaphore(maxWorkers.also { require(it > 0) })
-    private val executor = ThreadPoolExecutor(
-        maxWorkers,
-        maxWorkers,
-        WORKER_KEEP_ALIVE_SECONDS,
-        TimeUnit.SECONDS,
-        LinkedBlockingQueue(),
-        ThreadFactory { runnable ->
-            Thread(runnable, "$threadNamePrefix-${threadNumber.incrementAndGet()}").apply {
-                isDaemon = true
+    private val executor =
+        ThreadPoolExecutor(
+                maxWorkers,
+                maxWorkers,
+                WORKER_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                LinkedBlockingQueue(),
+                ThreadFactory { runnable ->
+                    Thread(runnable, "$threadNamePrefix-${threadNumber.incrementAndGet()}").apply {
+                        isDaemon = true
+                    }
+                },
+                ThreadPoolExecutor.AbortPolicy(),
+            )
+            .apply {
+                allowCoreThreadTimeOut(true)
             }
-        },
-        ThreadPoolExecutor.AbortPolicy(),
-    ).apply {
-        allowCoreThreadTimeOut(true)
-    }
 
     fun execute(block: () -> Unit): Boolean {
         if (!permits.tryAcquire()) return false
@@ -60,9 +62,10 @@ internal class BoundedAbandonableCallExecutor(
     @OptIn(InternalCoroutinesApi::class)
     suspend fun <Result> run(block: () -> Result): Result = suspendCancellableCoroutine { waiter ->
         if (!permits.tryAcquire()) {
-            val token = waiter.tryResumeWithException(
-                RejectedExecutionException("All bounded foreign-call workers are busy"),
-            )
+            val token =
+                waiter.tryResumeWithException(
+                    RejectedExecutionException("All bounded foreign-call workers are busy")
+                )
             if (token != null) waiter.completeResume(token)
             return@suspendCancellableCoroutine
         }
@@ -95,15 +98,17 @@ internal class BoundedAbandonableCallExecutor(
             }
         } catch (_: RejectedExecutionException) {
             permits.release()
-            val token = waiter.tryResumeWithException(
-                RejectedExecutionException("Bounded foreign-call executor is closed"),
-            )
+            val token =
+                waiter.tryResumeWithException(
+                    RejectedExecutionException("Bounded foreign-call executor is closed")
+                )
             if (token != null) waiter.completeResume(token)
         }
     }
 
     override fun close() {
-        // Interrupt cooperative calls, but never await workers: a Binder proxy may ignore interrupt.
+        // Interrupt cooperative calls, but never await workers: a Binder proxy may ignore
+        // interrupt.
         executor.shutdownNow()
     }
 

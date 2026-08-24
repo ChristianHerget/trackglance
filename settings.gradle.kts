@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "locus-pebble-bridge"
+
 include(":android:app")

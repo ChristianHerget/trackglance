@@ -35,30 +35,35 @@ static char s_profile_transfer_buffer[WATCH_PROFILE_TRANSFER_BUFFER_SIZE];
 
 static void test_ui_metrics(void) {
   UiMetricSnapshot snapshot = {
-    .state = 1,
-    .moving_time = 65,
-    .elapsed = 90061,
-    .distance = 123,
-    .current_speed = 90,
-    .current_pace = 301,
-    .current_hr = 142,
-    .altitude_format = FORMAT_M_0,
-    .distance_format = FORMAT_KM_1,
-    .moving_distance_format = FORMAT_MI_2,
-    .current_speed_format = FORMAT_KPH_1,
-    .average_speed_format = FORMAT_MPH_1,
-    .max_speed_format = FORMAT_KNOT_0,
-    .vertical_speed_format = FORMAT_MPS_2,
-    .slope_format = FORMAT_PERCENT_0,
-    .energy_format = FORMAT_KJ_0,
-    .pace_format = FORMAT_PER_KM,
+      .state = 1,
+      .moving_time = 65,
+      .elapsed = 90061,
+      .distance = 123,
+      .current_speed = 90,
+      .current_pace = 301,
+      .current_hr = 142,
+      .altitude_format = FORMAT_M_0,
+      .distance_format = FORMAT_KM_1,
+      .moving_distance_format = FORMAT_MI_2,
+      .current_speed_format = FORMAT_KPH_1,
+      .average_speed_format = FORMAT_MPH_1,
+      .max_speed_format = FORMAT_KNOT_0,
+      .vertical_speed_format = FORMAT_MPS_2,
+      .slope_format = FORMAT_PERCENT_0,
+      .energy_format = FORMAT_KJ_0,
+      .pace_format = FORMAT_PER_KM,
   };
   char output[24];
   assert(i18n_catalog_complete());
   assert(i18n_locale("de_DE") == I18N_LOCALE_DE);
   assert(i18n_locale("de-DE") == I18N_LOCALE_DE);
   assert(i18n_locale("en_US") == I18N_LOCALE_EN);
-  assert(i18n_locale("fr_FR") == I18N_LOCALE_EN);
+  assert(i18n_locale("fr_FR") == I18N_LOCALE_FR);
+  assert(i18n_locale("es_ES") == I18N_LOCALE_ES);
+  assert(i18n_locale("it_IT") == I18N_LOCALE_IT);
+  assert(i18n_locale("pt_PT") == I18N_LOCALE_PT);
+  assert(i18n_locale("zh_CN") == I18N_LOCALE_ZH_CN);
+  assert(i18n_locale("zh_TW") == I18N_LOCALE_ZH_TW);
   i18n_set_locale(I18N_LOCALE_EN);
   assert(strcmp(ui_metric_label(METRIC_DISTANCE), "Distance") == 0);
   ui_metric_format(output, sizeof(output), METRIC_ELAPSED, &snapshot);
@@ -84,7 +89,8 @@ static void test_ui_metrics(void) {
   snapshot.distance_format = FORMAT_MI_2;
   ui_metric_format(output, sizeof(output), METRIC_DISTANCE, &snapshot);
   assert(strcmp(output, "-21474836,47 mi") == 0);
-  for (int format = 0; format < FORMAT_COUNT; format++) assert(ui_format_code_valid(format));
+  for (int format = 0; format < FORMAT_COUNT; format++)
+    assert(ui_format_code_valid(format));
   assert(!ui_format_code_valid(-1));
   assert(!ui_format_code_valid(FORMAT_COUNT));
   snapshot.distance = 0;
@@ -162,10 +168,9 @@ int persist_write_data(uint32_t key, const void *data, size_t size) {
   maybe_cut_power_before_mutation();
   if ((int)key == s_fail_write_key || size > PERSIST_DATA_MAX_LENGTH) return E_ERROR;
   StoredValue *value = stored(key);
-  const size_t written_size = (int)key == s_torn_write_key && s_torn_write_bytes < size ?
-      s_torn_write_bytes : size;
-  if (persist_used() - (value->exists ? value->length : 0) + written_size >
-      s_persist_max_size) {
+  const size_t written_size =
+      (int)key == s_torn_write_key && s_torn_write_bytes < size ? s_torn_write_bytes : size;
+  if (persist_used() - (value->exists ? value->length : 0) + written_size > s_persist_max_size) {
     return E_ERROR;
   }
   if (written_size) memcpy(value->data, data, written_size);
@@ -204,29 +209,30 @@ static void reset_store(void) {
 }
 
 static void fill(char *output, size_t length, char seed) {
-  for (size_t i = 0; i < length; i++) output[i] = (char)(seed + i % 20);
+  for (size_t i = 0; i < length; i++)
+    output[i] = (char)(seed + i % 20);
   output[length] = '\0';
 }
 
 static const PersistentBlob TEST_BLOB = {
-  .record_key = 1,
-  .legacy_key = 2,
-  .chunk_base = 10,
-  .max_chunks = 4,
+    .record_key = 1,
+    .legacy_key = 2,
+    .chunk_base = 10,
+    .max_chunks = 4,
 };
 
 static const PersistentBlob ACTIVE_CONFIG_BLOB = {
-  .record_key = 4,
-  .legacy_key = 5,
-  .chunk_base = 30,
-  .max_chunks = 4,
+    .record_key = 4,
+    .legacy_key = 5,
+    .chunk_base = 30,
+    .max_chunks = 4,
 };
 
 static const PersistentBlob PENDING_CONFIG_BLOB = {
-  .record_key = 7,
-  .legacy_key = 8,
-  .chunk_base = 50,
-  .max_chunks = 4,
+    .record_key = 7,
+    .legacy_key = 8,
+    .chunk_base = 50,
+    .max_chunks = 4,
 };
 
 static void assert_blob_equals(const PersistentBlob *blob, const char *expected, size_t length) {
@@ -271,10 +277,10 @@ static void test_persistent_blob_boundaries(void) {
 static void test_persistent_blob_recovery(void) {
   reset_store();
   const PersistentBlob blob = {
-    .record_key = 1,
-    .legacy_key = 2,
-    .chunk_base = 10,
-    .max_chunks = 4,
+      .record_key = 1,
+      .legacy_key = 2,
+      .chunk_base = 10,
+      .max_chunks = 4,
   };
   char first[701];
   char second[601];
@@ -459,9 +465,7 @@ static void test_persistent_blob_delete_failures(void) {
   assert(!persistent_blob_exists(&TEST_BLOB));
 }
 
-static void setup_config_replacement(
-    const char *current,
-    const char *queued) {
+static void setup_config_replacement(const char *current, const char *queued) {
   reset_store();
   assert(persistent_blob_write(&ACTIVE_CONFIG_BLOB, current, strlen(current)));
   assert(persistent_blob_write(&PENDING_CONFIG_BLOB, queued, strlen(queued)));
@@ -480,18 +484,16 @@ static bool replace_config_preserving_pending(const char *replacement) {
   return persistent_blob_delete(&PENDING_CONFIG_BLOB);
 }
 
-static int config_value_kind(const char *value, const char *current,
-    const char *queued, const char *replacement) {
+static int config_value_kind(const char *value, const char *current, const char *queued,
+                             const char *replacement) {
   if (strcmp(value, current) == 0) return 0;
   if (strcmp(value, queued) == 0) return 1;
   if (strcmp(value, replacement) == 0) return 2;
   return -1;
 }
 
-static void assert_config_replacement_invariant(
-    const char *current,
-    const char *queued,
-    const char *replacement) {
+static void assert_config_replacement_invariant(const char *current, const char *queued,
+                                                const char *replacement) {
   char active[1025];
   char pending[1025];
   assert(persistent_blob_read(&ACTIVE_CONFIG_BLOB, active, sizeof(active)));
@@ -499,8 +501,8 @@ static void assert_config_replacement_invariant(
   assert(active_kind >= 0);
 
   const bool pending_exists = persistent_blob_exists(&PENDING_CONFIG_BLOB);
-  const bool pending_readable = persistent_blob_read(
-      &PENDING_CONFIG_BLOB, pending, sizeof(pending));
+  const bool pending_readable =
+      persistent_blob_read(&PENDING_CONFIG_BLOB, pending, sizeof(pending));
   if (pending_readable) {
     assert(strcmp(pending, queued) == 0);
     assert(active_kind == 0 || active_kind == 1);
@@ -514,9 +516,7 @@ static void assert_config_replacement_invariant(
   if (active_kind == 2) assert(!pending_exists);
 }
 
-static void recover_config_replacement(
-    const char *queued,
-    const char *replacement) {
+static void recover_config_replacement(const char *queued, const char *replacement) {
   char pending[1025];
   if (persistent_blob_read(&PENDING_CONFIG_BLOB, pending, sizeof(pending))) {
     assert(strcmp(pending, queued) == 0);
@@ -621,36 +621,36 @@ static void test_persistent_blob_invalid_layout(void) {
   reset_store();
   assert(!persistent_blob_delete(NULL));
   const PersistentBlob invalid[] = {
-    {
-      .record_key = 1,
-      .legacy_key = 3,
-      .chunk_base = 10,
-      .max_chunks = 0,
-    },
-    {
-      .record_key = 1,
-      .legacy_key = 1,
-      .chunk_base = 10,
-      .max_chunks = 4,
-    },
-    {
-      .record_key = 10,
-      .legacy_key = 3,
-      .chunk_base = 10,
-      .max_chunks = 4,
-    },
-    {
-      .record_key = 1,
-      .legacy_key = 11,
-      .chunk_base = 10,
-      .max_chunks = 4,
-    },
-    {
-      .record_key = 1,
-      .legacy_key = 3,
-      .chunk_base = UINT32_MAX - 1,
-      .max_chunks = 4,
-    },
+      {
+          .record_key = 1,
+          .legacy_key = 3,
+          .chunk_base = 10,
+          .max_chunks = 0,
+      },
+      {
+          .record_key = 1,
+          .legacy_key = 1,
+          .chunk_base = 10,
+          .max_chunks = 4,
+      },
+      {
+          .record_key = 10,
+          .legacy_key = 3,
+          .chunk_base = 10,
+          .max_chunks = 4,
+      },
+      {
+          .record_key = 1,
+          .legacy_key = 11,
+          .chunk_base = 10,
+          .max_chunks = 4,
+      },
+      {
+          .record_key = 1,
+          .legacy_key = 3,
+          .chunk_base = UINT32_MAX - 1,
+          .max_chunks = 4,
+      },
   };
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
     assert(!persistent_blob_write(&invalid[i], "value", 5));
@@ -673,112 +673,108 @@ static void test_watch_config_transfer(void) {
   watch_config_transfer_initialize(&transfer);
   buffer[0] = '\0';
 
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 0, 3, "ab", 2) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 1, 3, "cd", 2) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 0, 3, "ab", 2) == WATCH_TRANSFER_DUPLICATE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 0, 3, "ab", 2) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 1, 3, "cd", 2) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 0, 3, "ab", 2) ==
+         WATCH_TRANSFER_DUPLICATE);
   assert(transfer.next_chunk == 2);
   assert(transfer.length == 4);
   assert(strcmp(buffer, "abcd") == 0);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 1, 3, "cd", 2) == WATCH_TRANSFER_DUPLICATE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 1, 3, "cd", 2) ==
+         WATCH_TRANSFER_DUPLICATE);
 
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 99, 1, 3, "unrelated", 9) == WATCH_TRANSFER_IGNORED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 99, 1, WATCH_CONFIG_MAX_CHUNKS + 1,
-      "bad", 3) == WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 99, 1, 3, "unrelated",
+                                      9) == WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 99, 1,
+                                      WATCH_CONFIG_MAX_CHUNKS + 1, "bad",
+                                      3) == WATCH_TRANSFER_IGNORED);
   assert(transfer.id == 7);
   assert(transfer.next_chunk == 2);
 
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 2, 3, "ef", 2) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 2, 3, "ef", 2) ==
+         WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "abcdef") == 0);
 
   watch_config_transfer_initialize(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 7, 0, 1, "abcdef", 6) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 7, 0, 1, "abcdef", 6) ==
+         WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "abcdef") == 0);
 
   watch_config_transfer_reset(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 8, 0, 2, "one", 3) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 8, 0, 2, "changed", 7) == WATCH_TRANSFER_INVALID);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 8, 0, 2, "one", 3) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 8, 0, 2, "changed", 7) ==
+         WATCH_TRANSFER_INVALID);
   assert(transfer.id == -1);
 
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 9, 0, 2, "one", 3) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 9, 1, 3, "two", 3) == WATCH_TRANSFER_INVALID);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 9, 0, 2, "one", 3) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 9, 1, 3, "two", 3) ==
+         WATCH_TRANSFER_INVALID);
   assert(transfer.id == -1);
 
   char small[5];
-  assert(watch_config_transfer_accept(
-      &transfer, small, sizeof(small), 10, 0, 2, "four", 4) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, small, sizeof(small), 10, 1, 2, "x", 1) == WATCH_TRANSFER_INVALID);
+  assert(watch_config_transfer_accept(&transfer, small, sizeof(small), 10, 0, 2, "four", 4) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, small, sizeof(small), 10, 1, 2, "x", 1) ==
+         WATCH_TRANSFER_INVALID);
   assert(transfer.id == -1);
 
   watch_config_transfer_initialize(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 21, 0, 1, "new", 3) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 21, 0, 1, "new", 3) ==
+         WATCH_TRANSFER_COMPLETE);
   watch_config_transfer_reset(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 20, 0, 1, "old", 3) == WATCH_TRANSFER_IGNORED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 20, 0, 2, "old-", 4) == WATCH_TRANSFER_IGNORED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 20, 1, 2, "tail", 4) == WATCH_TRANSFER_IGNORED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 21, 0, 1, "changed", 7) == WATCH_TRANSFER_INVALID);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 21, 0, 1, "new", 3) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 20, 0, 1, "old", 3) ==
+         WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 20, 0, 2, "old-", 4) ==
+         WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 20, 1, 2, "tail", 4) ==
+         WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 21, 0, 1, "changed", 7) ==
+         WATCH_TRANSFER_INVALID);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 21, 0, 1, "new", 3) ==
+         WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "new") == 0);
 
   watch_config_transfer_initialize(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 1, 2, "cd", 2) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 1, 2, "cd", 2) ==
+         WATCH_TRANSFER_COMPLETE);
   watch_config_transfer_reset(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 1, 2, "XX", 2) == WATCH_TRANSFER_INVALID);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 22, 1, 2, "cd", 2) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 1, 2, "XX", 2) ==
+         WATCH_TRANSFER_INVALID);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 0, 2, "ab", 2) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 22, 1, 2, "cd", 2) ==
+         WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "abcd") == 0);
 
   watch_config_transfer_initialize(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 31, 0, 2, "new-", 4) == WATCH_TRANSFER_ACCEPTED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 30, 0, 1, "old", 3) == WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 31, 0, 2, "new-", 4) ==
+         WATCH_TRANSFER_ACCEPTED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 30, 0, 1, "old", 3) ==
+         WATCH_TRANSFER_IGNORED);
   assert(transfer.id == 31);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 31, 1, 2, "tail", 4) == WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 31, 1, 2, "tail", 4) ==
+         WATCH_TRANSFER_COMPLETE);
   assert(strcmp(buffer, "new-tail") == 0);
 
   watch_config_transfer_initialize(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), INT32_MAX, 0, 1, "edge", 4) ==
-      WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), INT32_MAX, 0, 1, "edge",
+                                      4) == WATCH_TRANSFER_COMPLETE);
   watch_config_transfer_reset(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 0, 0, 1, "wrapped", 7) ==
-      WATCH_TRANSFER_COMPLETE);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 0, 0, 1, "wrapped", 7) ==
+         WATCH_TRANSFER_COMPLETE);
   watch_config_transfer_reset(&transfer);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), INT32_MAX, 0, 1, "stale", 5) ==
-      WATCH_TRANSFER_IGNORED);
-  assert(watch_config_transfer_accept(
-      &transfer, buffer, sizeof(buffer), 0x40000000, 0, 1, "ambiguous", 9) ==
-      WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), INT32_MAX, 0, 1, "stale",
+                                      5) == WATCH_TRANSFER_IGNORED);
+  assert(watch_config_transfer_accept(&transfer, buffer, sizeof(buffer), 0x40000000, 0, 1,
+                                      "ambiguous", 9) == WATCH_TRANSFER_IGNORED);
 }
 
 static void test_transfer_serial_reservation(void) {
@@ -855,10 +851,9 @@ static void test_watch_text_validation(void) {
 
 static void test_watch_config(void) {
   WatchConfig config;
-  const char valid[] =
-      "dark|1|10|12345|4294967295|42\n"
-      "Default|1,3,5|walk\n"
-      "Climb|1,10,11|climb";
+  const char valid[] = "dark|1|10|12345|4294967295|42\n"
+                       "Default|1,3,5|walk\n"
+                       "Climb|1,10,11|climb";
   assert(parse(valid, "walk", &config));
   assert(config.profile_count == 2);
   assert(config.selected == 0);
@@ -911,45 +906,36 @@ static void test_watch_config(void) {
   }
   assert(!parse(too_many, NULL, &config));
 
-  assert(watch_profile_list_valid("1|Walking\n42|Wandern \xC3\x84", strlen("1|Walking\n42|Wandern \xC3\x84")));
+  assert(watch_profile_list_valid("1|Walking\n42|Wandern \xC3\x84",
+                                  strlen("1|Walking\n42|Wandern \xC3\x84")));
   assert(watch_profile_list_valid("0|Default\n-1|Internal", strlen("0|Default\n-1|Internal")));
-  assert(watch_profile_list_valid("-9223372036854775808|Minimum", strlen("-9223372036854775808|Minimum")));
+  assert(watch_profile_list_valid("-9223372036854775808|Minimum",
+                                  strlen("-9223372036854775808|Minimum")));
   assert(!watch_profile_list_valid("1|Walking\n", strlen("1|Walking\n")));
   assert(!watch_profile_list_valid("1|Walking\n\n2|Cycling", strlen("1|Walking\n\n2|Cycling")));
-  assert(!watch_profile_list_valid("1|Walking\n2|Cycling\n1|Running", strlen("1|Walking\n2|Cycling\n1|Running")));
+  assert(!watch_profile_list_valid("1|Walking\n2|Cycling\n1|Running",
+                                   strlen("1|Walking\n2|Cycling\n1|Running")));
   assert(!watch_profile_list_valid("-0|Walking", strlen("-0|Walking")));
   assert(!watch_profile_list_valid("01|Walking", strlen("01|Walking")));
-  assert(!watch_profile_list_valid("-9223372036854775809|Walking", strlen("-9223372036854775809|Walking")));
+  assert(!watch_profile_list_valid("-9223372036854775809|Walking",
+                                   strlen("-9223372036854775809|Walking")));
   assert(!watch_profile_list_valid("1|Walk|ing", strlen("1|Walk|ing")));
   const char invalid_utf8[] = {'1', '|', 'B', 'a', 'd', (char)0xc0, (char)0xaf};
   assert(!watch_profile_list_valid(invalid_utf8, sizeof(invalid_utf8)));
 }
 
-static WatchProfileTransferOutcome accept_profile_part(
-    int32_t id,
-    int index,
-    int count,
-    int result,
-    const char *data,
-    uint32_t uptime_seconds) {
-  return watch_profile_transfer_accept(
-      &s_profile_transfer,
-      s_profile_transfer_buffer,
-      sizeof(s_profile_transfer_buffer),
-      id,
-      index,
-      count,
-      result,
-      data,
-      strlen(data),
-      uptime_seconds);
+static WatchProfileTransferOutcome accept_profile_part(int32_t id, int index, int count, int result,
+                                                       const char *data, uint32_t uptime_seconds) {
+  return watch_profile_transfer_accept(&s_profile_transfer, s_profile_transfer_buffer,
+                                       sizeof(s_profile_transfer_buffer), id, index, count, result,
+                                       data, strlen(data), uptime_seconds);
 }
 
 static void test_snapshot_epoch_ordering(void) {
   SnapshotState state = {
-    .received = true,
-    .epoch = 200,
-    .age = 0,
+      .received = true,
+      .epoch = 200,
+      .age = 0,
   };
   assert(!accept_snapshot_epoch(&state, 199, true));
   assert(state.epoch == 200);
@@ -982,20 +968,13 @@ static void test_profile_transfer_reordering(void) {
   assert(accept_profile_part(7, 0, 3, 0, "A", 3) == WATCH_PROFILE_TRANSFER_DUPLICATE);
   assert(s_profile_transfer.received_count == 2);
   assert(s_profile_transfer.received[1]);
-  assert(memcmp(
-      s_profile_transfer_buffer + WATCH_PROFILE_CHUNK_BYTES,
-      "B",
-      1) == 0);
+  assert(memcmp(s_profile_transfer_buffer + WATCH_PROFILE_CHUNK_BYTES, "B", 1) == 0);
   assert(s_profile_transfer.last_activity == 3);
   assert(accept_profile_part(7, 2, 3, 0, "C", 4) == WATCH_PROFILE_TRANSFER_COMPLETE);
   assert(s_profile_transfer.received_count == 3);
   size_t joined_length = 0;
-  assert(watch_profile_transfer_join(
-      &s_profile_transfer,
-      s_profile_transfer_buffer,
-      sizeof(s_profile_transfer_buffer),
-      8191,
-      &joined_length));
+  assert(watch_profile_transfer_join(&s_profile_transfer, s_profile_transfer_buffer,
+                                     sizeof(s_profile_transfer_buffer), 8191, &joined_length));
   assert(joined_length == 3);
   assert(strcmp(s_profile_transfer_buffer, "ABC") == 0);
 
@@ -1037,16 +1016,13 @@ static void test_profile_transfer_reordering(void) {
   assert(accept_profile_part(13, 1, 2, 0, "tail", 23) == WATCH_PROFILE_TRANSFER_COMPLETE);
 
   watch_profile_transfer_initialize(&s_profile_transfer);
-  assert(accept_profile_part(INT32_MAX, 0, 1, 0, "edge", 24) ==
-      WATCH_PROFILE_TRANSFER_COMPLETE);
+  assert(accept_profile_part(INT32_MAX, 0, 1, 0, "edge", 24) == WATCH_PROFILE_TRANSFER_COMPLETE);
   watch_profile_transfer_reset(&s_profile_transfer);
-  assert(accept_profile_part(0, 0, 1, 0, "wrapped", 25) ==
-      WATCH_PROFILE_TRANSFER_COMPLETE);
+  assert(accept_profile_part(0, 0, 1, 0, "wrapped", 25) == WATCH_PROFILE_TRANSFER_COMPLETE);
   watch_profile_transfer_reset(&s_profile_transfer);
-  assert(accept_profile_part(INT32_MAX, 0, 1, 0, "stale", 26) ==
-      WATCH_PROFILE_TRANSFER_IGNORED);
+  assert(accept_profile_part(INT32_MAX, 0, 1, 0, "stale", 26) == WATCH_PROFILE_TRANSFER_IGNORED);
   assert(accept_profile_part(0x40000000, 0, 1, 0, "ambiguous", 27) ==
-      WATCH_PROFILE_TRANSFER_IGNORED);
+         WATCH_PROFILE_TRANSFER_IGNORED);
 }
 
 int main(void) {

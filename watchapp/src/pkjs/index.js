@@ -1,9 +1,9 @@
-/* Offline configuration for CoreApp. This file intentionally has no network dependencies. */
+/* Offline configuration for the Pebble App. This file intentionally has no network dependencies. */
 (function (root) {
   'use strict';
 
   var V = 4;
-  var RELEASE = '0.2.2';
+  var RELEASE = '0.2.3';
   var CONFIG = 'config';
   var CACHE = 'locusProfiles.v4';
   var NOTICE = 'configNotice.v4';
@@ -66,19 +66,111 @@
       unavailable: 'Noch keine Aktivitätsantwort von der Bridge empfangen.',
       incompatible: 'Bridge und Watch sind inkompatibel. Version ' + RELEASE + ' auf beiden Geräten installieren.',
       storage: 'Einstellungen konnten nicht gespeichert werden; die vorige Konfiguration bleibt erhalten.'
+    },
+    fr: {
+      title: 'Pont Locus', activities: 'Activités', theme: 'Thème', dark: 'Sombre', light: 'Clair',
+      heartRate: 'Fréquence cardiaque', sendHr: 'Envoyer le pouls de la montre à Locus', hrInterval: 'Intervalle cardiaque',
+      seconds: 'secondes', edit: 'Modifier', save: 'Enregistrer', done: 'Terminé', cancel: 'Annuler', reset: 'Réinitialiser',
+      name: 'Nom affiché', mapping: 'Activité Locus', metrics: 'Mesures', addMetric: 'Ajouter une mesure', clone: 'Dupliquer la page',
+      remove: 'Supprimer', defaultName: 'Par défaut', copySuffix: ' copie', drag: 'Faire glisser pour trier',
+      deleteLast: 'Supprimer la dernière page crée immédiatement une nouvelle page par défaut. Continuer ?',
+      confirmReset: 'Réinitialiser toutes les pages et les réglages ?', moveFull: 'L’activité cible possède déjà quatre pages.',
+      invalid: 'Choisissez 1 à 6 mesures uniques et des noms valides.', duplicate: 'Les noms doivent être uniques dans une activité.',
+      discard: 'Ignorer les modifications ?', fresh: 'Activités Locus actualisées.', stale: 'Dernière liste d’activités enregistrée utilisée.',
+      empty: 'Locus n’a renvoyé aucune activité ; les réglages sont conservés.', unavailable: 'Aucune réponse du Bridge pour le moment.',
+      incompatible: 'Versions Bridge/montre incompatibles. Installez la version ' + RELEASE + ' sur les deux appareils.',
+      storage: 'Impossible d’enregistrer les réglages ; la configuration précédente est conservée.'
+    },
+    es: {
+      title: 'Puente Locus', activities: 'Actividades', theme: 'Tema', dark: 'Oscuro', light: 'Claro',
+      heartRate: 'Frecuencia cardíaca', sendHr: 'Enviar pulso del reloj a Locus', hrInterval: 'Intervalo cardíaco',
+      seconds: 'segundos', edit: 'Editar', save: 'Guardar', done: 'Listo', cancel: 'Cancelar', reset: 'Restablecer',
+      name: 'Nombre visible', mapping: 'Actividad Locus', metrics: 'Métricas', addMetric: 'Añadir métrica', clone: 'Duplicar página',
+      remove: 'Eliminar', defaultName: 'Predeterminada', copySuffix: ' copia', drag: 'Arrastra para ordenar',
+      deleteLast: 'Al borrar la última página se crea una nueva página predeterminada. ¿Continuar?',
+      confirmReset: '¿Restablecer todas las páginas y ajustes?', moveFull: 'La actividad de destino ya tiene cuatro páginas.',
+      invalid: 'Elige de 1 a 6 métricas únicas y nombres válidos.', duplicate: 'Los nombres deben ser únicos en cada actividad.',
+      discard: '¿Descartar los cambios?', fresh: 'Actividades de Locus actualizadas.', stale: 'Se usa la última lista guardada.',
+      empty: 'Locus no devolvió actividades; se conservan los ajustes.', unavailable: 'Aún no hay respuesta del Bridge.',
+      incompatible: 'Versiones de Bridge/reloj incompatibles. Instala ' + RELEASE + ' en ambos dispositivos.',
+      storage: 'No se pudieron guardar los ajustes; se conserva la configuración anterior.'
+    },
+    it: {
+      title: 'Bridge Locus', activities: 'Attività', theme: 'Tema', dark: 'Scuro', light: 'Chiaro',
+      heartRate: 'Frequenza cardiaca', sendHr: 'Invia battito dell’orologio a Locus', hrInterval: 'Intervallo cardiaco',
+      seconds: 'secondi', edit: 'Modifica', save: 'Salva', done: 'Fatto', cancel: 'Annulla', reset: 'Ripristina',
+      name: 'Nome visualizzato', mapping: 'Attività Locus', metrics: 'Metriche', addMetric: 'Aggiungi metrica', clone: 'Duplica pagina',
+      remove: 'Rimuovi', defaultName: 'Predefinita', copySuffix: ' copia', drag: 'Trascina per riordinare',
+      deleteLast: 'Eliminando l’ultima pagina ne verrà creata una predefinita. Continuare?',
+      confirmReset: 'Ripristinare tutte le pagine e le impostazioni?', moveFull: 'L’attività di destinazione ha già quattro pagine.',
+      invalid: 'Scegli 1–6 metriche uniche e nomi validi.', duplicate: 'I nomi devono essere unici in ogni attività.',
+      discard: 'Ignorare le modifiche?', fresh: 'Attività Locus aggiornate.', stale: 'Viene usato l’ultimo elenco salvato.',
+      empty: 'Locus non ha restituito attività; le impostazioni restano invariate.', unavailable: 'Nessuna risposta dal Bridge.',
+      incompatible: 'Versioni Bridge/orologio incompatibili. Installa ' + RELEASE + ' su entrambi.',
+      storage: 'Impossibile salvare; viene mantenuta la configurazione precedente.'
+    },
+    pt: {
+      title: 'Ponte Locus', activities: 'Atividades', theme: 'Tema', dark: 'Escuro', light: 'Claro',
+      heartRate: 'Frequência cardíaca', sendHr: 'Enviar pulso do relógio para o Locus', hrInterval: 'Intervalo cardíaco',
+      seconds: 'segundos', edit: 'Editar', save: 'Guardar', done: 'Concluído', cancel: 'Cancelar', reset: 'Repor',
+      name: 'Nome visível', mapping: 'Atividade Locus', metrics: 'Métricas', addMetric: 'Adicionar métrica', clone: 'Duplicar página',
+      remove: 'Remover', defaultName: 'Predefinida', copySuffix: ' cópia', drag: 'Arraste para ordenar',
+      deleteLast: 'Ao eliminar a última página será criada uma página predefinida. Continuar?',
+      confirmReset: 'Repor todas as páginas e definições?', moveFull: 'A atividade de destino já tem quatro páginas.',
+      invalid: 'Escolha 1–6 métricas únicas e nomes válidos.', duplicate: 'Os nomes devem ser únicos em cada atividade.',
+      discard: 'Ignorar alterações?', fresh: 'Atividades Locus atualizadas.', stale: 'A usar a última lista guardada.',
+      empty: 'O Locus não devolveu atividades; as definições foram mantidas.', unavailable: 'Ainda sem resposta do Bridge.',
+      incompatible: 'Versões Bridge/relógio incompatíveis. Instale ' + RELEASE + ' em ambos.',
+      storage: 'Não foi possível guardar; a configuração anterior foi mantida.'
+    },
+    zh_CN: {
+      title: 'Locus 桥接', activities: '活动', theme: '主题', dark: '深色', light: '浅色',
+      heartRate: '心率', sendHr: '将手表心率发送到 Locus', hrInterval: '心率间隔', seconds: '秒',
+      edit: '编辑', save: '保存', done: '完成', cancel: '取消', reset: '重置', name: '显示名称', mapping: 'Locus 活动',
+      metrics: '指标', addMetric: '添加指标', clone: '复制页面', remove: '删除', defaultName: '默认', copySuffix: ' 副本', drag: '拖动排序',
+      deleteLast: '删除最后一页后会立即创建新的默认页。继续吗？', confirmReset: '重置所有活动页面和全局设置？',
+      moveFull: '目标活动已有四页。', invalid: '请选择 1–6 个不重复的指标和有效页面名称。', duplicate: '同一活动中的显示名称不能重复。',
+      discard: '放弃未保存的更改？', fresh: 'Locus 活动已更新。', stale: '正在使用上次保存的活动列表。',
+      empty: 'Locus 未返回活动；已保留设置。', unavailable: '尚未收到 Bridge 的活动响应。',
+      incompatible: 'Bridge 与手表版本不兼容。请在两台设备上安装 ' + RELEASE + '。', storage: '无法保存设置；已保留原配置。'
+    },
+    zh_TW: {
+      title: 'Locus 橋接', activities: '活動', theme: '主題', dark: '深色', light: '淺色',
+      heartRate: '心率', sendHr: '將手錶心率傳送到 Locus', hrInterval: '心率間隔', seconds: '秒',
+      edit: '編輯', save: '儲存', done: '完成', cancel: '取消', reset: '重設', name: '顯示名稱', mapping: 'Locus 活動',
+      metrics: '指標', addMetric: '新增指標', clone: '複製頁面', remove: '移除', defaultName: '預設', copySuffix: ' 副本', drag: '拖曳排序',
+      deleteLast: '刪除最後一頁後會立即建立新的預設頁。繼續嗎？', confirmReset: '重設所有活動頁面和全域設定？',
+      moveFull: '目標活動已有四頁。', invalid: '請選擇 1–6 個不重複的指標和有效頁面名稱。', duplicate: '同一活動中的顯示名稱不可重複。',
+      discard: '放棄未儲存的變更？', fresh: 'Locus 活動已更新。', stale: '正在使用上次儲存的活動列表。',
+      empty: 'Locus 未傳回活動；已保留設定。', unavailable: '尚未收到 Bridge 的活動回應。',
+      incompatible: 'Bridge 與手錶版本不相容。請在兩台裝置上安裝 ' + RELEASE + '。', storage: '無法儲存設定；已保留原設定。'
     }
   };
   var metricNames = {
     en: ['Elapsed time','Moving time','Total distance','Moving distance','Current speed','Average speed','Max speed','Current pace','Average pace','Altitude','Ascent','Descent','Vertical speed','Slope','Average heart rate','Max heart rate','Average cadence','Max cadence','Average power','Max power','Energy','Current heart rate'],
-    de: ['Gesamtzeit','Zeit in Bewegung','Gesamtstrecke','Strecke in Bewegung','Aktuelle Geschwindigkeit','Durchschnittsgeschwindigkeit','Höchstgeschwindigkeit','Aktuelles Tempo','Durchschnittstempo','Höhe','Anstieg','Abstieg','Vertikalgeschwindigkeit','Steigung','Durchschnittspuls','Maximalpuls','Durchschnittliche Trittfrequenz','Maximale Trittfrequenz','Durchschnittsleistung','Maximalleistung','Energie','Aktueller Puls']
+    de: ['Gesamtzeit','Zeit in Bewegung','Gesamtstrecke','Strecke in Bewegung','Aktuelle Geschwindigkeit','Durchschnittsgeschwindigkeit','Höchstgeschwindigkeit','Aktuelles Tempo','Durchschnittstempo','Höhe','Anstieg','Abstieg','Vertikalgeschwindigkeit','Steigung','Durchschnittspuls','Maximalpuls','Durchschnittliche Trittfrequenz','Maximale Trittfrequenz','Durchschnittsleistung','Maximalleistung','Energie','Aktueller Puls'],
+    fr: ['Temps écoulé','Temps en mouvement','Distance totale','Distance en mouvement','Vitesse actuelle','Vitesse moyenne','Vitesse maximale','Allure actuelle','Allure moyenne','Altitude','Montée','Descente','Vitesse verticale','Pente','FC moyenne','FC maximale','Cadence moyenne','Cadence maximale','Puissance moyenne','Puissance maximale','Énergie','FC actuelle'],
+    es: ['Tiempo transcurrido','Tiempo en movimiento','Distancia total','Distancia en movimiento','Velocidad actual','Velocidad media','Velocidad máxima','Ritmo actual','Ritmo medio','Altitud','Ascenso','Descenso','Velocidad vertical','Pendiente','FC media','FC máxima','Cadencia media','Cadencia máxima','Potencia media','Potencia máxima','Energía','FC actual'],
+    it: ['Tempo trascorso','Tempo in movimento','Distanza totale','Distanza in movimento','Velocità attuale','Velocità media','Velocità massima','Passo attuale','Passo medio','Altitudine','Salita','Discesa','Velocità verticale','Pendenza','FC media','FC massima','Cadenza media','Cadenza massima','Potenza media','Potenza massima','Energia','FC attuale'],
+    pt: ['Tempo decorrido','Tempo em movimento','Distância total','Distância em movimento','Velocidade atual','Velocidade média','Velocidade máxima','Ritmo atual','Ritmo médio','Altitude','Subida','Descida','Velocidade vertical','Inclinação','FC média','FC máxima','Cadência média','Cadência máxima','Potência média','Potência máxima','Energia','FC atual'],
+    zh_CN: ['已用时间','移动时间','总距离','移动距离','当前速度','平均速度','最高速度','当前配速','平均配速','海拔','上升','下降','垂直速度','坡度','平均心率','最高心率','平均步频','最高步频','平均功率','最大功率','能量','当前心率'],
+    zh_TW: ['經過時間','移動時間','總距離','移動距離','目前速度','平均速度','最高速度','目前配速','平均配速','海拔','上升','下降','垂直速度','坡度','平均心率','最高心率','平均步頻','最高步頻','平均功率','最大功率','能量','目前心率']
   };
 
-  function locale(value) { return String(value || 'en').toLowerCase().split(/[-_]/)[0] === 'de' ? 'de' : 'en'; }
+  function locale(value) {
+    var normalized = String(value || 'en').toLowerCase().replace('-', '_');
+    if (/^(zh|en)_(cn|hans)/.test(normalized)) return 'zh_CN';
+    if (/^(zh|en)_(tw|hant)/.test(normalized)) return 'zh_TW';
+    var language = normalized.split('_')[0];
+    return ['de','fr','es','it','pt'].indexOf(language) >= 0 ? language : 'en';
+  }
   function catalogComplete() {
     var keys = Object.keys(strings.en).sort();
-    return keys.length === Object.keys(strings.de).length && keys.every(function (key) {
-      return strings.en[key] && strings.de[key];
-    }) && metricNames.en.length === 22 && metricNames.de.length === 22;
+    return Object.keys(strings).every(function (language) {
+      return keys.length === Object.keys(strings[language]).length && keys.every(function (key) {
+        return strings[language][key];
+      }) && metricNames[language].length === 22;
+    });
   }
   function utf8Bytes(value) { try { return unescape(encodeURIComponent(String(value))).length; } catch (_) { return -1; } }
   function scanCodePoints(value, visitor) {
@@ -127,9 +219,9 @@
   function newId() { return 'p' + Date.now().toString(36) + (++nextId).toString(36) + Math.floor(Math.random() * 0x100000).toString(36); }
   function presetFor(name) {
     var value = fold(name);
-    if (/(walk|hik|trek|wander|wandern|gehen|spazier)/.test(value)) return [1,3,10,11,5,22];
-    if (/(run|jogg|lauf)/.test(value)) return [1,3,8,9,11,22];
-    if (/(cycl|bike|bicycle|rad|fahrrad|rennrad|mtb)/.test(value)) return [1,3,5,6,7,22];
+    if (/(walk|hik|trek|wander|wandern|gehen|spazier|marche|randonn|caminar|sender|passegg|escurs|caminh|徒步|步行|健走)/.test(value)) return [1,3,10,11,5,22];
+    if (/(run|jogg|lauf|course|correr|corsa|corrida|跑步|慢跑)/.test(value)) return [1,3,8,9,11,22];
+    if (/(cycl|bike|bicycle|rad|fahrrad|rennrad|vélo|bicic|cicl|mtb|自行车|單車|單車|騎行)/.test(value)) return [1,3,5,6,7,22];
     return [1,3,5,6,10,22];
   }
   function defaultPage(activityName, lang) { return {id: newId(), name: strings[locale(lang)].defaultName, metrics: presetFor(activityName)}; }
@@ -284,6 +376,15 @@
       '<script>',
       '<script>function closeConfig(x){if(typeof window.__pebbleConfigClose==="function")window.__pebbleConfigClose(x);else location.href="pebblejs://close#"+encodeURIComponent(x)}');
     if(supportsHeartRate===false)page=page.replace('class="heart-rate-settings"','class="heart-rate-settings hidden"');
+    page=page.replace(
+      '/(walk|hik|trek|wander|wandern|gehen|spazier)/',
+      '/(walk|hik|trek|wander|wandern|gehen|spazier|marche|randonn|caminar|sender|passegg|escurs|caminh|徒步|步行|健走)/');
+    page=page.replace(
+      '/(run|jogg|lauf)/',
+      '/(run|jogg|lauf|course|correr|corsa|corrida|跑步|慢跑)/');
+    page=page.replace(
+      '/(cycl|bike|bicycle|rad|fahrrad|rennrad|mtb)/',
+      '/(cycl|bike|bicycle|rad|fahrrad|rennrad|vélo|bicic|cicl|mtb|自行车|單車|騎行)/');
     page=page.replace(
       'closeConfig(encodeURIComponent(JSON.stringify(c)))',
       'closeConfig(JSON.stringify(c))');

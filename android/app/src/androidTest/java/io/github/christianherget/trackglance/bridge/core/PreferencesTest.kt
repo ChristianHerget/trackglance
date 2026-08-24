@@ -6,7 +6,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PreferencesTest {
-    @Test fun wrongTypedRefreshModeFallsBackToAdaptive() {
+    @Test
+    fun wrongTypedRefreshModeFallsBackToAdaptive() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences("bridge_preferences", Context.MODE_PRIVATE)
         preferences.edit().clear().putInt("refresh_mode", 1).commit()
@@ -17,7 +18,8 @@ class PreferencesTest {
         }
     }
 
-    @Test fun unknownRefreshModeFallsBackToAdaptive() {
+    @Test
+    fun unknownRefreshModeFallsBackToAdaptive() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences("bridge_preferences", Context.MODE_PRIVATE)
         preferences.edit().clear().putString("refresh_mode", "REMOVED_MODE").commit()

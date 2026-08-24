@@ -22,13 +22,11 @@
     <string name="last_watch_hr">Last watch HR</string>
     <string name="last_hr_forwarded">Last HR forwarded</string>
     <string name="current_locus_hr">Current Locus HR</string>
-    <string name="diagnostics">Diagnostics</string>
-    <string name="last_runtime_error">Last runtime error</string>
     <string name="technical_detail">Technical detail</string>
     <string name="open">Open</string><string name="closed">Closed</string>
     <string name="connected">Connected</string><string name="not_connected">Not connected</string>
     <string name="available">Available</string><string name="unavailable">Unavailable</string>
-    <string name="not_selected">Not selected</string><string name="not_requested">Not requested</string>
+    <string name="no_pebble_app_selected">Not selected</string><string name="not_requested">Not requested</string>
     <string name="not_reported">Not reported</string><string name="not_queried">Not queried</string>
     <string name="never">Never</string><string name="none_returned">None returned</string>
     <string name="profile_count">%1$d: %2$s</string>
