@@ -56,6 +56,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("branches: [main]", source)
+        self.assertIn("tags: ['v*']", source)
         self.assertIn("github.event_name == 'pull_request'", source)
         self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
         self.assertIn("tools/podman-test acceptance-suite", source)
