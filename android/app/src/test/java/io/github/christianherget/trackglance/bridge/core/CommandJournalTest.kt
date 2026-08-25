@@ -2,12 +2,12 @@ package io.github.christianherget.trackglance.bridge.core
 
 import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommandJournalTest {
-    @Test fun identityIncludesWatchAndFingerprint() {
+    @Test
+    fun identityIncludesWatchAndFingerprint() {
         val journal = CommandJournal()
         val first = CommandJournal.Key("watch-a", 4, 9)
         val sameIdsOtherWatch = CommandJournal.Key("watch-b", 4, 9)
@@ -19,11 +19,13 @@ class CommandJournalTest {
         assertTrue(journal.begin(sameIdsOtherWatch, start) is CommandJournal.BeginResult.Execute)
     }
 
-    @Test fun capacityEvictsOldestCommand() {
+    @Test
+    fun capacityEvictsOldestCommand() {
         val journal = CommandJournal(capacity = 1)
         val old = CommandJournal.Key("watch", 1, 1)
         val next = CommandJournal.Key("watch", 1, 2)
-        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
+        val fingerprint =
+            CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
 
         assertTrue(journal.begin(old, fingerprint) is CommandJournal.BeginResult.Execute)
         assertTrue(journal.begin(next, fingerprint) is CommandJournal.BeginResult.Execute)
@@ -32,9 +34,11 @@ class CommandJournalTest {
         assertEquals(next, journal.snapshot().first().key)
     }
 
-    @Test fun malformedWatchIdentifierNeverEntersTheJournal() {
+    @Test
+    fun malformedWatchIdentifierNeverEntersTheJournal() {
         val journal = CommandJournal()
-        val fingerprint = CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
+        val fingerprint =
+            CommandJournal.fingerprint(BridgeProtocol.Command.PAUSE_RESUME, null, null)
 
         assertEquals(
             CommandJournal.BeginResult.Collision,
@@ -43,12 +47,18 @@ class CommandJournalTest {
         assertTrue(journal.snapshot().isEmpty())
     }
 
-    @Test fun malformedUtf16CommandPayloadsCannotCollapseToReplacementFingerprints() {
+    @Test
+    fun malformedUtf16CommandPayloadsCannotCollapseToReplacementFingerprints() {
         val malformedHigh = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ud800", null)
-        val malformedOther = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ud801", null)
+        val malformedOther =
+            CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ud801", null)
         val literalQuestion = CommandJournal.fingerprint(BridgeProtocol.Command.START, "?", null)
-        val replacementCharacter = CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ufffd", null)
+        val replacementCharacter =
+            CommandJournal.fingerprint(BridgeProtocol.Command.START, "\ufffd", null)
 
-        assertEquals(4, setOf(malformedHigh, malformedOther, literalQuestion, replacementCharacter).size)
+        assertEquals(
+            4,
+            setOf(malformedHigh, malformedOther, literalQuestion, replacementCharacter).size,
+        )
     }
 }

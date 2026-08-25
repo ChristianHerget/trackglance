@@ -9,6 +9,7 @@ PEBBLE_XDG_DATA_HOME="${PEBBLE_SCREENSHOT_XDG_DATA_HOME:-/tmp/pebble-sdk-data}"
 PBW="$PROJECT_DIR/watchapp/build/watchapp.pbw"
 SCREENSHOTS=(
   screenshot_emery_dashboard.png
+  screenshot_emery_no_bridge.png
   screenshot_emery_stopped.png
   screenshot_emery_units_imperial.png
   screenshot_emery_units_nautical.png
@@ -22,6 +23,7 @@ SCREENSHOTS=(
   screenshot_emery_layout_5.png
   screenshot_emery_layout_6.png
   screenshot_gabbro_dashboard.png
+  screenshot_gabbro_no_bridge.png
   screenshot_gabbro_stopped.png
   screenshot_gabbro_menu.png
   watch_settings_overview.png
@@ -81,9 +83,9 @@ for (const [name, value] of Object.entries(packageJson.pebble.messageKeys)) {
 }
 const canonical = settings.reconcile(settings.defaultsFor('en'), [{id:'1',name:'Hiking'}], 'en').config;
 const group = settings.activity(canonical, '1');
-for (const name of ['Climb', 'Map', 'Heart rate']) {
-  settings.add(canonical, '1', group.pages[0], 'en');
-  group.pages[group.pages.length - 1].name = name;
+for (const [index, name] of ['Climb', 'Map', 'Heart rate'].entries()) {
+  settings.add(canonical, '1', index + 1, index + 10);
+  group.pages[index + 1].name = name;
 }
 emit('DEFAULT_CONFIG_BASE64', Buffer.from(settings.projection(canonical, '1'), 'utf8').toString('base64'));
 NODE
@@ -179,8 +181,8 @@ send_configuration() {
   local transfer_id=$2
   local payload=$3
   local header=${payload%%$'\n'*}
-  local theme watch_hr interval locus_id fingerprint_a fingerprint_b
-  IFS='|' read -r theme watch_hr interval locus_id fingerprint_a fingerprint_b <<< "$header"
+  local _theme _watch_hr _interval _locus_id fingerprint_a fingerprint_b
+  IFS='|' read -r _theme _watch_hr _interval _locus_id fingerprint_a fingerprint_b <<< "$header"
   while IFS=$'\t' read -r chunk_index chunk_count chunk_base64; do
     local chunk
     IFS= read -r -d '' chunk < <(
@@ -224,7 +226,7 @@ capture_stable_screenshot() {
 
   rm -f "$previous" "$candidate"
   pebble_for_screenshots screenshot "$previous" --emulator "$platform" --no-open
-  for attempt in 1 2 3 4 5; do
+  for _ in 1 2 3 4 5; do
     sleep 1
     pebble_for_screenshots screenshot "$candidate" --emulator "$platform" --no-open
     if cmp -s "$previous" "$candidate"; then
@@ -279,6 +281,7 @@ capture_emery_layouts() {
 capture_platform() {
   local platform=$1
   local dashboard="$STATIC_DIR/screenshot_${platform}_dashboard.png"
+  local no_bridge="$STATIC_DIR/screenshot_${platform}_no_bridge.png"
   local stopped="$STATIC_DIR/screenshot_${platform}_stopped.png"
   local menu="$STATIC_DIR/screenshot_${platform}_menu.png"
   local dashboard_temp="${dashboard}.partial"
@@ -289,7 +292,10 @@ capture_platform() {
   echo "Installing and launching the watchapp on $platform..."
   pebble_for_screenshots install "$PBW" --emulator "$platform" --force
 
-  sleep 1
+  # With no phone message, the real watch UI changes from Connecting to its
+  # install/open instruction after ten seconds.
+  sleep 11
+  capture_stable_screenshot "$platform" "$no_bridge"
 
   echo "Loading known documentation settings on $platform..."
   send_snapshot "$platform" 0 1999999999

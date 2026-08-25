@@ -7,10 +7,11 @@ import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 
 private fun strictUtf8Encode(value: String): ByteArray {
-    val bytes = Charsets.UTF_8.newEncoder()
-        .onMalformedInput(CodingErrorAction.REPORT)
-        .onUnmappableCharacter(CodingErrorAction.REPORT)
-        .encode(CharBuffer.wrap(value))
+    val bytes =
+        Charsets.UTF_8.newEncoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .encode(CharBuffer.wrap(value))
     val result = ByteArray(bytes.remaining())
     bytes.get(result)
     return result
@@ -21,9 +22,7 @@ private fun strictUtf8Encode(value: String): ByteArray {
  *
  * It prevents duplicate Locus actions from button presses during the same bridge session.
  */
-class CommandJournal(
-    private val capacity: Int = 128,
-) {
+class CommandJournal(private val capacity: Int = 128) {
     init {
         require(capacity > 0)
     }
@@ -39,8 +38,11 @@ class CommandJournal(
 
     sealed interface BeginResult {
         data class Execute(val key: Key) : BeginResult
+
         data class Completed(val result: BridgeProtocol.Result) : BeginResult
+
         data object Pending : BeginResult
+
         data object Collision : BeginResult
     }
 
@@ -58,9 +60,10 @@ class CommandJournal(
         }
 
         while (records.size >= capacity) {
-            val removable = records.values.firstOrNull { it.result != null }
-                ?: records.values.firstOrNull() // if all are pending, evict eldest
-                ?: break
+            val removable =
+                records.values.firstOrNull { it.result != null }
+                    ?: records.values.firstOrNull() // if all are pending, evict eldest
+                    ?: break
             records.remove(removable.key)
         }
         if (nextOrdinal == Long.MAX_VALUE) renumber()
@@ -76,13 +79,15 @@ class CommandJournal(
         return true
     }
 
-    @Synchronized
-    internal fun snapshot(): List<Record> = records.values.toList()
+    @Synchronized internal fun snapshot(): List<Record> = records.values.toList()
 
     private fun renumber() {
-        val normalized = records.values.sortedBy { it.ordinal }.mapIndexed { index, record ->
-            record.copy(ordinal = index + 1L)
-        }
+        val normalized =
+            records.values
+                .sortedBy { it.ordinal }
+                .mapIndexed { index, record ->
+                    record.copy(ordinal = index + 1L)
+                }
         records.clear()
         normalized.forEach { records[it.key] = it }
         nextOrdinal = normalized.size + 1L
@@ -103,12 +108,17 @@ class CommandJournal(
                     val bytes = runCatching { strictUtf8Encode(value) }.getOrNull()
                     if (bytes != null) {
                         digest.update(1.toByte())
-                        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+                        digest.update(
+                            ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array()
+                        )
                         digest.update(bytes)
                     } else {
-                        // Preserve exact malformed UTF-16 code units instead of encoder replacement bytes.
+                        // Preserve exact malformed UTF-16 code units instead of encoder replacement
+                        // bytes.
                         digest.update(2.toByte())
-                        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.length).array())
+                        digest.update(
+                            ByteBuffer.allocate(Int.SIZE_BYTES).putInt(value.length).array()
+                        )
                         value.forEach { codeUnit ->
                             digest.update((codeUnit.code ushr 8).toByte())
                             digest.update(codeUnit.code.toByte())
@@ -119,13 +129,16 @@ class CommandJournal(
             return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
         }
 
-        private fun validKey(key: Key): Boolean = BridgeProtocol.validWatchId(key.watchId) &&
-            validUnsigned(key.sessionId) && validUnsigned(key.commandId)
+        private fun validKey(key: Key): Boolean =
+            BridgeProtocol.validWatchId(key.watchId) &&
+                validUnsigned(key.sessionId) &&
+                validUnsigned(key.commandId)
 
-        private fun validFingerprint(value: String): Boolean = value.length == SHA_256_HEX_LENGTH &&
-            value.all { it in '0'..'9' || it in 'a'..'f' }
+        private fun validFingerprint(value: String): Boolean =
+            value.length == SHA_256_HEX_LENGTH && value.all { it in '0'..'9' || it in 'a'..'f' }
 
         private fun validUnsigned(value: Long): Boolean = value in 0..UInt.MAX_VALUE.toLong()
+
         private const val SHA_256_HEX_LENGTH = 64
     }
 }

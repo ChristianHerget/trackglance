@@ -30,7 +30,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         stage = source.split("- name: Stage public assets and remove private key", 1)[1]
         certificate = stage.index("cp trackglance-release-certificate.pem build/release-assets/")
         fingerprint = stage.index("cp trackglance-release-certificate.sha256 build/release-assets/")
-        checksums = stage.index("sha256sum * > SHA256SUMS")
+        checksums = stage.index("sha256sum ./* > SHA256SUMS")
         private_key_removal = stage.index("rm -f build/release-private/trackglance-release.p12")
 
         self.assertLess(certificate, checksums)
@@ -365,7 +365,7 @@ class StaticPreflightTest(unittest.TestCase):
         )[0]
 
         self.assertIn("for _ in 1 2 3", settings)
-        self.assertIn('resource-id="theme"', settings)
+        self.assertIn('resource-id="generalOpen"', settings)
         self.assertIn("KEYCODE_BACK", settings)
 
     def test_acceptance_uses_the_manifest_activity_class_not_the_application_id(self):
@@ -408,7 +408,17 @@ class StaticPreflightTest(unittest.TestCase):
     def test_e2e_polls_until_the_watch_settings_webview_is_rendered(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         self.assertIn("settings_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn("general_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn('tap_text "General settings" 30', e2e_stage)
         self.assertIn("grep -Fq 'resource-id=\"theme\"'", e2e_stage)
+
+    def test_e2e_commits_general_edits_before_saving_the_overview(self):
+        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
+        branches = e2e_stage.split('if [[ "$PEBBLE_PLATFORM" == "emery" ]]', 1)[1]
+        emery, gabbro = branches.split("\nelse\n", 1)
+        self.assertLess(emery.index('tap_text "Done"'), emery.index('tap_text "Save"'))
+
+        self.assertLess(gabbro.index('tap_text "Done"'), gabbro.index('tap_text "Save"'))
 
     def test_e2e_starts_recording_through_the_debug_only_locus_api_surface(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")

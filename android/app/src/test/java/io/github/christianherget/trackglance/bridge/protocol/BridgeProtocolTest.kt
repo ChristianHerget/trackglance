@@ -9,7 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeProtocolTest {
-    @Test fun resultExtensionsKeepCrossLanguageWireValuesStable() {
+    @Test
+    fun resultExtensionsKeepCrossLanguageWireValuesStable() {
         assertEquals(9, BridgeProtocol.MessageType.CONFIG_RESULT.wire)
         assertEquals(10, BridgeProtocol.MessageType.RECORDING_CONTEXT.wire)
         assertEquals(11, BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire)
@@ -18,7 +19,8 @@ class BridgeProtocolTest {
         assertEquals(9, BridgeProtocol.Result.STORAGE_FAILED.wire)
     }
 
-    @Test fun obsoleteStartCommandRemainsReservedButCannotRoute() {
+    @Test
+    fun obsoleteStartCommandRemainsReservedButCannotRoute() {
         assertEquals(1, BridgeProtocol.Command.START.wire)
         BridgeProtocol.RecordingState.entries.forEach { state ->
             assertEquals(
@@ -31,17 +33,19 @@ class BridgeProtocolTest {
         }
     }
 
-    @Test fun snapshotFormattingUsesLocusMediumPrecision() {
-        val snapshot = BridgeProtocol.Snapshot(
-            state = BridgeProtocol.RecordingState.RECORDING,
-            sampledAtEpochSeconds = 100,
-            distanceMetres = 1234.6f,
-            currentSpeedMps = 1.234f,
-            averageSpeedMps = 1.567f,
-            altitudeMetres = -12.34,
-            ascentMetres = 87.65f,
-            currentHeartRate = 123,
-        )
+    @Test
+    fun snapshotFormattingUsesLocusMediumPrecision() {
+        val snapshot =
+            BridgeProtocol.Snapshot(
+                state = BridgeProtocol.RecordingState.RECORDING,
+                sampledAtEpochSeconds = 100,
+                distanceMetres = 1234.6f,
+                currentSpeedMps = 1.234f,
+                averageSpeedMps = 1.567f,
+                altitudeMetres = -12.34,
+                ascentMetres = 87.65f,
+                currentHeartRate = 123,
+            )
         val display = SnapshotFormatter.format(snapshot)
         assertEquals(DisplayValue(12, BridgeProtocol.FormatCode.KM_1), display.distance)
         assertEquals(DisplayValue(44, BridgeProtocol.FormatCode.KPH_1), display.currentSpeed)
@@ -50,14 +54,16 @@ class BridgeProtocolTest {
         assertEquals(DisplayValue(88, BridgeProtocol.FormatCode.M_0), display.ascent)
     }
 
-    @Test fun refreshModesUseExpectedCadence() {
+    @Test
+    fun refreshModesUseExpectedCadence() {
         assertEquals(2_000, RefreshPolicy(RefreshMode.ADAPTIVE).nextDelayMillis(true))
         assertEquals(10_000, RefreshPolicy(RefreshMode.ADAPTIVE).nextDelayMillis(false))
         assertEquals(5_000, RefreshPolicy(RefreshMode.FIVE_SECONDS).nextDelayMillis(false))
         assertEquals(10_000, RefreshPolicy(RefreshMode.TEN_SECONDS).nextDelayMillis(true))
     }
 
-    @Test fun waypointNamesUseTheSingleMessageUtf8Limit() {
+    @Test
+    fun waypointNamesUseTheSingleMessageUtf8Limit() {
         assertTrue(BridgeProtocol.validWaypointName("Abzweig – links halten"))
         assertTrue(BridgeProtocol.validWaypointName("ä".repeat(60)))
         assertFalse(BridgeProtocol.validWaypointName("ä".repeat(61)))
@@ -72,17 +78,19 @@ class BridgeProtocolTest {
         assertFalse(BridgeProtocol.validWaypointName("\udc00broken"))
     }
 
-    @Test fun numericConversionsSaturateWithoutEmittingTheUnavailableSentinel() {
-        val snapshot = BridgeProtocol.Snapshot(
-            state = BridgeProtocol.RecordingState.RECORDING,
-            sampledAtEpochSeconds = 1,
-            movingSeconds = -1,
-            distanceMetres = Float.MAX_VALUE,
-            currentSpeedMps = -0.1f,
-            altitudeMetres = -Double.MAX_VALUE,
-            verticalSpeedMps = Float.POSITIVE_INFINITY,
-            slopeRatio = Float.MAX_VALUE,
-        )
+    @Test
+    fun numericConversionsSaturateWithoutEmittingTheUnavailableSentinel() {
+        val snapshot =
+            BridgeProtocol.Snapshot(
+                state = BridgeProtocol.RecordingState.RECORDING,
+                sampledAtEpochSeconds = 1,
+                movingSeconds = -1,
+                distanceMetres = Float.MAX_VALUE,
+                currentSpeedMps = -0.1f,
+                altitudeMetres = -Double.MAX_VALUE,
+                verticalSpeedMps = Float.POSITIVE_INFINITY,
+                slopeRatio = Float.MAX_VALUE,
+            )
         val display = SnapshotFormatter.format(snapshot)
         assertEquals(Int.MAX_VALUE, display.distance.mantissa)
         assertEquals(BridgeProtocol.UNAVAILABLE, display.currentSpeed.mantissa)
@@ -91,7 +99,8 @@ class BridgeProtocolTest {
         assertEquals(Int.MAX_VALUE, display.slope.mantissa)
     }
 
-    @Test fun unsignedIdentifiersAreRejectedRatherThanClamped() {
+    @Test
+    fun unsignedIdentifiersAreRejectedRatherThanClamped() {
         assertEquals(UInt.MAX_VALUE, BridgeProtocol.requireUnsigned32(UInt.MAX_VALUE.toLong()))
         assertThrows(IllegalArgumentException::class.java) { BridgeProtocol.requireUnsigned32(-1) }
         assertThrows(IllegalArgumentException::class.java) {
@@ -99,7 +108,8 @@ class BridgeProtocolTest {
         }
     }
 
-    @Test fun watchIdentifiersAreBoundedAndRequireWellFormedUtf8Text() {
+    @Test
+    fun watchIdentifiersAreBoundedAndRequireWellFormedUtf8Text() {
         assertTrue(BridgeProtocol.validWatchId("watch-a"))
         assertTrue(BridgeProtocol.validWatchId("Pebble 🪨"))
         assertFalse(BridgeProtocol.validWatchId(""))

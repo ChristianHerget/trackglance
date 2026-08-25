@@ -2,14 +2,14 @@ package io.github.christianherget.trackglance.bridge.pebble
 
 import android.os.Bundle
 import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallExecutor
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,18 +17,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CancellablePebbleRequestTest {
-    @Test fun alreadyDeadEndpointFailsBeforeSubmittingTheRequest() = runBlocking {
+    @Test
+    fun alreadyDeadEndpointFailsBeforeSubmittingTheRequest() = runBlocking {
         val endpoint = FakeEndpoint(alreadyDead = true)
 
         assertNull(cancellablePebbleRequest(endpoint, Bundle()))
         assertFalse(endpoint.requested)
     }
 
-    @Test fun binderDeathDuringARequestResumesItAsFailure() = runBlocking {
+    @Test
+    fun binderDeathDuringARequestResumesItAsFailure() = runBlocking {
         val endpoint = FakeEndpoint()
-        val response = async(start = CoroutineStart.UNDISPATCHED) {
-            cancellablePebbleRequest(endpoint, Bundle())
-        }
+        val response =
+            async(start = CoroutineStart.UNDISPATCHED) {
+                cancellablePebbleRequest(endpoint, Bundle())
+            }
         assertTrue(endpoint.awaitRequested())
 
         endpoint.die()
@@ -37,7 +40,8 @@ class CancellablePebbleRequestTest {
         assertEquals(1, endpoint.closedRegistrations)
     }
 
-    @Test fun deathDuringRegistrationNeverStartsTheRemoteRequest() = runBlocking {
+    @Test
+    fun deathDuringRegistrationNeverStartsTheRemoteRequest() = runBlocking {
         val endpoint = FakeEndpoint(dieDuringRegistration = true)
 
         assertNull(cancellablePebbleRequest(endpoint, Bundle()))
@@ -45,16 +49,19 @@ class CancellablePebbleRequestTest {
         assertEquals(1, endpoint.closedRegistrations)
     }
 
-    @Test fun cancellationDuringRegistrationNeverStartsTheRemoteRequest() = runBlocking {
+    @Test
+    fun cancellationDuringRegistrationNeverStartsTheRemoteRequest() = runBlocking {
         val registrationStarted = CountDownLatch(1)
         val releaseRegistration = CountDownLatch(1)
-        val endpoint = FakeEndpoint(
-            registrationStarted = registrationStarted,
-            releaseRegistration = releaseRegistration,
-        )
-        val request = async(Dispatchers.Default) {
-            cancellablePebbleRequest(endpoint, Bundle())
-        }
+        val endpoint =
+            FakeEndpoint(
+                registrationStarted = registrationStarted,
+                releaseRegistration = releaseRegistration,
+            )
+        val request =
+            async(Dispatchers.Default) {
+                cancellablePebbleRequest(endpoint, Bundle())
+            }
         assertTrue(registrationStarted.await(2, TimeUnit.SECONDS))
 
         request.cancel()
@@ -66,7 +73,8 @@ class CancellablePebbleRequestTest {
         assertEquals(1, endpoint.closedRegistrations)
     }
 
-    @Test fun neverCallbackRequestCancelsCleanlyAndALaterRequestProgresses() = runBlocking {
+    @Test
+    fun neverCallbackRequestCancelsCleanlyAndALaterRequestProgresses() = runBlocking {
         val endpoint = FakeEndpoint()
 
         assertNull(withTimeoutOrNull(25) { cancellablePebbleRequest(endpoint, Bundle()) })
@@ -78,7 +86,8 @@ class CancellablePebbleRequestTest {
         assertEquals(2, endpoint.closedRegistrations)
     }
 
-    @Test fun callbackFromAnotherThreadMayCompleteBeforeRequestReturns() = runBlocking {
+    @Test
+    fun callbackFromAnotherThreadMayCompleteBeforeRequestReturns() = runBlocking {
         val endpoint = FakeEndpoint(respondFromAnotherThreadBeforeReturn = true)
 
         val response = cancellablePebbleRequest(endpoint, Bundle())
@@ -89,25 +98,29 @@ class CancellablePebbleRequestTest {
         assertEquals(1, endpoint.closedRegistrations)
     }
 
-    @Test fun synchronousBlockedProxyIsAbandonedSoRevocationAndLaterRequestProgress() = runBlocking {
+    @Test
+    fun synchronousBlockedProxyIsAbandonedSoRevocationAndLaterRequestProgress() = runBlocking {
         val workers = BoundedAbandonableCallExecutor(2, "blocked-proxy-test")
         val leases = SerializedCoreSessionLeases()
         val blocked = CountDownLatch(1)
         val releaseBlocked = CountDownLatch(1)
-        val endpoint = FakeEndpoint(
-            blockRequest = {
-                blocked.countDown()
-                releaseBlocked.await()
-            },
-        ).apply { respondImmediately = true }
+        val endpoint =
+            FakeEndpoint(
+                    blockRequest = {
+                        blocked.countDown()
+                        releaseBlocked.await()
+                    }
+                )
+                .apply { respondImmediately = true }
         try {
-            val firstSend = async(start = CoroutineStart.UNDISPATCHED) {
-                leases.withOutbound {
-                    withTimeoutOrNull(50) {
-                        cancellablePebbleRequest(endpoint, Bundle(), workers)
+            val firstSend =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    leases.withOutbound {
+                        withTimeoutOrNull(50) {
+                            cancellablePebbleRequest(endpoint, Bundle(), workers)
+                        }
                     }
                 }
-            }
             assertTrue(blocked.await(2, TimeUnit.SECONDS))
             assertNull(firstSend.await())
 
@@ -165,7 +178,8 @@ class CancellablePebbleRequestTest {
                 Thread {
                     callback(response)
                     callbackFinished.countDown()
-                }.start()
+                }
+                    .start()
                 callbackCompletedBeforeRequestReturned = callbackFinished.await(2, TimeUnit.SECONDS)
             } else if (respondImmediately) {
                 callback(response)

@@ -24,8 +24,9 @@ internal suspend fun <Result> generationGuardedForeignQuery(
     publishIfCurrent: suspend (TrustAdmission, Result) -> TrustLeaseResult<Unit>,
 ): GuardedForeignQueryOutcome {
     val admission = admit() ?: return GuardedForeignQueryOutcome.UNTRUSTED
-    val result = withTimeoutOrNull(timeoutMillis) { executor.run(query) }
-        ?: return GuardedForeignQueryOutcome.FAILED
+    val result =
+        withTimeoutOrNull(timeoutMillis) { executor.run(query) }
+            ?: return GuardedForeignQueryOutcome.FAILED
     return when (publishIfCurrent(admission, result)) {
         is TrustLeaseResult.Admitted -> GuardedForeignQueryOutcome.PUBLISHED
         TrustLeaseResult.Stale -> GuardedForeignQueryOutcome.STALE

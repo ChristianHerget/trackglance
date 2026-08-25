@@ -18,7 +18,8 @@ import org.junit.runner.RunWith
 class LocusEndToEndTest {
     private lateinit var gateway: LocusGateway
 
-    @Before fun requireExplicitOptInAndIdleLocus() {
+    @Before
+    fun requireExplicitOptInAndIdleLocus() {
         assumeTrue(
             "Real Locus test was not explicitly enabled",
             InstrumentationRegistry.getArguments().getString("runLocusIntegration") == "true",
@@ -31,7 +32,8 @@ class LocusEndToEndTest {
         )
     }
 
-    @Test fun catalogHasNumericIdentityAndObsoleteStartIsRejected() {
+    @Test
+    fun catalogHasNumericIdentityAndObsoleteStartIsRejected() {
         val profiles = (gateway.recordingProfiles() as? RecordingProfilesResult.Success)?.profiles
         assertTrue("Locus has no recording profile", !profiles.isNullOrEmpty())
         assertTrue(profiles!!.all { BridgeProtocol.validLocusProfileId(it.id) })

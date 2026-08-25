@@ -2,7 +2,7 @@
   "name": "trackglance-watch",
   "description": "TrackGlance displays and controls Locus Map track recordings on supported Pebble Time 2 and Pebble Round 2 smartwatches. Independent and unofficial; not affiliated with or endorsed by Core Devices, Pebble Technology, or Asamm Software.",
   "author": "Christian Herget",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -17,10 +17,12 @@
   "engines": {"node": ">=18"},
   "scripts": {
     "test": "node test/config.test.js && node test/protocol_parity.test.js && node test/c_core.test.js && node test/watch_stack.test.js",
+    "lint": "eslint src/pkjs test eslint.config.js",
     "verify:pbw": "node test/pbw.test.js"
   },
   "dependencies": {},
   "devDependencies": {
+    "eslint": "9.39.5",
     "jsdom": "24.1.3"
   },
   "pebble": {

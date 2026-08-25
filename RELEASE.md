@@ -1,7 +1,7 @@
-# TrackGlance 0.2.2
+# TrackGlance 0.2.3
 
 TrackGlance displays and controls Locus Map track recordings on supported Pebble Time 2 and Pebble
-Round 2 smartwatches. Install the APK on the Android phone, then install the PBW through CoreApp.
+Round 2 smartwatches. Install the APK on the Android phone, then install the PBW through the Pebble App.
 The latest user guide is at <https://christianherget.github.io/trackglance/>.
 
 Verify downloads with `SHA256SUMS`. The public signing certificate and its SHA-256 fingerprint are

@@ -8,7 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocusCommandRoutingTest {
-    @Test fun pauseAndResumeUseDifferentLocusActions() {
+    @Test
+    fun pauseAndResumeUseDifferentLocusActions() {
         assertEquals(
             LocusRecordingAction.PAUSE,
             LocusCommandRouting.actionFor(Command.PAUSE_RESUME, RecordingState.RECORDING),
@@ -19,7 +20,8 @@ class LocusCommandRoutingTest {
         )
     }
 
-    @Test fun stopAndSaveAcceptsBothActiveRecordingStatesOnly() {
+    @Test
+    fun stopAndSaveAcceptsBothActiveRecordingStatesOnly() {
         assertEquals(
             LocusRecordingAction.STOP_SAVE,
             LocusCommandRouting.actionFor(Command.STOP_SAVE, RecordingState.RECORDING),
@@ -38,8 +40,12 @@ class LocusCommandRoutingTest {
         )
     }
 
-    @Test fun waypointRequiresAnActivelyRecordingTrack() {
-        assertTrue("Watch waypoints must not require the phone", LocusCommandRouting.WAYPOINT_AUTO_SAVE)
+    @Test
+    fun waypointRequiresAnActivelyRecordingTrack() {
+        assertTrue(
+            "Watch waypoints must not require the phone",
+            LocusCommandRouting.WAYPOINT_AUTO_SAVE,
+        )
         assertEquals(
             LocusRecordingAction.ADD_WAYPOINT,
             LocusCommandRouting.actionFor(Command.ADD_WAYPOINT, RecordingState.RECORDING),
@@ -58,7 +64,8 @@ class LocusCommandRoutingTest {
         )
     }
 
-    @Test fun waypointNamesPreservePlainAndDictatedBehavior() {
+    @Test
+    fun waypointNamesPreservePlainAndDictatedBehavior() {
         assertEquals(
             "Pebble waypoint",
             LocusCommandRouting.waypointNameFor(Command.ADD_WAYPOINT, null),

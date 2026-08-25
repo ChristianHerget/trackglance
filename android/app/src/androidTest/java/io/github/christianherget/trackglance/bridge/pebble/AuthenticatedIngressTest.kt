@@ -5,7 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AuthenticatedIngressTest {
-    @Test fun typedIngressKeepsAdmissionSeparateFromTheWatchIdentifier() {
+    @Test
+    fun typedIngressKeepsAdmissionSeparateFromTheWatchIdentifier() {
         val admission = TrustAdmission(0x1234)
         val ingress = AuthenticatedWatchIngress(WatchIdentifier("watch-a"), admission)
 

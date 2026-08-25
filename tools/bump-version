@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Update every TrackGlance release version from one command."""
+
+import argparse
+import json
+import pathlib
+import re
+import sys
+from datetime import date
+
+
+VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+
+
+def replace_once(path, pattern, replacement):
+    text = path.read_text(encoding="utf-8")
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise ValueError(f"expected one version marker in {path}")
+    path.write_text(updated, encoding="utf-8")
+
+
+def values(root):
+    android = (root / "android/app/build.gradle.kts").read_text(encoding="utf-8")
+    watch = (root / "watchapp/src/c/main.c").read_text(encoding="utf-8")
+    pkjs = (root / "watchapp/src/pkjs/index.js").read_text(encoding="utf-8")
+    sphinx = (root / "docs/sphinx/conf.py").read_text(encoding="utf-8")
+    protocol = (root / "protocol/README.md").read_text(encoding="utf-8")
+    return {
+        "android": re.search(r'versionName = "([^"]+)"', android).group(1),
+        "package": json.loads((root / "watchapp/package.json").read_text())["version"],
+        "lock": json.loads((root / "watchapp/package-lock.json").read_text())["version"],
+        "watch": re.search(r'#define RELEASE_VERSION "([^"]+)"', watch).group(1),
+        "pkjs": re.search(r"var RELEASE = '([^']+)'", pkjs).group(1),
+        "docs": re.search(r"^version = '([^']+)'", sphinx, re.MULTILINE).group(1),
+        "protocol": re.search(r"retained for release ([0-9]+\.[0-9]+\.[0-9]+)", protocol).group(1),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("version", nargs="?", help="new MAJOR.MINOR.PATCH version")
+    parser.add_argument("--check", action="store_true", help="only verify version parity")
+    parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[1], help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    root = args.root.resolve()
+    current_values = values(root)
+    current = next(iter(current_values.values()))
+    mismatches = {name: value for name, value in current_values.items() if value != current}
+    if mismatches:
+        raise SystemExit(f"release versions disagree: {current_values}")
+    if args.check:
+        if args.version and args.version != current:
+            raise SystemExit(f"expected {args.version}, found {current}")
+        print(f"TrackGlance release sources agree on {current}")
+        return
+    if not args.version or not VERSION.fullmatch(args.version):
+        parser.error("version must have the form MAJOR.MINOR.PATCH")
+    if args.version == current:
+        raise SystemExit(f"version is already {current}")
+
+    android_path = root / "android/app/build.gradle.kts"
+    android = android_path.read_text(encoding="utf-8")
+    code = int(re.search(r"versionCode = ([0-9]+)", android).group(1))
+    replacements = {
+        "android/app/build.gradle.kts": [
+            (rf'versionName = "{re.escape(current)}"', f'versionName = "{args.version}"'),
+            (rf"versionCode = {code}", f"versionCode = {code + 1}"),
+        ],
+        "watchapp/src/c/main.c": [(re.escape(f'#define RELEASE_VERSION "{current}"'), f'#define RELEASE_VERSION "{args.version}"')],
+        "watchapp/src/pkjs/index.js": [(re.escape(f"var RELEASE = '{current}'"), f"var RELEASE = '{args.version}'")],
+        "docs/sphinx/conf.py": [
+            (re.escape(f"version = '{current}'"), f"version = '{args.version}'"),
+            (re.escape(f"release = '{current}'"), f"release = '{args.version}'"),
+        ],
+        "protocol/README.md": [(re.escape(current), args.version)] * 4,
+        "RELEASE.md": [(re.escape(f"# TrackGlance {current}"), f"# TrackGlance {args.version}")],
+        "appstore/listing.json": [(re.escape(f'"version": "{current}"'), f'"version": "{args.version}"')],
+        "docs/end-to-end-testing.md": [(re.escape(f"| Bridge and watchapp | {current} |"), f"| Bridge and watchapp | {args.version} |")],
+        "docs/sphinx/limitations.rst": [(re.escape(f"release {current}"), f"release {args.version}")],
+    }
+    for relative, changes in replacements.items():
+        for pattern, replacement in changes:
+            replace_once(root / relative, pattern, replacement)
+
+    for relative in ("watchapp/package.json", "watchapp/package-lock.json"):
+        path = root / relative
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["version"] = args.version
+        if relative.endswith("package-lock.json"):
+            data["packages"][""]["version"] = args.version
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    changelog = root / "CHANGELOG.md"
+    content = changelog.read_text(encoding="utf-8")
+    marker = f"## {current} - Unreleased"
+    if marker in content:
+        content = content.replace(marker, f"## {current} - {date.today().isoformat()}", 1)
+    heading_end = content.index("\n\n") + 2
+    content = content[:heading_end] + f"## {args.version} - Unreleased\n\n- Describe user-visible changes.\n\n" + content[heading_end:]
+    changelog.write_text(content, encoding="utf-8")
+    print(f"Bumped TrackGlance {current} -> {args.version}; Android versionCode {code} -> {code + 1}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (AttributeError, KeyError, ValueError) as error:
+        print(f"Error: {error}", file=sys.stderr)
+        raise SystemExit(1)

@@ -10,15 +10,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrustedPebbleCompanionGuardTest {
-    @Test fun pinSelectsOnlyTheExactCorePackage() = runBlocking {
+    @Test
+    fun pinSelectsOnlyTheExactCorePackage() = runBlocking {
         var selected: String? = null
         var autoSelect = true
-        val pin = TrustedPebbleCompanionPin(
-            disableAutoSelect = { autoSelect = false },
-            eligiblePackages = { listOf("other.app", TRUSTED_CORE_APP_PACKAGE) },
-            selectPackage = { selected = it },
-            selectedPackage = { selected },
-        )
+        val pin =
+            TrustedPebbleCompanionPin(
+                disableAutoSelect = { autoSelect = false },
+                eligiblePackages = { listOf("other.app", TRUSTED_CORE_APP_PACKAGE) },
+                selectPackage = { selected = it },
+                selectedPackage = { selected },
+            )
 
         assertTrue(pin.initialize())
         assertFalse(autoSelect)
@@ -26,25 +28,29 @@ class TrustedPebbleCompanionGuardTest {
         assertTrue(pin.guard.isTrusted())
     }
 
-    @Test fun missingCorePackageFailsClosed() = runBlocking {
-        val pin = TrustedPebbleCompanionPin(
-            disableAutoSelect = {},
-            eligiblePackages = { listOf("other.app") },
-            selectPackage = { error("must not select") },
-            selectedPackage = { null },
-        )
+    @Test
+    fun missingCorePackageFailsClosed() = runBlocking {
+        val pin =
+            TrustedPebbleCompanionPin(
+                disableAutoSelect = {},
+                eligiblePackages = { listOf("other.app") },
+                selectPackage = { error("must not select") },
+                selectedPackage = { null },
+            )
 
         assertFalse(pin.initialize())
         assertFalse(pin.guard.isTrusted())
     }
 
-    @Test fun guardRequiresInitializationAndExactSelection() = runBlocking {
+    @Test
+    fun guardRequiresInitializationAndExactSelection() = runBlocking {
         var initialized = false
         var selected: String? = TRUSTED_CORE_APP_PACKAGE
-        val guard = TrustedPebbleCompanionGuard(
-            initialized = { initialized },
-            selectedPackage = { selected },
-        )
+        val guard =
+            TrustedPebbleCompanionGuard(
+                initialized = { initialized },
+                selectedPackage = { selected },
+            )
 
         assertFalse(guard.isTrusted())
         initialized = true
@@ -53,7 +59,8 @@ class TrustedPebbleCompanionGuardTest {
         assertFalse(guard.isTrusted())
     }
 
-    @Test fun guardPropagatesCancellationButFailsClosedOnOtherErrors() = runBlocking {
+    @Test
+    fun guardPropagatesCancellationButFailsClosedOnOtherErrors() = runBlocking {
         assertFalse(TrustedPebbleCompanionGuard { error("picker unavailable") }.isTrusted())
         try {
             TrustedPebbleCompanionGuard { throw CancellationException("cancelled") }.isTrusted()
@@ -63,7 +70,8 @@ class TrustedPebbleCompanionGuardTest {
         }
     }
 
-    @Test fun inboundAndOutboundSessionLeasesRemainIndependent() = runBlocking {
+    @Test
+    fun inboundAndOutboundSessionLeasesRemainIndependent() = runBlocking {
         val leases = SerializedCoreSessionLeases()
         val inboundEntered = CompletableDeferred<Unit>()
         val releaseInbound = CompletableDeferred<Unit>()

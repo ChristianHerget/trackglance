@@ -23,14 +23,16 @@ data class BridgeFailure(
     val technicalDetail: String? = null,
 ) {
     companion object {
-        fun technical(error: Throwable) = BridgeFailure(
-            BridgeFailureKind.THIRD_PARTY_FAILURE,
-            error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
-        )
+        fun technical(error: Throwable) =
+            BridgeFailure(
+                BridgeFailureKind.THIRD_PARTY_FAILURE,
+                error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName,
+            )
 
-        fun technical(detail: String?) = BridgeFailure(
-            BridgeFailureKind.THIRD_PARTY_FAILURE,
-            detail?.takeIf(String::isNotBlank),
-        )
+        fun technical(detail: String?) =
+            BridgeFailure(
+                BridgeFailureKind.THIRD_PARTY_FAILURE,
+                detail?.takeIf(String::isNotBlank),
+            )
     }
 }

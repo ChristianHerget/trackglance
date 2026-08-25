@@ -8,7 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeApplicationTest {
-    @Test fun processStartupDisablesPebbleKitAutoSelectionBeforeComponentsRun() {
+    @Test
+    fun processStartupDisablesPebbleKitAutoSelectionBeforeComponentsRun() {
         val application = ApplicationProvider.getApplicationContext<Application>()
 
         assertTrue(application is BridgeApplication)

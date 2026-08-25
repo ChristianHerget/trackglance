@@ -4,9 +4,15 @@ TrackGlance Documentation
 .. meta::
    :description: TrackGlance displays and controls Locus Map track recordings on supported Pebble Time 2 and Pebble Round 2 smartwatches.
 
-.. image:: _static/trackglance-wordmark.png
-   :alt: TrackGlance Bridge
-   :align: center
+.. raw:: html
+
+   <div class="trackglance-lockup" role="img" aria-label="TrackGlance Bridge">
+     <img class="trackglance-lockup__mark" src="_static/trackglance-mark.png" alt="">
+     <span>
+       <span class="trackglance-lockup__name">TrackGlance</span>
+       <span class="trackglance-lockup__bridge">Bridge</span>
+     </span>
+   </div>
 
 **For Locus Map and Pebble smartwatches.**
 
@@ -22,6 +28,5 @@ recordings from your wrist after starting them in Locus Map.
    watchapp-options
    watch-settings
    configuration
-   flow
    limitations
    legal

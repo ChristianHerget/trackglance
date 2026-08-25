@@ -13,12 +13,12 @@ import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.common.model.PebbleDictionary
 import io.rebble.pebblekit2.common.model.TransmissionResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -34,7 +34,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BridgeRuntimeTest {
-    @Test fun openingAnotherWatchReplacesTheActiveLifecycle() {
+    @Test
+    fun openingAnotherWatchReplacesTheActiveLifecycle() {
         val sender = RecordingSender()
         val runtime = runtime(sender = sender)
         val watchA = WatchIdentifier("watch-a")
@@ -55,7 +56,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun inboundMessageAfterProcessRestartRecoversTheOpenWatchLifecycle() {
+    @Test
+    fun inboundMessageAfterProcessRestartRecoversTheOpenWatchLifecycle() {
         val sender = RecordingSender()
         val runtime = runtime(sender = sender)
         val watch = WatchIdentifier("watch-after-restart")
@@ -69,22 +71,38 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun commandResultsAndRefreshesReturnOnlyToTheirSourceWatch() = runBlocking {
+    @Test
+    fun commandResultsAndRefreshesReturnOnlyToTheirSourceWatch() = runBlocking {
         val sender = RecordingSender()
         val locus = FakeLocus()
         val runtime = runtime(sender = sender, locus = locus)
         val watchA = WatchIdentifier("watch-a")
         val watchB = WatchIdentifier("watch-b")
         try {
-            assertTrue(runtime.handleCommand(watchA, 7, 1, BridgeProtocol.Command.STOP_SAVE, null, null))
-            assertTrue(runtime.handleCommand(watchA, 7, 1, BridgeProtocol.Command.STOP_SAVE, "ignored", null))
-            assertTrue(runtime.handleCommand(watchB, 7, 1, BridgeProtocol.Command.STOP_SAVE, null, null))
+            assertTrue(
+                runtime.handleCommand(watchA, 7, 1, BridgeProtocol.Command.STOP_SAVE, null, null)
+            )
+            assertTrue(
+                runtime.handleCommand(
+                    watchA,
+                    7,
+                    1,
+                    BridgeProtocol.Command.STOP_SAVE,
+                    "ignored",
+                    null,
+                )
+            )
+            assertTrue(
+                runtime.handleCommand(watchB, 7, 1, BridgeProtocol.Command.STOP_SAVE, null, null)
+            )
 
             assertEquals(2, locus.executions)
             assertTrue(sender.calls.take(4).all { it.watches == listOf(watchA) })
             assertTrue(sender.calls.drop(4).take(2).all { it.watches == listOf(watchB) })
 
-            assertTrue(runtime.handleCommand(watchA, 7, 1, BridgeProtocol.Command.START, "Hiking", null))
+            assertTrue(
+                runtime.handleCommand(watchA, 7, 1, BridgeProtocol.Command.START, "Hiking", null)
+            )
             assertEquals(2, locus.executions)
             assertEquals(
                 BridgeProtocol.Result.FAILED.wire,
@@ -98,7 +116,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun commandResultFollowsANewerAcceptedSnapshotAndLateOldDeliveryIsRejected() = runBlocking {
+    @Test
+    fun commandResultFollowsANewerAcceptedSnapshotAndLateOldDeliveryIsRejected() = runBlocking {
         val sender = ReceiverOrderingSender()
         val locus = StateChangingLocus()
         val runtime = runtime(sender = sender, locus = locus, maxAttempts = 2)
@@ -136,7 +155,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun commandResultIsNotIssuedWhenThePostCommandSnapshotCannotBeDelivered() = runBlocking {
+    @Test
+    fun commandResultIsNotIssuedWhenThePostCommandSnapshotCannotBeDelivered() = runBlocking {
         val sender = SnapshotFailingSender()
         val locus = StateChangingLocus()
         val runtime = runtime(sender = sender, locus = locus)
@@ -149,14 +169,12 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.START,
                     "Hiking",
                     null,
-                ),
+                )
             )
 
             assertEquals(1, locus.executions)
             assertEquals(
-                listOf(
-                    BridgeProtocol.MessageType.SNAPSHOT.wire,
-                ),
+                listOf(BridgeProtocol.MessageType.SNAPSHOT.wire),
                 sender.attemptTypes,
             )
         } finally {
@@ -164,7 +182,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun delayedLocusTransitionIsObservedBeforeAnOkCommandResult() = runBlocking {
+    @Test
+    fun delayedLocusTransitionIsObservedBeforeAnOkCommandResult() = runBlocking {
         val sender = RecordingSender()
         val locus = DelayedStateChangingLocus(transitionAfterPostExecuteReads = 3)
         val runtime = runtime(sender = sender, locus = locus)
@@ -177,21 +196,23 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.START,
                     "Hiking",
                     null,
-                ),
+                )
             )
 
-            val barrierIndex = sender.calls.indexOfFirst { call ->
-                PebbleMessages.signed32(
-                    call.dictionary,
-                    BridgeProtocol.Key.MESSAGE_TYPE,
-                ) == BridgeProtocol.MessageType.SNAPSHOT.wire
-            }
-            val resultIndex = sender.calls.indexOfFirst { call ->
-                PebbleMessages.signed32(
-                    call.dictionary,
-                    BridgeProtocol.Key.MESSAGE_TYPE,
-                ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
-            }
+            val barrierIndex =
+                sender.calls.indexOfFirst { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    ) == BridgeProtocol.MessageType.SNAPSHOT.wire
+                }
+            val resultIndex =
+                sender.calls.indexOfFirst { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
+                }
             assertTrue(barrierIndex in 0 until resultIndex)
             assertEquals(
                 BridgeProtocol.RecordingState.RECORDING.wire,
@@ -215,7 +236,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun unconfirmedTransitionReturnsFailedAndDedupeSkipsObsoleteTargetPolling() = runBlocking {
+    @Test
+    fun unconfirmedTransitionReturnsFailedAndDedupeSkipsObsoleteTargetPolling() = runBlocking {
         val sender = RecordingSender()
         val locus = DelayedStateChangingLocus(transitionAfterPostExecuteReads = null)
         val runtime = runtime(sender = sender, locus = locus)
@@ -229,27 +251,32 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.START,
                     "Hiking",
                     null,
-                ),
+                )
             )
-            val firstResult = sender.calls.single { call ->
-                PebbleMessages.signed32(
-                    call.dictionary,
-                    BridgeProtocol.Key.MESSAGE_TYPE,
-                ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
-            }
+            val firstResult =
+                sender.calls.single { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
+                }
             assertEquals(
                 BridgeProtocol.Result.FAILED.wire,
                 PebbleMessages.signed32(firstResult.dictionary, BridgeProtocol.Key.RESULT),
             )
-            val firstBarrier = sender.calls.first { call ->
-                PebbleMessages.signed32(
-                    call.dictionary,
-                    BridgeProtocol.Key.MESSAGE_TYPE,
-                ) == BridgeProtocol.MessageType.SNAPSHOT.wire
-            }
+            val firstBarrier =
+                sender.calls.first { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    ) == BridgeProtocol.MessageType.SNAPSHOT.wire
+                }
             assertEquals(
                 BridgeProtocol.RecordingState.STOPPED.wire,
-                PebbleMessages.signed32(firstBarrier.dictionary, BridgeProtocol.Key.RECORDING_STATE),
+                PebbleMessages.signed32(
+                    firstBarrier.dictionary,
+                    BridgeProtocol.Key.RECORDING_STATE,
+                ),
             )
             val readsAfterFirstAttempt = locus.postExecuteReads
             assertTrue(readsAfterFirstAttempt > 1)
@@ -263,7 +290,7 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.START,
                     "Hiking",
                     null,
-                ),
+                )
             )
 
             assertEquals(1, locus.executions)
@@ -271,12 +298,14 @@ class BridgeRuntimeTest {
             assertEquals(
                 BridgeProtocol.Result.FAILED.wire,
                 PebbleMessages.signed32(
-                    sender.calls.single { call ->
-                        PebbleMessages.signed32(
-                            call.dictionary,
-                            BridgeProtocol.Key.MESSAGE_TYPE,
-                        ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
-                    }.dictionary,
+                    sender.calls
+                        .single { call ->
+                            PebbleMessages.signed32(
+                                call.dictionary,
+                                BridgeProtocol.Key.MESSAGE_TYPE,
+                            ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
+                        }
+                        .dictionary,
                     BridgeProtocol.Key.RESULT,
                 ),
             )
@@ -285,7 +314,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun pauseResumeUsesTheTargetFromTheGatewaysExactRoutingDecision() = runBlocking {
+    @Test
+    fun pauseResumeUsesTheTargetFromTheGatewaysExactRoutingDecision() = runBlocking {
         val sender = RecordingSender()
         val locus = PauseResumeRoutingRaceLocus()
         val runtime = runtime(sender = sender, locus = locus)
@@ -298,15 +328,16 @@ class BridgeRuntimeTest {
                     BridgeProtocol.Command.PAUSE_RESUME,
                     null,
                     null,
-                ),
+                )
             )
 
-            val barrier = sender.calls.first { call ->
-                PebbleMessages.signed32(
-                    call.dictionary,
-                    BridgeProtocol.Key.MESSAGE_TYPE,
-                ) == BridgeProtocol.MessageType.SNAPSHOT.wire
-            }
+            val barrier =
+                sender.calls.first { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    ) == BridgeProtocol.MessageType.SNAPSHOT.wire
+                }
             assertEquals(
                 BridgeProtocol.RecordingState.RECORDING.wire,
                 PebbleMessages.signed32(barrier.dictionary, BridgeProtocol.Key.RECORDING_STATE),
@@ -315,12 +346,14 @@ class BridgeRuntimeTest {
             assertEquals(
                 BridgeProtocol.Result.OK.wire,
                 PebbleMessages.signed32(
-                    sender.calls.single { call ->
-                        PebbleMessages.signed32(
-                            call.dictionary,
-                            BridgeProtocol.Key.MESSAGE_TYPE,
-                        ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
-                    }.dictionary,
+                    sender.calls
+                        .single { call ->
+                            PebbleMessages.signed32(
+                                call.dictionary,
+                                BridgeProtocol.Key.MESSAGE_TYPE,
+                            ) == BridgeProtocol.MessageType.COMMAND_RESULT.wire
+                        }
+                        .dictionary,
                     BridgeProtocol.Key.RESULT,
                 ),
             )
@@ -329,15 +362,16 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun commandFromAnExpiredConnectionSessionFailsBeforeMutation() =
-        runBlocking {
-            val currentGeneration = AtomicLong(1)
-            val currentAdmission = { TrustAdmission(currentGeneration.get()) }
-            val sender = AdmissionRecordingSender(currentAdmission)
-            val locus = StateChangingLocus()
-            val mutationGateReached = CompletableDeferred<Unit>()
-            val releaseMutationGate = CompletableDeferred<Unit>()
-            val runtime = runtime(
+    @Test
+    fun commandFromAnExpiredConnectionSessionFailsBeforeMutation() = runBlocking {
+        val currentGeneration = AtomicLong(1)
+        val currentAdmission = { TrustAdmission(currentGeneration.get()) }
+        val sender = AdmissionRecordingSender(currentAdmission)
+        val locus = StateChangingLocus()
+        val mutationGateReached = CompletableDeferred<Unit>()
+        val releaseMutationGate = CompletableDeferred<Unit>()
+        val runtime =
+            runtime(
                 sender = sender,
                 locus = locus,
                 trustedMutationGate = { admission, block ->
@@ -352,89 +386,13 @@ class BridgeRuntimeTest {
                 },
                 admissionCurrent = { it == currentAdmission() },
             )
-            val watch = WatchIdentifier("watch")
-            val sessionA = TrustAdmission(1)
-            val sessionB = TrustAdmission(2)
-            try {
-                val oldCommand = async {
-                    runtime.handleCommand(
-                        watch,
-                        8,
-                        1,
-                        BridgeProtocol.Command.START,
-                        "Hiking",
-                        null,
-                        sessionA,
-                    )
-                }
-                mutationGateReached.await()
-                currentGeneration.set(sessionB.generation)
-                releaseMutationGate.complete(Unit)
-
-                assertFalse(oldCommand.await())
-                assertEquals(0, locus.executions)
-                assertTrue(sender.calls.isEmpty())
-
-                // The begun record was durably completed FAILED, so B may retry it without action.
-                assertTrue(
-                    runtime.handleCommand(
-                        watch,
-                        8,
-                        1,
-                        BridgeProtocol.Command.START,
-                        "Hiking",
-                        null,
-                        sessionB,
-                    ),
-                )
-                assertEquals(0, locus.executions)
-                assertEquals(listOf(sessionB, sessionB), sender.calls.map { it.admission })
-                assertEquals(
-                    listOf(
-                        BridgeProtocol.MessageType.SNAPSHOT.wire,
-                        BridgeProtocol.MessageType.COMMAND_RESULT.wire,
-                    ),
-                    sender.calls.map { call ->
-                        PebbleMessages.signed32(
-                            call.dictionary,
-                            BridgeProtocol.Key.MESSAGE_TYPE,
-                        )
-                    },
-                )
-            } finally {
-                releaseMutationGate.complete(Unit)
-                runtime.close()
-            }
-        }
-
-    @Test fun revocationWaitsOnlyForTheExactLocusActionNotConfirmationOrDelivery() = runBlocking {
-        val leases = SerializedCoreSessionLeases()
-        val currentGeneration = AtomicLong(1)
-        val currentAdmission = { TrustAdmission(currentGeneration.get()) }
-        val sender = AdmissionRecordingSender(currentAdmission, leases)
-        val locus = BlockingCommandConfirmationLocus()
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            ioDispatcher = Dispatchers.Default,
-            trustedMutationGate = { admission, block ->
-                leases.withInbound {
-                    if (admission != currentAdmission()) {
-                        TrustLeaseResult.Stale
-                    } else {
-                        block()
-                        TrustLeaseResult.Admitted(Unit)
-                    }
-                }
-            },
-            admissionCurrent = { it == currentAdmission() },
-        )
+        val watch = WatchIdentifier("watch")
         val sessionA = TrustAdmission(1)
+        val sessionB = TrustAdmission(2)
         try {
-            val command = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val oldCommand = async {
                 runtime.handleCommand(
-                    WatchIdentifier("watch"),
+                    watch,
                     8,
                     1,
                     BridgeProtocol.Command.START,
@@ -443,6 +401,85 @@ class BridgeRuntimeTest {
                     sessionA,
                 )
             }
+            mutationGateReached.await()
+            currentGeneration.set(sessionB.generation)
+            releaseMutationGate.complete(Unit)
+
+            assertFalse(oldCommand.await())
+            assertEquals(0, locus.executions)
+            assertTrue(sender.calls.isEmpty())
+
+            // The begun record was durably completed FAILED, so B may retry it without action.
+            assertTrue(
+                runtime.handleCommand(
+                    watch,
+                    8,
+                    1,
+                    BridgeProtocol.Command.START,
+                    "Hiking",
+                    null,
+                    sessionB,
+                )
+            )
+            assertEquals(0, locus.executions)
+            assertEquals(listOf(sessionB, sessionB), sender.calls.map { it.admission })
+            assertEquals(
+                listOf(
+                    BridgeProtocol.MessageType.SNAPSHOT.wire,
+                    BridgeProtocol.MessageType.COMMAND_RESULT.wire,
+                ),
+                sender.calls.map { call ->
+                    PebbleMessages.signed32(
+                        call.dictionary,
+                        BridgeProtocol.Key.MESSAGE_TYPE,
+                    )
+                },
+            )
+        } finally {
+            releaseMutationGate.complete(Unit)
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun revocationWaitsOnlyForTheExactLocusActionNotConfirmationOrDelivery() = runBlocking {
+        val leases = SerializedCoreSessionLeases()
+        val currentGeneration = AtomicLong(1)
+        val currentAdmission = { TrustAdmission(currentGeneration.get()) }
+        val sender = AdmissionRecordingSender(currentAdmission, leases)
+        val locus = BlockingCommandConfirmationLocus()
+        val runtime =
+            runtime(
+                sender = sender,
+                locus = locus,
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                ioDispatcher = Dispatchers.Default,
+                trustedMutationGate = { admission, block ->
+                    leases.withInbound {
+                        if (admission != currentAdmission()) {
+                            TrustLeaseResult.Stale
+                        } else {
+                            block()
+                            TrustLeaseResult.Admitted(Unit)
+                        }
+                    }
+                },
+                admissionCurrent = { it == currentAdmission() },
+            )
+        val sessionA = TrustAdmission(1)
+        try {
+            val command =
+                async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    runtime.handleCommand(
+                        WatchIdentifier("watch"),
+                        8,
+                        1,
+                        BridgeProtocol.Command.START,
+                        "Hiking",
+                        null,
+                        sessionA,
+                    )
+                }
             withTimeout(5_000) { locus.actionStarted.await() }
             val revoke = async {
                 leases.mutateSession {
@@ -469,7 +506,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun heartRateConsumerSurvivesOneSampleFailureAndRoutesTheNextUpdate() {
+    @Test
+    fun heartRateConsumerSurvivesOneSampleFailureAndRoutesTheNextUpdate() {
         val sender = RecordingSender()
         val locus = FakeLocus(heartRateFailures = 1)
         val runtime = runtime(sender = sender, locus = locus)
@@ -486,26 +524,28 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun queuedHeartRateSampleIsDroppedAcrossConnectionReset() = runBlocking {
+    @Test
+    fun queuedHeartRateSampleIsDroppedAcrossConnectionReset() = runBlocking {
         val sender = RecordingSender()
         val locus = FakeLocus()
         val leases = SerializedCoreSessionLeases()
         val consumerDequeuedSample = CompletableDeferred<Unit>()
         val releaseConsumer = CompletableDeferred<Unit>()
         val consumerFinished = CompletableDeferred<Unit>()
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            trustedWorkLease = { block ->
-                consumerDequeuedSample.complete(Unit)
-                try {
-                    releaseConsumer.await()
-                    leases.withInbound(block)
-                } finally {
-                    consumerFinished.complete(Unit)
-                }
-            },
-        )
+        val runtime =
+            runtime(
+                sender = sender,
+                locus = locus,
+                trustedWorkLease = { block ->
+                    consumerDequeuedSample.complete(Unit)
+                    try {
+                        releaseConsumer.await()
+                        leases.withInbound(block)
+                    } finally {
+                        consumerFinished.complete(Unit)
+                    }
+                },
+            )
         try {
             assertTrue(runtime.handleHeartRate(WatchIdentifier("watch"), 9, 1, 120, 1_000))
             consumerDequeuedSample.await()
@@ -522,7 +562,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun queuedHeartRateSampleIsDroppedWhenTheDeferredSelectionGuardIsNowFalse() = runBlocking {
+    @Test
+    fun queuedHeartRateSampleIsDroppedWhenTheDeferredSelectionGuardIsNowFalse() = runBlocking {
         val sender = RecordingSender()
         val locus = FakeLocus()
         val leases = SerializedCoreSessionLeases()
@@ -531,21 +572,22 @@ class BridgeRuntimeTest {
         val consumerFinished = CompletableDeferred<Unit>()
         var trusted = true
         lateinit var runtime: BridgeRuntime
-        runtime = runtime(
-            sender = sender,
-            locus = locus,
-            trustedWorkLease = { block ->
-                consumerReachedGuard.complete(Unit)
-                releaseGuard.await()
-                try {
-                    leases.withInbound {
-                        if (trusted) block() else runtime.companionTrustLost()
+        runtime =
+            runtime(
+                sender = sender,
+                locus = locus,
+                trustedWorkLease = { block ->
+                    consumerReachedGuard.complete(Unit)
+                    releaseGuard.await()
+                    try {
+                        leases.withInbound {
+                            if (trusted) block() else runtime.companionTrustLost()
+                        }
+                    } finally {
+                        consumerFinished.complete(Unit)
                     }
-                } finally {
-                    consumerFinished.complete(Unit)
-                }
-            },
-        )
+                },
+            )
         try {
             assertTrue(runtime.handleHeartRate(WatchIdentifier("watch"), 9, 1, 120, 1_000))
             consumerReachedGuard.await()
@@ -561,28 +603,31 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun revocationWaitsForAnAdmittedHeartRateMutationToFinish() = runBlocking {
+    @Test
+    fun revocationWaitsForAnAdmittedHeartRateMutationToFinish() = runBlocking {
         val sender = RecordingSender()
         val locus = BlockingHeartRateLocus()
         val leases = SerializedCoreSessionLeases()
         val currentGeneration = AtomicLong(TEST_ADMISSION.generation)
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            ioDispatcher = Dispatchers.Default,
-            trustedWorkLease = leases::withInbound,
-            admissionCurrent = { it.generation == currentGeneration.get() },
-        )
+        val runtime =
+            runtime(
+                sender = sender,
+                locus = locus,
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                ioDispatcher = Dispatchers.Default,
+                trustedWorkLease = leases::withInbound,
+                admissionCurrent = { it.generation == currentGeneration.get() },
+            )
         try {
             assertTrue(runtime.handleHeartRate(WatchIdentifier("watch"), 9, 1, 120, 1_000))
             assertTrue(locus.mutationStarted.await(15, TimeUnit.SECONDS))
-            val revocation = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-                leases.mutateSession {
+            val revocation =
+                async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                     currentGeneration.incrementAndGet()
-                    runtime.companionTrustLost()
+                    leases.mutateSession {
+                        runtime.companionTrustLost()
+                    }
                 }
-            }
             assertFalse(revocation.isCompleted)
 
             locus.releaseMutation.countDown()
@@ -596,7 +641,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun selectionLossClearsTheActiveWatchSoARealReopenStartsPollingAgain() {
+    @Test
+    fun selectionLossClearsTheActiveWatchSoARealReopenStartsPollingAgain() {
         val sender = RecordingSender()
         val runtime = runtime(sender = sender)
         val watch = WatchIdentifier("watch")
@@ -617,18 +663,20 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun connectionResetCancelsOldPollingBeforeTheNewSessionReopens() = runBlocking {
+    @Test
+    fun connectionResetCancelsOldPollingBeforeTheNewSessionReopens() = runBlocking {
         val currentGeneration = AtomicLong(1)
         val currentAdmission = { TrustAdmission(currentGeneration.get()) }
         val sender = AdmissionRecordingSender(currentAdmission)
         val locus = FirstReadBlockingLocus()
-        val runtime = runtime(
-            sender = sender,
-            locus = locus,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            ioDispatcher = Dispatchers.Default,
-            admissionCurrent = { it == currentAdmission() },
-        )
+        val runtime =
+            runtime(
+                sender = sender,
+                locus = locus,
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                ioDispatcher = Dispatchers.Default,
+                admissionCurrent = { it == currentAdmission() },
+            )
         val sessionA = TrustAdmission(1)
         val sessionB = TrustAdmission(2)
         try {
@@ -656,27 +704,29 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun staleSnapshotPublicationCannotOverwriteNewSessionDiagnostics() = runBlocking {
+    @Test
+    fun staleSnapshotPublicationCannotOverwriteNewSessionDiagnostics() = runBlocking {
         val currentGeneration = AtomicLong(1)
         val currentAdmission = { TrustAdmission(currentGeneration.get()) }
         val sender = AdmissionRecordingSender(currentAdmission)
         val publicationReached = CompletableDeferred<Unit>()
         val releasePublication = CompletableDeferred<Unit>()
-        val runtime = runtime(
-            sender = sender,
-            locus = StateChangingLocus(),
-            admissionCurrent = { it == currentAdmission() },
-            trustedPublicationGate = { admission, block ->
-                publicationReached.complete(Unit)
-                releasePublication.await()
-                if (admission != currentAdmission()) {
-                    TrustLeaseResult.Stale
-                } else {
-                    block()
-                    TrustLeaseResult.Admitted(Unit)
-                }
-            },
-        )
+        val runtime =
+            runtime(
+                sender = sender,
+                locus = StateChangingLocus(),
+                admissionCurrent = { it == currentAdmission() },
+                trustedPublicationGate = { admission, block ->
+                    publicationReached.complete(Unit)
+                    releasePublication.await()
+                    if (admission != currentAdmission()) {
+                        TrustLeaseResult.Stale
+                    } else {
+                        block()
+                        TrustLeaseResult.Admitted(Unit)
+                    }
+                },
+            )
         val sessionA = TrustAdmission(1)
         try {
             val staleRefresh = async {
@@ -693,8 +743,14 @@ class BridgeRuntimeTest {
             releasePublication.complete(Unit)
 
             assertFalse(staleRefresh.await())
-            assertEquals(BridgeProtocol.RecordingState.PAUSED, BridgeState.status.value.recordingState)
-            assertEquals("new-session-diagnostics", BridgeState.status.value.lastError?.technicalDetail)
+            assertEquals(
+                BridgeProtocol.RecordingState.PAUSED,
+                BridgeState.status.value.recordingState,
+            )
+            assertEquals(
+                "new-session-diagnostics",
+                BridgeState.status.value.lastError?.technicalDetail,
+            )
             assertTrue(sender.calls.isEmpty())
         } finally {
             releasePublication.complete(Unit)
@@ -702,11 +758,11 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun profileTransfersForTheActiveWatchAreSerialized() = runBlocking {
+    @Test
+    fun profileTransfersForTheActiveWatchAreSerialized() = runBlocking {
         val sender = RecordingSender(yieldDuringSend = true)
-        val locus = FakeLocus(
-            profiles = listOf(BridgeProtocol.RecordingProfile(1, "x".repeat(200))),
-        )
+        val locus =
+            FakeLocus(profiles = listOf(BridgeProtocol.RecordingProfile(1, "x".repeat(200))))
         val runtime = runtime(sender = sender, locus = locus)
         val watch = WatchIdentifier("watch")
         try {
@@ -715,23 +771,29 @@ class BridgeRuntimeTest {
                 launch { assertTrue(runtime.sendRecordingProfiles(watch)) }
             }
 
-            val transferIds = sender.calls.map {
-                PebbleMessages.signed32(it.dictionary, BridgeProtocol.Key.TRANSFER_ID)
-            }
+            val transferIds =
+                sender.calls.map {
+                    PebbleMessages.signed32(it.dictionary, BridgeProtocol.Key.TRANSFER_ID)
+                }
             assertEquals(2, transferIds.distinct().size)
-            assertEquals(2, transferIds.zipWithNext().count { (first, second) -> first != second } + 1)
+            assertEquals(
+                2,
+                transferIds.zipWithNext().count { (first, second) -> first != second } + 1,
+            )
             assertTrue(sender.calls.all { it.watches == listOf(watch) })
         } finally {
             runtime.close()
         }
     }
 
-    @Test fun unresolvedActiveProfileRefreshesCatalogBeforeSendingContext() = runBlocking {
+    @Test
+    fun unresolvedActiveProfileRefreshesCatalogBeforeSendingContext() = runBlocking {
         val sender = RecordingSender()
-        val locus = FakeLocus(
-            profiles = listOf(BridgeProtocol.RecordingProfile(42, "Trail run")),
-            activeProfileName = "Trail run",
-        )
+        val locus =
+            FakeLocus(
+                profiles = listOf(BridgeProtocol.RecordingProfile(42, "Trail run")),
+                activeProfileName = "Trail run",
+            )
         val runtime = runtime(sender, locus)
         try {
             assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
@@ -763,25 +825,29 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun failedOrInvalidProfileQueriesNeverSendAnAuthoritativeEmptyTransfer() = runBlocking {
-        val oversized = (0 until 40).map { index ->
-            BridgeProtocol.RecordingProfile(
-                (index + 1).toLong(),
-                "profile-$index-${"x".repeat(240)}",
-            )
-        }
-        val failures = listOf(
-            FakeLocus(profileFailure = "Locus is unavailable"),
-            FakeLocus(throwProfileQuery = true),
-            FakeLocus(profiles = listOf(BridgeProtocol.RecordingProfile(1, "broken\nname"))),
-            FakeLocus(
-                profiles = listOf(
-                    BridgeProtocol.RecordingProfile(1, "Hiking"),
-                    BridgeProtocol.RecordingProfile(1, "Renamed"),
+    @Test
+    fun failedOrInvalidProfileQueriesNeverSendAnAuthoritativeEmptyTransfer() = runBlocking {
+        val oversized =
+            (0 until 40).map { index ->
+                BridgeProtocol.RecordingProfile(
+                    (index + 1).toLong(),
+                    "profile-$index-${"x".repeat(240)}",
+                )
+            }
+        val failures =
+            listOf(
+                FakeLocus(profileFailure = "Locus is unavailable"),
+                FakeLocus(throwProfileQuery = true),
+                FakeLocus(profiles = listOf(BridgeProtocol.RecordingProfile(1, "broken\nname"))),
+                FakeLocus(
+                    profiles =
+                        listOf(
+                            BridgeProtocol.RecordingProfile(1, "Hiking"),
+                            BridgeProtocol.RecordingProfile(1, "Renamed"),
+                        )
                 ),
-            ),
-            FakeLocus(profiles = oversized),
-        )
+                FakeLocus(profiles = oversized),
+            )
 
         failures.forEachIndexed { index, locus ->
             val sender = RecordingSender()
@@ -795,7 +861,8 @@ class BridgeRuntimeTest {
         }
     }
 
-    @Test fun successfulEmptyProfileQuerySendsTheAuthoritativeEmptyResult() = runBlocking {
+    @Test
+    fun successfulEmptyProfileQuerySendsTheAuthoritativeEmptyResult() = runBlocking {
         val sender = RecordingSender()
         val runtime = runtime(sender, FakeLocus(profiles = emptyList()))
         try {
@@ -803,25 +870,34 @@ class BridgeRuntimeTest {
             assertEquals(1, sender.calls.size)
             assertEquals(
                 BridgeProtocol.Result.FAILED.wire,
-                PebbleMessages.signed32(sender.calls.single().dictionary, BridgeProtocol.Key.RESULT),
+                PebbleMessages.signed32(
+                    sender.calls.single().dictionary,
+                    BridgeProtocol.Key.RESULT,
+                ),
             )
             assertEquals(
                 "",
-                PebbleMessages.string(sender.calls.single().dictionary, BridgeProtocol.Key.CHUNK_DATA),
+                PebbleMessages.string(
+                    sender.calls.single().dictionary,
+                    BridgeProtocol.Key.CHUNK_DATA,
+                ),
             )
         } finally {
             runtime.close()
         }
     }
 
-    @Test fun rejectedProfileQueryDoesNotConsumeATransferIdentifier() = runBlocking {
+    @Test
+    fun rejectedProfileQueryDoesNotConsumeATransferIdentifier() = runBlocking {
         val sender = RecordingSender()
-        val locus = FakeLocus(
-            profiles = listOf(
-                BridgeProtocol.RecordingProfile(1, "Hiking"),
-                BridgeProtocol.RecordingProfile(1, "Renamed"),
-            ),
-        )
+        val locus =
+            FakeLocus(
+                profiles =
+                    listOf(
+                        BridgeProtocol.RecordingProfile(1, "Hiking"),
+                        BridgeProtocol.RecordingProfile(1, "Renamed"),
+                    )
+            )
         val runtime = runtime(sender, locus)
         try {
             assertFalse(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
@@ -829,7 +905,10 @@ class BridgeRuntimeTest {
             assertTrue(runtime.sendRecordingProfiles(WatchIdentifier("watch")))
             assertEquals(
                 0,
-                PebbleMessages.signed32(sender.calls.single().dictionary, BridgeProtocol.Key.TRANSFER_ID),
+                PebbleMessages.signed32(
+                    sender.calls.single().dictionary,
+                    BridgeProtocol.Key.TRANSFER_ID,
+                ),
             )
         } finally {
             runtime.close()
@@ -844,36 +923,44 @@ class BridgeRuntimeTest {
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
         ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Unconfined,
         trustedWorkLease: suspend (suspend () -> Unit) -> Unit = { block -> block() },
-        trustedMutationGate: (suspend (
-            TrustAdmission,
-            suspend () -> Unit,
-        ) -> TrustLeaseResult<Unit>)? = null,
-        trustedPublicationGate: (suspend (
-            TrustAdmission,
-            suspend () -> Unit,
-        ) -> TrustLeaseResult<Unit>)? = null,
+        trustedMutationGate:
+            (suspend (
+                TrustAdmission,
+                suspend () -> Unit,
+            ) -> TrustLeaseResult<Unit>)? =
+            null,
+        trustedPublicationGate:
+            (suspend (
+                TrustAdmission,
+                suspend () -> Unit,
+            ) -> TrustLeaseResult<Unit>)? =
+            null,
         admissionCurrent: (TrustAdmission) -> Boolean = { true },
-    ): BridgeRuntime = BridgeRuntime(
-        scope = scope,
-        locus = locus,
-        transport = ReliablePebbleTransport(sender, maxAttempts = maxAttempts, retryDelay = {}),
-        commandJournal = commandJournal,
-        refreshMode = { RefreshMode.ADAPTIVE },
-        ioDispatcher = ioDispatcher,
-        monotonicMillis = { 1_000L },
-        wallMillis = { 1_000_000L },
-        delayMillis = { duration -> if (duration >= 2_000L) delay(Long.MAX_VALUE) },
-        trustedMutationGate = trustedMutationGate ?: { _, block ->
-                var executed = false
-                trustedWorkLease {
-                    block()
-                    executed = true
-                }
-                if (executed) TrustLeaseResult.Admitted(Unit) else TrustLeaseResult.Untrusted
-            },
-        trustedPublicationGate = trustedPublicationGate,
-        admissionCurrent = admissionCurrent,
-    )
+    ): BridgeRuntime =
+        BridgeRuntime(
+            scope = scope,
+            locus = locus,
+            transport = ReliablePebbleTransport(sender, maxAttempts = maxAttempts, retryDelay = {}),
+            commandJournal = commandJournal,
+            refreshMode = { RefreshMode.ADAPTIVE },
+            ioDispatcher = ioDispatcher,
+            monotonicMillis = { 1_000L },
+            wallMillis = { 1_000_000L },
+            delayMillis = { duration -> if (duration >= 2_000L) delay(Long.MAX_VALUE) },
+            trustedMutationGate =
+                trustedMutationGate
+                    ?: { _, block ->
+                        var executed = false
+                        trustedWorkLease {
+                            block()
+                            executed = true
+                        }
+                        if (executed) TrustLeaseResult.Admitted(Unit)
+                        else TrustLeaseResult.Untrusted
+                    },
+            trustedPublicationGate = trustedPublicationGate,
+            admissionCurrent = admissionCurrent,
+        )
 
     private class FakeLocus(
         private var heartRateFailures: Int = 0,
@@ -889,12 +976,13 @@ class BridgeRuntimeTest {
         private var currentHeartRate: Int? = null
         private var state = BridgeProtocol.RecordingState.RECORDING
 
-        override fun readSnapshot(nowMillis: Long): BridgeProtocol.Snapshot = BridgeProtocol.Snapshot(
-            state = state,
-            sampledAtEpochSeconds = nowMillis / 1000,
-            currentHeartRate = currentHeartRate,
-            locusProfileName = activeProfileName,
-        )
+        override fun readSnapshot(nowMillis: Long): BridgeProtocol.Snapshot =
+            BridgeProtocol.Snapshot(
+                state = state,
+                sampledAtEpochSeconds = nowMillis / 1000,
+                currentHeartRate = currentHeartRate,
+                locusProfileName = activeProfileName,
+            )
 
         override fun sendHeartRate(bpm: Int): Boolean {
             heartRateCalls++
@@ -909,8 +997,9 @@ class BridgeRuntimeTest {
         override fun recordingProfiles(): RecordingProfilesResult {
             profileQueries++
             if (throwProfileQuery) error("synthetic profile query failure")
-            return profileFailure?.let { RecordingProfilesResult.Failure(BridgeFailure.technical(it)) }
-                ?: RecordingProfilesResult.Success(profiles)
+            return profileFailure?.let {
+                RecordingProfilesResult.Failure(BridgeFailure.technical(it))
+            } ?: RecordingProfilesResult.Success(profiles)
         }
 
         override fun execute(
@@ -920,39 +1009,42 @@ class BridgeRuntimeTest {
         ): BridgeProtocol.Result {
             executions++
             return when (command) {
-                BridgeProtocol.Command.START -> if (state == BridgeProtocol.RecordingState.STOPPED) {
-                    state = BridgeProtocol.RecordingState.RECORDING
-                    BridgeProtocol.Result.OK
-                } else {
-                    BridgeProtocol.Result.INVALID_STATE
-                }
-                BridgeProtocol.Command.PAUSE_RESUME -> when (state) {
-                    BridgeProtocol.RecordingState.RECORDING -> {
-                        state = BridgeProtocol.RecordingState.PAUSED
-                        BridgeProtocol.Result.OK
-                    }
-                    BridgeProtocol.RecordingState.PAUSED -> {
+                BridgeProtocol.Command.START ->
+                    if (state == BridgeProtocol.RecordingState.STOPPED) {
                         state = BridgeProtocol.RecordingState.RECORDING
                         BridgeProtocol.Result.OK
+                    } else {
+                        BridgeProtocol.Result.INVALID_STATE
                     }
-                    else -> BridgeProtocol.Result.INVALID_STATE
-                }
-                BridgeProtocol.Command.STOP_SAVE -> if (
-                    state == BridgeProtocol.RecordingState.RECORDING ||
-                    state == BridgeProtocol.RecordingState.PAUSED
-                ) {
-                    state = BridgeProtocol.RecordingState.STOPPED
-                    BridgeProtocol.Result.OK
-                } else {
-                    BridgeProtocol.Result.INVALID_STATE
-                }
+                BridgeProtocol.Command.PAUSE_RESUME ->
+                    when (state) {
+                        BridgeProtocol.RecordingState.RECORDING -> {
+                            state = BridgeProtocol.RecordingState.PAUSED
+                            BridgeProtocol.Result.OK
+                        }
+                        BridgeProtocol.RecordingState.PAUSED -> {
+                            state = BridgeProtocol.RecordingState.RECORDING
+                            BridgeProtocol.Result.OK
+                        }
+                        else -> BridgeProtocol.Result.INVALID_STATE
+                    }
+                BridgeProtocol.Command.STOP_SAVE ->
+                    if (
+                        state == BridgeProtocol.RecordingState.RECORDING ||
+                            state == BridgeProtocol.RecordingState.PAUSED
+                    ) {
+                        state = BridgeProtocol.RecordingState.STOPPED
+                        BridgeProtocol.Result.OK
+                    } else {
+                        BridgeProtocol.Result.INVALID_STATE
+                    }
                 BridgeProtocol.Command.ADD_WAYPOINT,
-                BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE,
-                -> if (state == BridgeProtocol.RecordingState.RECORDING) {
-                    BridgeProtocol.Result.OK
-                } else {
-                    BridgeProtocol.Result.INVALID_STATE
-                }
+                BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE ->
+                    if (state == BridgeProtocol.RecordingState.RECORDING) {
+                        BridgeProtocol.Result.OK
+                    } else {
+                        BridgeProtocol.Result.INVALID_STATE
+                    }
             }
         }
 
@@ -962,11 +1054,14 @@ class BridgeRuntimeTest {
             waypointName: String?,
         ): CommandExecution {
             val result = execute(command, profileName, waypointName)
-            val expected = if (
-                result == BridgeProtocol.Result.OK &&
-                command != BridgeProtocol.Command.ADD_WAYPOINT &&
-                command != BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE
-            ) state else null
+            val expected =
+                if (
+                    result == BridgeProtocol.Result.OK &&
+                        command != BridgeProtocol.Command.ADD_WAYPOINT &&
+                        command != BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE
+                )
+                    state
+                else null
             return CommandExecution(result, expected)
         }
     }
@@ -975,15 +1070,16 @@ class BridgeRuntimeTest {
         var executions = 0
         private var state = BridgeProtocol.RecordingState.STOPPED
 
-        override fun readSnapshot(nowMillis: Long) = BridgeProtocol.Snapshot(
-            state = state,
-            sampledAtEpochSeconds = nowMillis / 1_000,
-        )
+        override fun readSnapshot(nowMillis: Long) =
+            BridgeProtocol.Snapshot(
+                state = state,
+                sampledAtEpochSeconds = nowMillis / 1_000,
+            )
 
         override fun sendHeartRate(bpm: Int) = false
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            listOf(BridgeProtocol.RecordingProfile(1, "Hiking")),
-        )
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(listOf(BridgeProtocol.RecordingProfile(1, "Hiking")))
 
         override fun execute(
             command: BridgeProtocol.Command,
@@ -999,15 +1095,15 @@ class BridgeRuntimeTest {
             command: BridgeProtocol.Command,
             profileName: String?,
             waypointName: String?,
-        ): CommandExecution = CommandExecution(
-            execute(command, profileName, waypointName),
-            BridgeProtocol.RecordingState.RECORDING,
-        )
+        ): CommandExecution =
+            CommandExecution(
+                execute(command, profileName, waypointName),
+                BridgeProtocol.RecordingState.RECORDING,
+            )
     }
 
-    private class DelayedStateChangingLocus(
-        private val transitionAfterPostExecuteReads: Int?,
-    ) : LocusBridgeGateway {
+    private class DelayedStateChangingLocus(private val transitionAfterPostExecuteReads: Int?) :
+        LocusBridgeGateway {
         var executions = 0
         var postExecuteReads = 0
         private var executeIssued = false
@@ -1018,7 +1114,7 @@ class BridgeRuntimeTest {
                 postExecuteReads++
                 if (
                     transitionAfterPostExecuteReads != null &&
-                    postExecuteReads >= transitionAfterPostExecuteReads
+                        postExecuteReads >= transitionAfterPostExecuteReads
                 ) {
                     state = BridgeProtocol.RecordingState.RECORDING
                 }
@@ -1030,9 +1126,9 @@ class BridgeRuntimeTest {
         }
 
         override fun sendHeartRate(bpm: Int) = false
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            listOf(BridgeProtocol.RecordingProfile(1, "Hiking")),
-        )
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(listOf(BridgeProtocol.RecordingProfile(1, "Hiking")))
 
         override fun execute(
             command: BridgeProtocol.Command,
@@ -1048,35 +1144,39 @@ class BridgeRuntimeTest {
             command: BridgeProtocol.Command,
             profileName: String?,
             waypointName: String?,
-        ): CommandExecution = CommandExecution(
-            execute(command, profileName, waypointName),
-            BridgeProtocol.RecordingState.RECORDING,
-        )
+        ): CommandExecution =
+            CommandExecution(
+                execute(command, profileName, waypointName),
+                BridgeProtocol.RecordingState.RECORDING,
+            )
     }
 
-    /** Models the UI changing RECORDING to PAUSED before Locus routes the same command as Resume. */
+    /**
+     * Models the UI changing RECORDING to PAUSED before Locus routes the same command as Resume.
+     */
     private class PauseResumeRoutingRaceLocus : LocusBridgeGateway {
         var postExecuteReads = 0
         private var routed = false
 
         override fun readSnapshot(nowMillis: Long): BridgeProtocol.Snapshot {
-            val state = if (!routed) {
-                BridgeProtocol.RecordingState.RECORDING
-            } else {
-                postExecuteReads++
-                if (postExecuteReads == 1) {
-                    BridgeProtocol.RecordingState.PAUSED
-                } else {
+            val state =
+                if (!routed) {
                     BridgeProtocol.RecordingState.RECORDING
+                } else {
+                    postExecuteReads++
+                    if (postExecuteReads == 1) {
+                        BridgeProtocol.RecordingState.PAUSED
+                    } else {
+                        BridgeProtocol.RecordingState.RECORDING
+                    }
                 }
-            }
             return BridgeProtocol.Snapshot(state, nowMillis / 1_000)
         }
 
         override fun sendHeartRate(bpm: Int) = false
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            emptyList<BridgeProtocol.RecordingProfile>(),
-        )
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(emptyList<BridgeProtocol.RecordingProfile>())
 
         override fun execute(
             command: BridgeProtocol.Command,
@@ -1103,11 +1203,12 @@ class BridgeRuntimeTest {
         var heartRateCalls = 0
         private var currentHeartRate: Int? = null
 
-        override fun readSnapshot(nowMillis: Long) = BridgeProtocol.Snapshot(
-            state = BridgeProtocol.RecordingState.RECORDING,
-            sampledAtEpochSeconds = nowMillis / 1_000,
-            currentHeartRate = currentHeartRate,
-        )
+        override fun readSnapshot(nowMillis: Long) =
+            BridgeProtocol.Snapshot(
+                state = BridgeProtocol.RecordingState.RECORDING,
+                sampledAtEpochSeconds = nowMillis / 1_000,
+                currentHeartRate = currentHeartRate,
+            )
 
         override fun sendHeartRate(bpm: Int): Boolean {
             heartRateCalls++
@@ -1117,9 +1218,8 @@ class BridgeRuntimeTest {
             return true
         }
 
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            emptyList<BridgeProtocol.RecordingProfile>(),
-        )
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(emptyList<BridgeProtocol.RecordingProfile>())
 
         override fun execute(
             command: BridgeProtocol.Command,
@@ -1147,9 +1247,9 @@ class BridgeRuntimeTest {
         }
 
         override fun sendHeartRate(bpm: Int) = false
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            emptyList<BridgeProtocol.RecordingProfile>(),
-        )
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(emptyList<BridgeProtocol.RecordingProfile>())
 
         override fun execute(
             command: BridgeProtocol.Command,
@@ -1189,9 +1289,10 @@ class BridgeRuntimeTest {
         }
 
         override fun sendHeartRate(bpm: Int) = false
-        override fun recordingProfiles() = RecordingProfilesResult.Success(
-            emptyList<BridgeProtocol.RecordingProfile>(),
-        )
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(emptyList<BridgeProtocol.RecordingProfile>())
+
         override fun execute(
             command: BridgeProtocol.Command,
             profileName: String?,
@@ -1199,10 +1300,10 @@ class BridgeRuntimeTest {
         ) = BridgeProtocol.Result.FAILED
     }
 
-    private class RecordingSender(
-        private val yieldDuringSend: Boolean = false,
-    ) : PebbleDictionarySender {
+    private class RecordingSender(private val yieldDuringSend: Boolean = false) :
+        PebbleDictionarySender {
         data class Call(val dictionary: PebbleDictionary, val watches: List<WatchIdentifier>)
+
         val calls = CopyOnWriteArrayList<Call>()
 
         override suspend fun send(
@@ -1256,6 +1357,7 @@ class BridgeRuntimeTest {
         val snapshotEpochs = mutableListOf<Long>()
         var epochAcceptedBeforeResult: Long? = null
             private set
+
         private var snapshotAttempts = 0
         private var acceptedEpoch: Long? = null
         private var delayedPreCommandEpoch: Long? = null
@@ -1265,12 +1367,17 @@ class BridgeRuntimeTest {
             watch: WatchIdentifier,
             admission: TrustAdmission,
         ): TransmissionResult? {
-            val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
+            val type =
+                requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
             if (type == BridgeProtocol.MessageType.SNAPSHOT.wire) {
-                val epoch = requireNotNull(
-                    PebbleMessages.unsigned32(dictionary, BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS),
-                )
+                val epoch =
+                    requireNotNull(
+                        PebbleMessages.unsigned32(
+                            dictionary,
+                            BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS,
+                        )
+                    )
                 snapshotEpochs += epoch
                 snapshotAttempts++
                 if (snapshotAttempts == 1) {
@@ -1306,7 +1413,8 @@ class BridgeRuntimeTest {
             watch: WatchIdentifier,
             admission: TrustAdmission,
         ): TransmissionResult? {
-            val type = requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
+            val type =
+                requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
             attemptTypes += type
             return if (type == BridgeProtocol.MessageType.SNAPSHOT.wire) {
                 null
@@ -1336,14 +1444,15 @@ private fun BridgeRuntime.handleHeartRate(
     sequence: Long,
     bpm: Int,
     sampledAtEpochSeconds: Long,
-): Boolean = handleHeartRate(
-    watch,
-    sessionId,
-    sequence,
-    bpm,
-    sampledAtEpochSeconds,
-    TEST_ADMISSION,
-)
+): Boolean =
+    handleHeartRate(
+        watch,
+        sessionId,
+        sequence,
+        bpm,
+        sampledAtEpochSeconds,
+        TEST_ADMISSION,
+    )
 
 private suspend fun BridgeRuntime.handleCommand(
     watch: WatchIdentifier,
@@ -1352,15 +1461,16 @@ private suspend fun BridgeRuntime.handleCommand(
     command: BridgeProtocol.Command,
     profileName: String?,
     waypointName: String?,
-): Boolean = handleCommand(
-    watch,
-    sessionId,
-    commandId,
-    command,
-    profileName,
-    waypointName,
-    TEST_ADMISSION,
-)
+): Boolean =
+    handleCommand(
+        watch,
+        sessionId,
+        commandId,
+        command,
+        profileName,
+        waypointName,
+        TEST_ADMISSION,
+    )
 
 private suspend fun BridgeRuntime.sendRecordingProfiles(watch: WatchIdentifier): Boolean =
     sendRecordingProfiles(watch, TEST_ADMISSION)

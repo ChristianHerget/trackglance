@@ -6,7 +6,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Safe-default UI state whose backing preference is read only when [load] is suspended off-main. */
+/**
+ * Safe-default UI state whose backing preference is read only when [load] is suspended off-main.
+ */
 internal class RefreshModePreferenceState(
     private val readPreference: () -> RefreshMode,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,

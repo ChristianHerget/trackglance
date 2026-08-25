@@ -1,0 +1,164 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:BridgeProtocol.kt:BridgeProtocol$codePoint &lt; 0x20 || codePoint == 0x7f || (rejectPipe &amp;&amp; codePoint == '|'.code)</ID>
+    <ID>ComplexCondition:SnapshotFormatter.kt:SnapshotFormatter$value == null || !value.isFinite() || (!allowNegative &amp;&amp; value &lt; 0.0)</ID>
+    <ID>CyclomaticComplexMethod:BridgePebbleListenerService.kt:BridgePebbleListenerService$private suspend fun handleMessage: ReceiveResult</ID>
+    <ID>CyclomaticComplexMethod:BridgeProtocol.kt:BridgeProtocol$private fun validText: Boolean</ID>
+    <ID>CyclomaticComplexMethod:LocusGateway.kt:LocusGateway$override fun executeWithExpectedState: CommandExecution</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:@Composable private fun BridgeFailure.localizedSummary</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:MainActivity$@Composable private fun DiagnosticsScreen</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt:MainActivity$private suspend fun refreshDiagnostics</ID>
+    <ID>CyclomaticComplexMethod:ResettableServiceConnector.kt:ResettableServiceConnector$suspend fun getOrConnect: Service?</ID>
+    <ID>FunctionNaming:MainActivity.kt:@Composable private fun FailureLines</ID>
+    <ID>FunctionNaming:MainActivity.kt:@Composable private fun StatusLine</ID>
+    <ID>FunctionNaming:MainActivity.kt:MainActivity$@Composable private fun DiagnosticsScreen</ID>
+    <ID>FunctionOnlyReturningConstant:BridgeProtocol.kt:BridgeProtocol$fun validLocusProfileId: Boolean</ID>
+    <ID>LongMethod:BridgeRuntime.kt:BridgeRuntime$suspend fun handleCommand: Boolean</ID>
+    <ID>LongMethod:BridgeRuntime.kt:BridgeRuntime$suspend fun sendRecordingProfiles: Boolean</ID>
+    <ID>LongMethod:LocusGateway.kt:LocusGateway$override fun executeWithExpectedState: CommandExecution</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$@Composable private fun DiagnosticsScreen</ID>
+    <ID>LongMethod:MainActivity.kt:MainActivity$private suspend fun refreshDiagnostics</ID>
+    <ID>LongMethod:PebbleMessages.kt:PebbleMessages$fun snapshot: PebbleDictionary</ID>
+    <ID>LongMethod:SnapshotFormatter.kt:SnapshotFormatter$fun format: DisplaySnapshot</ID>
+    <ID>LongMethod:SnapshotFormatterTest.kt:SnapshotFormatterTest$@Test fun distanceThresholdsAndPrecisionMatchLocusMediumFormatting</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x1680</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x20</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x2000</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x200a</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x2028</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x2029</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x202f</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x205f</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x3000</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x7f</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0x85</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0xa0</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0xd800</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0xdfff</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol$0xfeff</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Command.ADD_WAYPOINT$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Command.ADD_WAYPOINT_WITH_NOTE$5</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Command.STOP_SAVE$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.DEGREE_0$21</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.FPS_2$19</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.FT_0$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KCAL_0$23</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KJ_0$22</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KNOT_0$17</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KNOT_1$16</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KPH_0$11</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.KPH_1$10</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MI_0$7</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MI_1$6</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MI_2$5</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MPH_0$13</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MPH_1$12</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.MPS_2$18</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.NMIH_0$15</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.NMIH_1$14</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.NMI_0$9</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.NMI_1$8</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.PERCENT_0$20</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.PER_KM$24</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.PER_MI$25</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.PER_NMI$26</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.FormatCode.YD_0$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.COMMAND_RESULT$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.CONFIG_CHUNK$5</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.CONFIG_RESULT$9</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.HEART_RATE_SAMPLE$8</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.PROFILE_LIST_CHUNK$6</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.RECORDING_CONTEXT$10</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_PROFILE_LIST$7</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG$11</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_SNAPSHOT$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.ALTITUDE$10</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.ASCENT$11</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_CADENCE$17</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_HEART_RATE$15</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_PACE$9</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_POWER$19</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_SPEED$6</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.CURRENT_HEART_RATE$22</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.CURRENT_PACE$8</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.CURRENT_SPEED$5</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.DESCENT$12</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.ENERGY$21</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MAX_CADENCE$18</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MAX_HEART_RATE$16</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MAX_POWER$20</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MAX_SPEED$7</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MOVING_DISTANCE$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.SLOPE$14</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.TOTAL_DISTANCE$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.VERTICAL_SPEED$13</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.RecordingState.UNAVAILABLE$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.CONFIG_QUEUED$7</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.FAILED$3</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.INVALID_CONFIG$8</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.INVALID_PROFILE$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.INVALID_WAYPOINT_NAME$6</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.PROFILE_NOT_FOUND$5</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Result.STORAGE_FAILED$9</ID>
+    <ID>MagicNumber:CommandJournal.kt:CommandJournal.Companion$0xff</ID>
+    <ID>MagicNumber:CommandJournal.kt:CommandJournal.Companion$8</ID>
+    <ID>MagicNumber:HeartRateSamples.kt:HeartRateSampleGate$0xffff_ffffL</ID>
+    <ID>MagicNumber:HeartRateSamples.kt:HeartRateSampleGate$25</ID>
+    <ID>MagicNumber:HeartRateSamples.kt:HeartRateSampleGate$250</ID>
+    <ID>MagicNumber:HeartRateSamples.kt:HeartRateSampleGate$5</ID>
+    <ID>MagicNumber:LocusGateway.kt:LocusGateway$1000</ID>
+    <ID>MagicNumber:LocusGateway.kt:LocusGateway$25</ID>
+    <ID>MagicNumber:LocusGateway.kt:LocusGateway$250</ID>
+    <ID>MagicNumber:LocusGateway.kt:LocusHeartRateTask$25</ID>
+    <ID>MagicNumber:LocusGateway.kt:LocusHeartRateTask$250</ID>
+    <ID>MagicNumber:PebbleMessages.kt:PebbleMessages$7</ID>
+    <ID>MagicNumber:RefreshPolicy.kt:RefreshPolicy$10_000</ID>
+    <ID>MagicNumber:RefreshPolicy.kt:RefreshPolicy$2_000</ID>
+    <ID>MagicNumber:RefreshPolicy.kt:RefreshPolicy$5_000</ID>
+    <ID>MagicNumber:SnapshotFormatter.kt:SnapshotFormatter$100.0</ID>
+    <ID>MagicNumber:SnapshotFormatter.kt:SnapshotFormatter$1000.0</ID>
+    <ID>MatchingDeclarationName:BoundedAbandonableCalls.kt:BoundedAbandonableCallExecutor : AutoCloseable</ID>
+    <ID>MatchingDeclarationName:GuardedForeignQuery.kt:GuardedForeignQueryOutcome</ID>
+    <ID>MatchingDeclarationName:HeartRateSamples.kt:HeartRateSampleGate</ID>
+    <ID>ReturnCount:BridgePebbleListenerService.kt:BridgePebbleListenerService$private fun handleHeartRate: ReceiveResult</ID>
+    <ID>ReturnCount:BridgePebbleListenerService.kt:BridgePebbleListenerService$private suspend fun handleAdmittedRequest: Bundle</ID>
+    <ID>ReturnCount:BridgePebbleListenerService.kt:BridgePebbleListenerService$private suspend fun handleCommand: ReceiveResult</ID>
+    <ID>ReturnCount:BridgePebbleListenerService.kt:BridgePebbleListenerService$private suspend fun handleMessage: ReceiveResult</ID>
+    <ID>ReturnCount:BridgeProtocol.kt:BridgeProtocol$private fun validText: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$fun handleHeartRate: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private fun observeWatch: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun confirmExecution: CommandMutation</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun forwardHeartRate</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun publishIfCurrent: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun refreshCatalogForContext: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun sendSnapshotAndContext: Boolean</ID>
+    <ID>ReturnCount:BridgeRuntime.kt:BridgeRuntime$private suspend fun sendToAdmittedTargets: Boolean</ID>
+    <ID>ReturnCount:CommandJournal.kt:CommandJournal$@Synchronized fun begin: BeginResult</ID>
+    <ID>ReturnCount:GuardedForeignQuery.kt:internal suspend fun &lt;Result&gt; generationGuardedForeignQuery: GuardedForeignQueryOutcome</ID>
+    <ID>ReturnCount:HeartRateSamples.kt:HeartRateSampleGate$@Synchronized fun accept: Boolean</ID>
+    <ID>ReturnCount:LocusGateway.kt:LocusGateway$override fun executeWithExpectedState: CommandExecution</ID>
+    <ID>ReturnCount:LocusGateway.kt:LocusGateway$override fun sendHeartRate: Boolean</ID>
+    <ID>ReturnCount:PebbleTransport.kt:CoreAppPebbleDictionarySender$override suspend fun send: TransmissionResult?</ID>
+    <ID>ReturnCount:PebbleTransport.kt:CoreAppPebbleDictionarySender$private suspend fun request: Bundle?</ID>
+    <ID>ReturnCount:PebbleTransport.kt:DefaultPebbleDictionarySender$override suspend fun send: TransmissionResult?</ID>
+    <ID>ReturnCount:TrustedPebbleCompanion.kt:TrustedPebbleCompanionProvider$private suspend fun &lt;Result&gt; validateAdmission: TrustLeaseResult&lt;Result&gt;</ID>
+    <ID>SwallowedException:ResettableServiceConnector.kt:ResettableServiceConnector$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:BoundedAbandonableCalls.kt:BoundedAbandonableCallExecutor$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:BridgePebbleListenerService.kt:BridgePebbleListenerService$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:BridgeRuntime.kt:BridgeRuntime$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:LocusGateway.kt:LocusGateway$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainActivity.kt:MainActivity$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:PebbleTransport.kt:error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ResettableServiceConnector.kt:ResettableServiceConnector$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:TrustedPebbleCompanion.kt:TrustedPebbleCompanionProvider$error: Exception</ID>
+    <ID>TooManyFunctions:BridgeProtocol.kt:BridgeProtocol</ID>
+    <ID>TooManyFunctions:BridgeRuntime.kt:BridgeRuntime : AutoCloseable</ID>
+    <ID>TooManyFunctions:PebbleMessages.kt:PebbleMessages</ID>
+    <ID>TooManyFunctions:SnapshotFormatter.kt:SnapshotFormatter</ID>
+    <ID>TooManyFunctions:TrustedPebbleCompanion.kt:TrustedPebbleCompanionProvider</ID>
+    <ID>UnusedParameter:BridgeProtocol.kt:BridgeProtocol$id: Long</ID>
+    <ID>UnusedParameter:BridgeRuntime.kt:BridgeRuntime$admission: TrustAdmission? = null</ID>
+  </CurrentIssues>
+</SmellBaseline>

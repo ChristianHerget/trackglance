@@ -12,27 +12,30 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ResettableServiceConnectorTest {
-    @Test fun refusedFirstBindDoesNotPoisonTheNextAvailableConnection() = runBlocking {
+    @Test
+    fun refusedFirstBindDoesNotPoisonTheNextAvailableConnection() = runBlocking {
         val attempts = AtomicInteger()
         val workers = BoundedAbandonableCallExecutor(1, "binding-retry-test")
-        val connector = ResettableServiceConnector(
-            bindingFactory = ServiceBindingFactory {
-                val number = attempts.incrementAndGet()
-                FakeBindingAttempt(
-                    startBlock = { callbacks ->
-                        if (number == 1) {
-                            false
-                        } else {
-                            callbacks.connected("core-$number")
-                            true
-                        }
+        val connector =
+            ResettableServiceConnector(
+                bindingFactory =
+                    ServiceBindingFactory {
+                        val number = attempts.incrementAndGet()
+                        FakeBindingAttempt(
+                            startBlock = { callbacks ->
+                                if (number == 1) {
+                                    false
+                                } else {
+                                    callbacks.connected("core-$number")
+                                    true
+                                }
+                            }
+                        )
                     },
-                )
-            },
-            isAlive = { true },
-            callExecutor = workers,
-            connectTimeoutMillis = 500,
-        )
+                isAlive = { true },
+                callExecutor = workers,
+                connectTimeoutMillis = 500,
+            )
         try {
             assertNull(connector.getOrConnect())
             assertEquals("core-2", connector.getOrConnect())
@@ -43,25 +46,28 @@ class ResettableServiceConnectorTest {
         }
     }
 
-    @Test fun timedOutAttemptIsClosedAndANewAttemptMayConnect() = runBlocking {
+    @Test
+    fun timedOutAttemptIsClosedAndANewAttemptMayConnect() = runBlocking {
         val attempts = AtomicInteger()
         val closed = AtomicInteger()
         val workers = BoundedAbandonableCallExecutor(1, "binding-timeout-test")
-        val connector = ResettableServiceConnector(
-            bindingFactory = ServiceBindingFactory {
-                val number = attempts.incrementAndGet()
-                FakeBindingAttempt(
-                    startBlock = { callbacks ->
-                        if (number > 1) callbacks.connected("recovered")
-                        true
+        val connector =
+            ResettableServiceConnector(
+                bindingFactory =
+                    ServiceBindingFactory {
+                        val number = attempts.incrementAndGet()
+                        FakeBindingAttempt(
+                            startBlock = { callbacks ->
+                                if (number > 1) callbacks.connected("recovered")
+                                true
+                            },
+                            onClose = closed::incrementAndGet,
+                        )
                     },
-                    onClose = closed::incrementAndGet,
-                )
-            },
-            isAlive = { true },
-            callExecutor = workers,
-            connectTimeoutMillis = 25,
-        )
+                isAlive = { true },
+                callExecutor = workers,
+                connectTimeoutMillis = 25,
+            )
         try {
             assertNull(connector.getOrConnect())
             assertEquals("recovered", connector.getOrConnect())
@@ -73,23 +79,27 @@ class ResettableServiceConnectorTest {
         }
     }
 
-    @Test fun disconnectInvalidatesTheCachedServiceAndRebinds() = runBlocking {
+    @Test
+    fun disconnectInvalidatesTheCachedServiceAndRebinds() = runBlocking {
         val attempts = mutableListOf<FakeBindingAttempt>()
         val workers = BoundedAbandonableCallExecutor(1, "binding-death-test")
-        val connector = ResettableServiceConnector(
-            bindingFactory = ServiceBindingFactory {
-                val number = attempts.size + 1
-                FakeBindingAttempt(
-                    startBlock = { callbacks ->
-                        callbacks.connected("service-$number")
-                        true
+        val connector =
+            ResettableServiceConnector(
+                bindingFactory =
+                    ServiceBindingFactory {
+                        val number = attempts.size + 1
+                        FakeBindingAttempt(
+                                startBlock = { callbacks ->
+                                    callbacks.connected("service-$number")
+                                    true
+                                }
+                            )
+                            .also(attempts::add)
                     },
-                ).also(attempts::add)
-            },
-            isAlive = { true },
-            callExecutor = workers,
-            connectTimeoutMillis = 500,
-        )
+                isAlive = { true },
+                callExecutor = workers,
+                connectTimeoutMillis = 500,
+            )
         try {
             assertEquals("service-1", connector.getOrConnect())
             attempts.single().disconnect()
@@ -102,30 +112,34 @@ class ResettableServiceConnectorTest {
         }
     }
 
-    @Test fun cancelledConnectionAttemptIsResetBeforeTheNextSend() = runBlocking {
+    @Test
+    fun cancelledConnectionAttemptIsResetBeforeTheNextSend() = runBlocking {
         val attempts = mutableListOf<FakeBindingAttempt>()
         val firstBindStarted = CompletableDeferred<Unit>()
         val firstBindReturned = CompletableDeferred<Unit>()
         val workers = BoundedAbandonableCallExecutor(1, "binding-cancel-test")
-        val connector = ResettableServiceConnector(
-            bindingFactory = ServiceBindingFactory {
-                val number = attempts.size + 1
-                FakeBindingAttempt(
-                    startBlock = { callbacks ->
-                        if (number > 1) {
-                            callbacks.connected("recovered")
-                        } else {
-                            firstBindStarted.complete(Unit)
-                        }
-                        firstBindReturned.complete(Unit)
-                        true
+        val connector =
+            ResettableServiceConnector(
+                bindingFactory =
+                    ServiceBindingFactory {
+                        val number = attempts.size + 1
+                        FakeBindingAttempt(
+                                startBlock = { callbacks ->
+                                    if (number > 1) {
+                                        callbacks.connected("recovered")
+                                    } else {
+                                        firstBindStarted.complete(Unit)
+                                    }
+                                    firstBindReturned.complete(Unit)
+                                    true
+                                }
+                            )
+                            .also(attempts::add)
                     },
-                ).also(attempts::add)
-            },
-            isAlive = { true },
-            callExecutor = workers,
-            connectTimeoutMillis = 5_000,
-        )
+                isAlive = { true },
+                callExecutor = workers,
+                connectTimeoutMillis = 5_000,
+            )
         try {
             val first = async(start = CoroutineStart.UNDISPATCHED) { connector.getOrConnect() }
             firstBindStarted.await()

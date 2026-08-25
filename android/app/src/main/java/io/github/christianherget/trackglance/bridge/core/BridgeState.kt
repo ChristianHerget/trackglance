@@ -1,7 +1,7 @@
 package io.github.christianherget.trackglance.bridge.core
 
-import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import io.github.christianherget.trackglance.bridge.WatchAppLaunchResult
+import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -24,22 +24,23 @@ data class BridgeStatus(
     val lastCommand: BridgeProtocol.Command? = null,
     val lastCommandResult: BridgeProtocol.Result? = null,
     val lastWaypointName: String? = null,
-    
     val diagnosticsError: BridgeFailure? = null,
     val lastError: BridgeFailure? = null,
 )
 
-internal fun BridgeStatus.withPebbleSelection(trustedPackage: String?): BridgeStatus = copy(
-    pebbleAppPackage = trustedPackage,
-    watchConnected = trustedPackage != null && watchConnected,
-    watchAppOpen = trustedPackage != null && watchAppOpen,
-    watchVersion = watchVersion.takeIf { trustedPackage != null },
-)
+internal fun BridgeStatus.withPebbleSelection(trustedPackage: String?): BridgeStatus =
+    copy(
+        pebbleAppPackage = trustedPackage,
+        watchConnected = trustedPackage != null && watchConnected,
+        watchAppOpen = trustedPackage != null && watchAppOpen,
+        watchVersion = watchVersion.takeIf { trustedPackage != null },
+    )
 
-internal fun BridgeStatus.withPebbleConnectionFailure(failure: BridgeFailure): BridgeStatus = copy(
-    watchConnected = false,
-    diagnosticsError = failure,
-)
+internal fun BridgeStatus.withPebbleConnectionFailure(failure: BridgeFailure): BridgeStatus =
+    copy(
+        watchConnected = false,
+        diagnosticsError = failure,
+    )
 
 internal fun BridgeStatus.withDiagnosticsSnapshot(
     recordingState: BridgeProtocol.RecordingState,
@@ -47,14 +48,15 @@ internal fun BridgeStatus.withDiagnosticsSnapshot(
     sampledAtMillis: Long,
     currentHeartRate: Int?,
     error: BridgeFailure?,
-): BridgeStatus = copy(
-    locusAvailable = recordingState != BridgeProtocol.RecordingState.UNAVAILABLE,
-    recordingState = recordingState,
-    activeLocusProfile = activeLocusProfile,
-    lastUpdateEpochMillis = sampledAtMillis,
-    currentLocusHeartRate = currentHeartRate,
-    diagnosticsError = error,
-)
+): BridgeStatus =
+    copy(
+        locusAvailable = recordingState != BridgeProtocol.RecordingState.UNAVAILABLE,
+        recordingState = recordingState,
+        activeLocusProfile = activeLocusProfile,
+        lastUpdateEpochMillis = sampledAtMillis,
+        currentLocusHeartRate = currentHeartRate,
+        diagnosticsError = error,
+    )
 
 object BridgeState {
     private val mutable = MutableStateFlow(BridgeStatus())
@@ -69,14 +71,19 @@ object BridgeState {
             if (next.lastError != null && next.lastError !== previous.lastError) {
                 RecentDiagnostics.record(next.lastError)
             }
-            if (next.diagnosticsError != null && next.diagnosticsError !== previous.diagnosticsError) {
+            if (
+                next.diagnosticsError != null && next.diagnosticsError !== previous.diagnosticsError
+            ) {
                 RecentDiagnostics.record(next.diagnosticsError)
             }
         }
     }
 }
 
-enum class DiagnosticSeverity { WARNING, ERROR }
+enum class DiagnosticSeverity {
+    WARNING,
+    ERROR,
+}
 
 data class DiagnosticEntry(
     val failure: BridgeFailure,
@@ -97,23 +104,26 @@ open class DiagnosticHistory(
         val now = nowMillis()
         mutable.update { entries ->
             val existing = entries.firstOrNull { it.failure == failure }
-            val updated = existing?.copy(lastSeenEpochMillis = now, count = existing.count + 1)
-                ?: DiagnosticEntry(failure, failure.severity(), now, now, 1)
+            val updated =
+                existing?.copy(lastSeenEpochMillis = now, count = existing.count + 1)
+                    ?: DiagnosticEntry(failure, failure.severity(), now, now, 1)
             (listOf(updated) + entries.filterNot { it.failure == failure }).take(capacity)
         }
     }
 
-    fun clear() { mutable.value = emptyList() }
+    fun clear() {
+        mutable.value = emptyList()
+    }
 }
 
-fun BridgeFailure.severity(): DiagnosticSeverity = when (kind) {
-    BridgeFailureKind.LOCUS_UNAVAILABLE,
-    BridgeFailureKind.LOCUS_RETURNED_NO_PROFILES,
-    BridgeFailureKind.PEBBLE_COMPANION_NOT_INSTALLED,
-    BridgeFailureKind.PEBBLE_COMPANION_NOT_SELECTED,
-    BridgeFailureKind.WATCHAPP_LAUNCH_TIMED_OUT,
-    -> DiagnosticSeverity.WARNING
-    else -> DiagnosticSeverity.ERROR
-}
+fun BridgeFailure.severity(): DiagnosticSeverity =
+    when (kind) {
+        BridgeFailureKind.LOCUS_UNAVAILABLE,
+        BridgeFailureKind.LOCUS_RETURNED_NO_PROFILES,
+        BridgeFailureKind.PEBBLE_COMPANION_NOT_INSTALLED,
+        BridgeFailureKind.PEBBLE_COMPANION_NOT_SELECTED,
+        BridgeFailureKind.WATCHAPP_LAUNCH_TIMED_OUT -> DiagnosticSeverity.WARNING
+        else -> DiagnosticSeverity.ERROR
+    }
 
 object RecentDiagnostics : DiagnosticHistory()

@@ -27,25 +27,29 @@ class DebugStatusProvider : ContentProvider() {
     ): Cursor {
         require(uri.lastPathSegment == STATUS_PATH) { "Unknown debug status path" }
         val values = currentValues()
-        val columns = projection?.also { requested ->
-            require(requested.all(values::containsKey)) { "Unknown debug status column" }
-        } ?: COLUMNS
+        val columns =
+            projection?.also { requested ->
+                require(requested.all(values::containsKey)) { "Unknown debug status column" }
+            } ?: COLUMNS
         return MatrixCursor(columns, 1).apply { addRow(columns.map(values::get)) }
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         return when (method) {
-            STATUS_METHOD -> Bundle().apply {
-                currentValues().forEach { (key, value) -> putString(key, value?.toString()) }
-            }
+            STATUS_METHOD ->
+                Bundle().apply {
+                    currentValues().forEach { (key, value) -> putString(key, value?.toString()) }
+                }
             ACCEPTANCE_START_RECORDING_METHOD -> {
                 val appContext = requireNotNull(context).applicationContext
-                val version = requireNotNull(
-                    LocusUtils.getActiveVersion(appContext, VersionCode.UPDATE_13),
-                ) { "Locus Map is not available" }
-                val profileName = requireNotNull(arg?.takeIf(String::isNotBlank)) {
-                    "A Locus recording profile name is required"
-                }
+                val version =
+                    requireNotNull(LocusUtils.getActiveVersion(appContext, VersionCode.UPDATE_13)) {
+                        "Locus Map is not available"
+                    }
+                val profileName =
+                    requireNotNull(arg?.takeIf(String::isNotBlank)) {
+                        "A Locus recording profile name is required"
+                    }
                 ActionBasics.actionTrackRecordStart(appContext, version, profileName)
                 Bundle().apply { putString("result", "requested") }
             }
@@ -58,10 +62,11 @@ class DebugStatusProvider : ContentProvider() {
         val live = BridgeState.status.value
         val gateway = LocusGateway(appContext)
         val snapshot = gateway.readSnapshot()
-        val profiles = when (val result = gateway.recordingProfiles()) {
-            is RecordingProfilesResult.Success -> result.profiles.map { "${it.id}|${it.name}" }
-            is RecordingProfilesResult.Failure -> emptyList()
-        }
+        val profiles =
+            when (val result = gateway.recordingProfiles()) {
+                is RecordingProfilesResult.Success -> result.profiles.map { "${it.id}|${it.name}" }
+                is RecordingProfilesResult.Failure -> emptyList()
+            }
         return linkedMapOf(
             "bridge_version" to BuildConfig.VERSION_NAME,
             "bridge_version_code" to BuildConfig.VERSION_CODE,
@@ -85,8 +90,12 @@ class DebugStatusProvider : ContentProvider() {
     }
 
     override fun getType(uri: Uri): String = "vnd.android.cursor.item/vnd.trackglance.status"
+
     override fun insert(uri: Uri, values: ContentValues?): Uri? = unsupported()
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = unsupported()
+
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
+        unsupported()
+
     override fun update(
         uri: Uri,
         values: ContentValues?,
@@ -94,18 +103,33 @@ class DebugStatusProvider : ContentProvider() {
         selectionArgs: Array<out String>?,
     ): Int = unsupported()
 
-    private fun <T> unsupported(): T = throw UnsupportedOperationException("Debug status is read-only")
+    private fun <T> unsupported(): T =
+        throw UnsupportedOperationException("Debug status is read-only")
 
     companion object {
         private const val STATUS_PATH = "status"
         private const val STATUS_METHOD = "status"
         private const val ACCEPTANCE_START_RECORDING_METHOD = "acceptance-start-recording"
-        private val COLUMNS = arrayOf(
-            "bridge_version", "bridge_version_code", "protocol_version", "watch_app_open",
-            "pebble_app_package", "watch_connected", "watch_version", "locus_available",
-            "locus_profiles", "active_profile", "recording_state", "watch_heart_rate",
-            "locus_heart_rate", "heart_rate_forwarded_at", "last_command",
-            "last_command_result", "last_waypoint_name", "last_error",
-        )
+        private val COLUMNS =
+            arrayOf(
+                "bridge_version",
+                "bridge_version_code",
+                "protocol_version",
+                "watch_app_open",
+                "pebble_app_package",
+                "watch_connected",
+                "watch_version",
+                "locus_available",
+                "locus_profiles",
+                "active_profile",
+                "recording_state",
+                "watch_heart_rate",
+                "locus_heart_rate",
+                "heart_rate_forwarded_at",
+                "last_command",
+                "last_command_result",
+                "last_waypoint_name",
+                "last_error",
+            )
     }
 }

@@ -16,6 +16,13 @@ The bridge reads Locus statistics and commands Locus through its Android API, th
 versioned AppMessage dictionaries with CoreApp/PebbleKit. Supported watch platforms are only
 Pebble Time 2 (`emery`) and Pebble Round 2 (`gabbro`).
 
+In user-facing documentation, call the phone application the **Pebble App**, never CoreApp.
+CoreApp may remain in source code and developer-only documentation when identifying the upstream
+project or package.
+
+Maintain `CHANGELOG.md` for every release with changes that matter to users. Summarize behavior,
+features, compatibility, and important fixes; do not list every build-system or maintenance change.
+
 ## Build, Test, and Development Commands
 
 Keep development dependencies inside the version-pinned container. Do not install the JDK, Android
@@ -25,6 +32,7 @@ The wrapper selects Docker when available, otherwise Podman. Set `DEV_CONTAINER_
 `DEV_CONTAINER_ENGINE=podman` to choose explicitly.
 
 ```sh
+./tools/bump-version 0.2.4
 ./tools/podman-test doctor static
 ./tools/podman-test build-static
 ./tools/podman-test dev bash
@@ -101,5 +109,12 @@ complement, but do not replace, QEMU.
 History uses short imperative subjects such as `Route resume through Locus start action`. Keep each
 commit focused and include tests with behavioral fixes. Pull requests should explain user-visible
 behavior, list verified commands and hardware/platforms, link relevant issues, and include watch
-photos or screenshots for layout changes. Never commit SDK paths, generated builds, signing keys, or
-third-party CoreApp source.
+photos or screenshots for layout changes. Before opening a pull request, run the full local acceptance
+suite with the hosted-equivalent lifecycle:
+
+```sh
+./tools/podman-test acceptance-suite --fresh --cleanup --locus-apks /absolute/private/path
+```
+
+Do not treat static checks, a prepared-emulator smoke test, or hosted CI as a substitute for this local
+prerequisite. Never commit SDK paths, generated builds, signing keys, or third-party CoreApp source.

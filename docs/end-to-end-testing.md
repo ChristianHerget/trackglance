@@ -50,7 +50,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.2.2 |
+| Bridge and watchapp | 0.2.3 |
 | Wire protocol | v4 |
 | CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
@@ -367,12 +367,13 @@ Verify all of the following:
 1. CoreApp, watchapp, and Android bridge versions match.
 2. The settings page opens on the first click.
 3. Fully expanded activity groups are alphabetical and match Locus IDs and names.
-4. Direct edit, clone, delete, reset, page drag, group move, and metric drag work within bounds.
+4. Activity editing, page and metric reordering, activation/deactivation, and split resets work within bounds.
 5. Saving stores canonical configuration and pushes the active activity projection.
-6. Reopening preserves names, mappings, order, metrics, theme, and stable page IDs.
+6. Reopening preserves custom names, page and metric order, inactive slots, theme, and stable page IDs.
 
 Fresh groups use `Standard` in German and `Default` in English with heuristic metrics. Generated
-and edited page names are user data and are never translated automatically.
+and custom page names are user data and are never translated automatically; automatic names follow
+the watch language.
 
 If settings says no profile response has arrived:
 

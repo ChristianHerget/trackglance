@@ -30,10 +30,11 @@ enum class WatchAppLaunchResult {
 internal class WatchAppLauncher(
     private val ensureTrusted: suspend () -> Boolean,
     private val captureAdmission: suspend () -> TrustAdmission?,
-    private val underAdmission: suspend (
-        TrustAdmission,
-        suspend () -> WatchAppLaunchResult,
-    ) -> TrustLeaseResult<WatchAppLaunchResult>,
+    private val underAdmission:
+        suspend (
+            TrustAdmission,
+            suspend () -> WatchAppLaunchResult,
+        ) -> TrustLeaseResult<WatchAppLaunchResult>,
     private val connectedWatchIds: suspend () -> List<String>,
     private val startWatchApp: suspend (List<String>) -> Unit,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
@@ -48,28 +49,33 @@ internal class WatchAppLauncher(
         try {
             withTimeout(timeoutMillis) {
                 if (!ensureTrusted()) return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
-                val admission = captureAdmission()
-                    ?: return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
-                when (val gated = underAdmission(admission) {
-                    val watchIds = try {
-                        connectedWatchIds()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        return@underAdmission WatchAppLaunchResult.LOOKUP_FAILED
-                    }
-                    if (watchIds.isEmpty()) {
-                        return@underAdmission WatchAppLaunchResult.NO_CONNECTED_WATCH
-                    }
-                    try {
-                        startWatchApp(watchIds)
-                        WatchAppLaunchResult.STARTED
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        WatchAppLaunchResult.LAUNCH_FAILED
-                    }
-                }) {
+                val admission =
+                    captureAdmission()
+                        ?: return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
+                when (
+                    val gated =
+                        underAdmission(admission) {
+                            val watchIds =
+                                try {
+                                    connectedWatchIds()
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (_: Exception) {
+                                    return@underAdmission WatchAppLaunchResult.LOOKUP_FAILED
+                                }
+                            if (watchIds.isEmpty()) {
+                                return@underAdmission WatchAppLaunchResult.NO_CONNECTED_WATCH
+                            }
+                            try {
+                                startWatchApp(watchIds)
+                                WatchAppLaunchResult.STARTED
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Exception) {
+                                WatchAppLaunchResult.LAUNCH_FAILED
+                            }
+                        }
+                ) {
                     is TrustLeaseResult.Admitted -> gated.value
                     TrustLeaseResult.Stale -> WatchAppLaunchResult.STALE_COMPANION
                     TrustLeaseResult.Untrusted -> WatchAppLaunchResult.UNTRUSTED_COMPANION
@@ -122,9 +128,10 @@ internal class WatchAppLauncher(
             )
         }
 
-        private val WATCH_LAUNCH_EXECUTOR = BoundedAbandonableCallExecutor(
-            maxWorkers = 2,
-            threadNamePrefix = "watch-app-launch",
-        )
+        private val WATCH_LAUNCH_EXECUTOR =
+            BoundedAbandonableCallExecutor(
+                maxWorkers = 2,
+                threadNamePrefix = "watch-app-launch",
+            )
     }
 }

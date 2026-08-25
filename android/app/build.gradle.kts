@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("dev.detekt")
 }
 
 android {
@@ -8,7 +9,8 @@ android {
     compileSdk = 36
 
     val releaseKeystorePath = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PATH").orNull
-    val releaseKeystorePassword = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PASSWORD").orNull
+    val releaseKeystorePassword =
+        providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PASSWORD").orNull
     if (releaseKeystorePath != null || releaseKeystorePassword != null) {
         require(!releaseKeystorePath.isNullOrBlank() && !releaseKeystorePassword.isNullOrBlank()) {
             "Both Android release signing environment variables must be set"
@@ -27,8 +29,8 @@ android {
         applicationId = "app.trackglance.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.2.2"
+        versionCode = 14
+        versionName = "0.2.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -36,7 +38,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.findByName("releaseEnvironment")
         }
     }
@@ -49,6 +54,22 @@ android {
         compose = true
         buildConfig = true
     }
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        disable +=
+            setOf(
+                "AndroidGradlePluginVersion",
+                "GradleDependency",
+                "NewerVersionAvailable",
+                "OldTargetApi",
+            )
+    }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    parallel = true
 }
 
 kotlin { jvmToolchain(17) }
@@ -69,6 +90,10 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.00"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
 base { archivesName.set("trackglance-bridge") }

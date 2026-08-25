@@ -1,0 +1,22 @@
+{
+  "name": "TrackGlance",
+  "version": "0.2.3",
+  "category": "Health & Fitness",
+  "summary": "View and control Locus Map track recordings from a Pebble Time 2 or Pebble Round 2.",
+  "description": "TrackGlance brings an active Locus Map track recording to your wrist. Choose the metrics shown for each Locus activity, switch between up to four pages, pause or resume recording, stop and save, and add waypoints. Pebble Time 2 also supports dictated waypoint notes and can send watch heart-rate readings to Locus. The TrackGlance Android Bridge and Locus Map are required.",
+  "sourceUrl": "https://github.com/ChristianHerget/trackglance",
+  "supportUrl": "https://github.com/ChristianHerget/trackglance/issues",
+  "releaseUrl": "https://github.com/ChristianHerget/trackglance/releases/latest",
+  "documentationUrl": "https://christianherget.github.io/trackglance/",
+  "platforms": ["emery", "gabbro"],
+  "languages": ["en_US", "fr_FR", "de_DE", "es_ES", "it_IT", "pt_PT", "zh_CN", "zh_TW"],
+  "icons": {
+    "80x80": "artwork/pebble_appstore_icon_80x80.png",
+    "144x144": "artwork/pebble_appstore_icon_144x144.png"
+  },
+  "screenshots": {
+    "emery": "docs/sphinx/_static/screenshot_emery_dashboard.png",
+    "gabbro": "docs/sphinx/_static/screenshot_gabbro_dashboard.png"
+  },
+  "releaseNotes": "Adds eight-language support, clearer setup guidance, a documented missing-Bridge screen, and expanded source-quality checks."
+}

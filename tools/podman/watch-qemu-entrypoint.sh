@@ -35,7 +35,7 @@ fi
 qemu_pid=$!
 trap 'kill "$qemu_pid" 2>/dev/null || true; wait "$qemu_pid" 2>/dev/null || true' EXIT INT TERM
 
-for attempt in $(seq 1 100); do
+for _ in $(seq 1 100); do
   if (exec 3<>/dev/tcp/127.0.0.1/12345) 2>/dev/null; then
     exec 3>&-
     break

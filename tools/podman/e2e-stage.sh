@@ -89,7 +89,7 @@ for _ in 1 2 3; do
   settings_deadline=$((SECONDS + 30))
   while (( SECONDS < settings_deadline )); do
     dump_ui
-    if grep -Fq 'resource-id="theme"' /tmp/trackglance-window.xml; then
+    if grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
       settings_loaded=1
       break 2
     fi
@@ -105,8 +105,25 @@ if (( ! settings_loaded )); then
   exit 1
 fi
 
+tap_text "General settings" 30
+general_loaded=0
+general_deadline=$((SECONDS + 30))
+while (( SECONDS < general_deadline )); do
+  dump_ui
+  if grep -Fq 'resource-id="theme"' /tmp/trackglance-window.xml; then
+    general_loaded=1
+    break
+  fi
+  sleep 0.5
+done
+if (( ! general_loaded )); then
+  echo "${PEBBLE_PLATFORM} General settings did not finish loading" >&2
+  exit 1
+fi
+
 if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
   tap_text "Send watch heart rate to Locus" 30
+  tap_text "Done" 30
   tap_text "Save" 30
   adb_device shell am start -W \
     -a locus.api.android.INTENT_ITEM_MAIN_FUNCTION \
@@ -187,7 +204,8 @@ else
     echo "Pebble Round 2 incorrectly exposes watch-originated heart rate settings" >&2
     exit 1
   fi
-  adb_device shell input keyevent 4
+  tap_text "Done" 30
+  tap_text "Save" 30
   adb_device shell am start -W \
     -a locus.api.android.INTENT_ITEM_MAIN_FUNCTION \
     -n "$bridge_activity" >/dev/null

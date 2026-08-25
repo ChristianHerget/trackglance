@@ -2,10 +2,10 @@
 <resources>
     <style name="Theme.TrackGlanceBridge" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#006C4C</item>
-        <item name="android:navigationBarColor">#F4FBF6</item>
-        <item name="android:statusBarColor">#F4FBF6</item>
+        <item name="android:windowBackground">@color/trackglance_background</item>
+        <item name="android:colorAccent">@color/trackglance_primary</item>
+        <item name="android:navigationBarColor">@color/trackglance_background</item>
+        <item name="android:statusBarColor">@color/trackglance_background</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
-

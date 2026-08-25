@@ -6,9 +6,9 @@ import android.os.Bundle
 import android.os.IBinder
 import io.github.christianherget.trackglance.bridge.BuildConfig
 import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallExecutor
-import io.github.christianherget.trackglance.bridge.core.BridgeRuntime
 import io.github.christianherget.trackglance.bridge.core.BridgeFailure
 import io.github.christianherget.trackglance.bridge.core.BridgeFailureKind
+import io.github.christianherget.trackglance.bridge.core.BridgeRuntime
 import io.github.christianherget.trackglance.bridge.core.BridgeState
 import io.github.christianherget.trackglance.bridge.core.loadOffMain
 import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
@@ -51,36 +51,42 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         return object : UniversalRequestResponse.Stub() {
             override fun request(data: Bundle, callback: SendDataCallback) {
                 val callingUid = Binder.getCallingUid()
-                if (!TrustedPebbleCompanionProvider.isTrustedCallingUid(
+                if (
+                    !TrustedPebbleCompanionProvider.isTrustedCallingUid(
                         this@BridgePebbleListenerService,
                         callingUid,
                     ) || !callback.asBinder().isBinderAlive
                 ) {
-                    // Never invoke a rejected caller's two-way callback; it could block a Binder thread.
+                    // Never invoke a rejected caller's two-way callback; it could block a Binder
+                    // thread.
                     return
                 }
 
                 val request = Bundle(data)
                 coroutineScope.launch {
-                    val ready = try {
-                        companionPin.ensureTrustedBounded() && trustedCompanion.isTrusted()
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        false
-                    }
-                    if (!ready || !callback.asBinder().isBinderAlive ||
-                        !TrustedPebbleCompanionProvider.isTrustedCallingUid(
-                            this@BridgePebbleListenerService,
-                            callingUid,
-                        )
+                    val ready =
+                        try {
+                            companionPin.ensureTrustedBounded() && trustedCompanion.isTrusted()
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            false
+                        }
+                    if (
+                        !ready ||
+                            !callback.asBinder().isBinderAlive ||
+                            !TrustedPebbleCompanionProvider.isTrustedCallingUid(
+                                this@BridgePebbleListenerService,
+                                callingUid,
+                            )
                     ) {
                         BridgeRuntime.resetForCompanionTrustLoss()
                         return@launch
                     }
-                    val admission = TrustedPebbleCompanionProvider.captureTrustedAdmission(
-                        this@BridgePebbleListenerService,
-                    ) ?: return@launch
+                    val admission =
+                        TrustedPebbleCompanionProvider.captureTrustedAdmission(
+                            this@BridgePebbleListenerService
+                        ) ?: return@launch
                     val result = handleAdmittedRequest(request, admission)
                     val delivered = AtomicBoolean(false)
                     CALLBACK_DELIVERY.deliver(
@@ -90,7 +96,8 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
                                 TrustedPebbleCompanionProvider.isTrustedCallingUid(
                                     this@BridgePebbleListenerService,
                                     callingUid,
-                                ) && callback.asBinder().isBinderAlive
+                                ) &&
+                                callback.asBinder().isBinderAlive
                         },
                         callback = {
                             if (delivered.compareAndSet(false, true)) callback.onResult(result)
@@ -105,19 +112,22 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         request: Bundle,
         admission: TrustAdmission,
     ): Bundle {
-        val watchappUUID = request.getString(PebbleKitBundleKeys.KEY_WATCHAPP_UUID)
-            ?.let { encoded -> runCatching { UUID.fromString(encoded) }.getOrNull() }
-            ?: return Bundle()
-        val watch = request.getString(PebbleKitBundleKeys.KEY_WATCH_ID)
-            ?.takeIf(BridgeProtocol::validWatchId)
-            ?.let(::WatchIdentifier)
-            ?: return Bundle()
+        val watchappUUID =
+            request.getString(PebbleKitBundleKeys.KEY_WATCHAPP_UUID)?.let { encoded ->
+                runCatching { UUID.fromString(encoded) }.getOrNull()
+            } ?: return Bundle()
+        val watch =
+            request
+                .getString(PebbleKitBundleKeys.KEY_WATCH_ID)
+                ?.takeIf(BridgeProtocol::validWatchId)
+                ?.let(::WatchIdentifier) ?: return Bundle()
         val ingress = AuthenticatedWatchIngress(watch, admission)
         return when (request.getString(PebbleKitBundleKeys.KEY_ACTION)) {
             PebbleKitBundleKeys.ACTION_RECEIVE_DATA_FROM_WATCH -> {
-                val dictionary = PebbleDictionaryItem.mapFromBundle(
-                    request.getBundle(PebbleKitBundleKeys.KEY_DATA_DICTIONARY) ?: Bundle(),
-                )
+                val dictionary =
+                    PebbleDictionaryItem.mapFromBundle(
+                        request.getBundle(PebbleKitBundleKeys.KEY_DATA_DICTIONARY) ?: Bundle()
+                    )
                 Bundle().apply {
                     putBundle(
                         PebbleKitBundleKeys.KEY_TRANSMISSION_RESULTS,
@@ -141,22 +151,24 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         watchappUUID: UUID,
         data: PebbleDictionary,
         ingress: AuthenticatedWatchIngress,
-    ): ReceiveResult = try {
-        lifecycleCallbacks.serialize {
-            // Keep runtime construction off PebbleKit's MainScope and outside the revocation lease.
-            val runtime = loadOffMain {
-                BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
+    ): ReceiveResult =
+        try {
+            lifecycleCallbacks.serialize {
+                // Keep runtime construction off PebbleKit's MainScope and outside the revocation
+                // lease.
+                val runtime = loadOffMain {
+                    BridgeRuntime.get(this@BridgePebbleListenerService.applicationContext)
+                }
+                handleMessage(runtime, watchappUUID, data, ingress.watch, ingress.admission)
             }
-            handleMessage(runtime, watchappUUID, data, ingress.watch, ingress.admission)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            BridgeState.update {
+                it.copy(lastError = BridgeFailure.technical(error))
+            }
+            ReceiveResult.Nack
         }
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Exception) {
-        BridgeState.update {
-            it.copy(lastError = BridgeFailure.technical(error))
-        }
-        ReceiveResult.Nack
-    }
 
     private suspend fun handleMessage(
         runtime: BridgeRuntime,
@@ -172,30 +184,33 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         val appVersion = PebbleMessages.string(data, BridgeProtocol.Key.APP_VERSION)
         val type = PebbleMessages.signed32(data, BridgeProtocol.Key.MESSAGE_TYPE)
         if (version != BridgeProtocol.VERSION) return ReceiveResult.Nack
-        val acceptedType = type == BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire ||
-            type == BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire ||
-            type == BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire ||
-            type == BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire ||
-            type == BridgeProtocol.MessageType.COMMAND.wire
-        val admitted = runAdmittedInbound(admission, false) {
-            BridgeState.update {
-                it.copy(
-                    watchVersion = appVersion,
-                    lastError = if (appVersion == BuildConfig.VERSION_NAME) {
-                        it.lastError
-                    } else {
-                        BridgeFailure(
-                            BridgeFailureKind.WATCHAPP_INCOMPATIBLE,
-                            "watchapp=${appVersion ?: "not reported"}; expected=${BuildConfig.VERSION_NAME}",
-                        )
-                    },
-                )
+        val acceptedType =
+            type == BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire ||
+                type == BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire ||
+                type == BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire ||
+                type == BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire ||
+                type == BridgeProtocol.MessageType.COMMAND.wire
+        val admitted =
+            runAdmittedInbound(admission, false) {
+                BridgeState.update {
+                    it.copy(
+                        watchVersion = appVersion,
+                        lastError =
+                            if (appVersion == BuildConfig.VERSION_NAME) {
+                                it.lastError
+                            } else {
+                                BridgeFailure(
+                                    BridgeFailureKind.WATCHAPP_INCOMPATIBLE,
+                                    "watchapp=${appVersion ?: "not reported"}; expected=${BuildConfig.VERSION_NAME}",
+                                )
+                            },
+                    )
+                }
+                if (appVersion == BuildConfig.VERSION_NAME && acceptedType) {
+                    return@runAdmittedInbound runtime.watchObserved(watch, admission)
+                }
+                true
             }
-            if (appVersion == BuildConfig.VERSION_NAME && acceptedType) {
-                return@runAdmittedInbound runtime.watchObserved(watch, admission)
-            }
-            true
-        }
         if (!admitted || appVersion != BuildConfig.VERSION_NAME || !acceptedType) {
             return ReceiveResult.Nack
         }
@@ -225,14 +240,18 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ): ReceiveResult {
-        val sessionId = PebbleMessages.unsigned32(data, BridgeProtocol.Key.SESSION_ID)
-            ?: return ReceiveResult.Nack
-        val sequence = PebbleMessages.unsigned32(data, BridgeProtocol.Key.HEART_RATE_SEQUENCE)
-            ?: return ReceiveResult.Nack
-        val bpm = PebbleMessages.signed32(data, BridgeProtocol.Key.CURRENT_HEART_RATE)
-            ?: return ReceiveResult.Nack
-        val sampledAt = PebbleMessages.unsigned32(data, BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS)
-            ?: return ReceiveResult.Nack
+        val sessionId =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.SESSION_ID)
+                ?: return ReceiveResult.Nack
+        val sequence =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.HEART_RATE_SEQUENCE)
+                ?: return ReceiveResult.Nack
+        val bpm =
+            PebbleMessages.signed32(data, BridgeProtocol.Key.CURRENT_HEART_RATE)
+                ?: return ReceiveResult.Nack
+        val sampledAt =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.SAMPLE_EPOCH_SECONDS)
+                ?: return ReceiveResult.Nack
         return if (runtime.handleHeartRate(watch, sessionId, sequence, bpm, sampledAt, admission)) {
             ReceiveResult.Ack
         } else {
@@ -246,24 +265,28 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ): ReceiveResult {
-        val sessionId = PebbleMessages.unsigned32(data, BridgeProtocol.Key.SESSION_ID)
-            ?: return ReceiveResult.Nack
-        val commandId = PebbleMessages.unsigned32(data, BridgeProtocol.Key.COMMAND_ID)
-            ?: return ReceiveResult.Nack
-        val wireCommand = PebbleMessages.signed32(data, BridgeProtocol.Key.COMMAND)
-            ?: return ReceiveResult.Nack
+        val sessionId =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.SESSION_ID)
+                ?: return ReceiveResult.Nack
+        val commandId =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.COMMAND_ID)
+                ?: return ReceiveResult.Nack
+        val wireCommand =
+            PebbleMessages.signed32(data, BridgeProtocol.Key.COMMAND) ?: return ReceiveResult.Nack
         if (wireCommand == BridgeProtocol.Command.START.wire) return ReceiveResult.Nack
-        val command = BridgeProtocol.Command.entries.firstOrNull { it.wire == wireCommand }
-            ?: return ReceiveResult.Nack
-        val delivered = runtime.handleCommand(
-            watch = watch,
-            sessionId = sessionId,
-            commandId = commandId,
-            command = command,
-            profileName = PebbleMessages.string(data, BridgeProtocol.Key.LOCUS_PROFILE_NAME),
-            waypointName = PebbleMessages.string(data, BridgeProtocol.Key.WAYPOINT_NAME),
-            admission = admission,
-        )
+        val command =
+            BridgeProtocol.Command.entries.firstOrNull { it.wire == wireCommand }
+                ?: return ReceiveResult.Nack
+        val delivered =
+            runtime.handleCommand(
+                watch = watch,
+                sessionId = sessionId,
+                commandId = commandId,
+                command = command,
+                profileName = PebbleMessages.string(data, BridgeProtocol.Key.LOCUS_PROFILE_NAME),
+                waypointName = PebbleMessages.string(data, BridgeProtocol.Key.WAYPOINT_NAME),
+                admission = admission,
+            )
         return if (delivered) ReceiveResult.Ack else ReceiveResult.Nack
     }
 
@@ -271,9 +294,11 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         watchappUUID: UUID,
         ingress: AuthenticatedWatchIngress,
     ) {
-        if (watchappUUID != BridgeProtocol.APP_UUID ||
-            !BridgeProtocol.validWatchId(ingress.watch.value)
-        ) return
+        if (
+            watchappUUID != BridgeProtocol.APP_UUID ||
+                !BridgeProtocol.validWatchId(ingress.watch.value)
+        )
+            return
         try {
             lifecycleCallbacks.serialize {
                 val runtime = loadOffMain {
@@ -294,9 +319,11 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         watchappUUID: UUID,
         ingress: AuthenticatedWatchIngress,
     ) {
-        if (watchappUUID != BridgeProtocol.APP_UUID ||
-            !BridgeProtocol.validWatchId(ingress.watch.value)
-        ) return
+        if (
+            watchappUUID != BridgeProtocol.APP_UUID ||
+                !BridgeProtocol.validWatchId(ingress.watch.value)
+        )
+            return
         try {
             lifecycleCallbacks.serialize {
                 val runtime = loadOffMain {
@@ -317,33 +344,35 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         admission: TrustAdmission,
         rejected: Result,
         block: suspend () -> Result,
-    ): Result = when (
-        val result = TrustedPebbleCompanionProvider.withInboundAdmission(
-            this@BridgePebbleListenerService,
-            admission,
+    ): Result =
+        when (
+            val result =
+                TrustedPebbleCompanionProvider.withInboundAdmission(
+                    this@BridgePebbleListenerService,
+                    admission,
+                ) {
+                    try {
+                        block()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        BridgeState.update { it.copy(lastError = BridgeFailure.technical(error)) }
+                        rejected
+                    }
+                }
         ) {
-            try {
-                block()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                BridgeState.update { it.copy(lastError = BridgeFailure.technical(error)) }
-                rejected
-            }
+            is TrustLeaseResult.Admitted -> result.value
+            TrustLeaseResult.Stale,
+            TrustLeaseResult.Untrusted -> rejected
         }
-    ) {
-        is TrustLeaseResult.Admitted -> result.value
-        TrustLeaseResult.Stale,
-        TrustLeaseResult.Untrusted,
-        -> rejected
-    }
 
     private companion object {
-        val CALLBACK_DELIVERY = BoundedCallbackDelivery(
-            BoundedAbandonableCallExecutor(
-                maxWorkers = 2,
-                threadNamePrefix = "core-callback",
-            ),
-        )
+        val CALLBACK_DELIVERY =
+            BoundedCallbackDelivery(
+                BoundedAbandonableCallExecutor(
+                    maxWorkers = 2,
+                    threadNamePrefix = "core-callback",
+                )
+            )
     }
 }

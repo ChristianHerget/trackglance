@@ -12,7 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PebbleTransportTest {
-    @Test fun retriesTheSingleActiveWatchWithinTheBound() = runBlocking {
+    @Test
+    fun retriesTheSingleActiveWatchWithinTheBound() = runBlocking {
         val watch = WatchIdentifier("watch")
         val sender = FakeSender { attempt, _ ->
             if (attempt == 1) TransmissionResult.Unknown("retry") else TransmissionResult.Success
@@ -25,7 +26,8 @@ class PebbleTransportTest {
         assertEquals(listOf(1), delays)
     }
 
-    @Test fun missingAndExceptionalResultsFailAfterTheConfiguredAttempts() = runBlocking {
+    @Test
+    fun missingAndExceptionalResultsFailAfterTheConfiguredAttempts() = runBlocking {
         val watch = WatchIdentifier("watch")
         val sender = FakeSender { attempt, _ ->
             if (attempt == 1) throw IllegalStateException("transport unavailable")
@@ -37,7 +39,8 @@ class PebbleTransportTest {
         assertEquals(3, sender.targets.size)
     }
 
-    @Test fun outboundDeliveryStopsWhenCoreSelectionChanges() = runBlocking {
+    @Test
+    fun outboundDeliveryStopsWhenCoreSelectionChanges() = runBlocking {
         val watch = WatchIdentifier("watch")
         val delegate = FakeSender { _, _ -> TransmissionResult.Success }
         var selected = true
@@ -49,20 +52,23 @@ class PebbleTransportTest {
         assertEquals(listOf(watch), delegate.targets)
     }
 
-    @Test fun staleSessionQuietlyDropsWithoutResettingTheCurrentSession() = runBlocking {
+    @Test
+    fun staleSessionQuietlyDropsWithoutResettingTheCurrentSession() = runBlocking {
         val watch = WatchIdentifier("watch")
         val old = TrustAdmission(1)
         val current = TrustAdmission(2)
         val delegate = FakeSender { _, _ -> TransmissionResult.Success }
         var resets = 0
-        val sender = DefaultPebbleDictionarySender(
-            delegate = delegate,
-            onTrustLost = { resets++ },
-            admissionGate = { admission, block ->
-                if (admission == current) TrustLeaseResult.Admitted(block()) else TrustLeaseResult.Stale
-            },
-            isTrusted = { true },
-        )
+        val sender =
+            DefaultPebbleDictionarySender(
+                delegate = delegate,
+                onTrustLost = { resets++ },
+                admissionGate = { admission, block ->
+                    if (admission == current) TrustLeaseResult.Admitted(block())
+                    else TrustLeaseResult.Stale
+                },
+                isTrusted = { true },
+            )
 
         assertNull(sender.send(emptyMap(), watch, old))
         assertEquals(0, resets)
@@ -70,18 +76,20 @@ class PebbleTransportTest {
         assertEquals(TransmissionResult.Success, sender.send(emptyMap(), watch, current))
     }
 
-    @Test fun timedOutSenderDoesNotBlockALaterDelivery() = runBlocking {
+    @Test
+    fun timedOutSenderDoesNotBlockALaterDelivery() = runBlocking {
         val watch = WatchIdentifier("watch")
         val sender = FakeSender { attempt, _ ->
             if (attempt == 1) awaitCancellation()
             TransmissionResult.Success
         }
-        val transport = ReliablePebbleTransport(
-            sender = sender,
-            maxAttempts = 1,
-            attemptTimeoutMillis = 25,
-            retryDelay = {},
-        )
+        val transport =
+            ReliablePebbleTransport(
+                sender = sender,
+                maxAttempts = 1,
+                attemptTimeoutMillis = 25,
+                retryDelay = {},
+            )
 
         assertFalse(transport.send(emptyMap(), watch, TEST_ADMISSION))
         assertTrue(transport.send(emptyMap(), watch, TEST_ADMISSION))
@@ -89,7 +97,7 @@ class PebbleTransportTest {
     }
 
     private class FakeSender(
-        private val response: suspend (attempt: Int, watch: WatchIdentifier) -> TransmissionResult?,
+        private val response: suspend (attempt: Int, watch: WatchIdentifier) -> TransmissionResult?
     ) : PebbleDictionarySender {
         val targets = mutableListOf<WatchIdentifier>()
 

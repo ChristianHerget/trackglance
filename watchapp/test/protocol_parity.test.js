@@ -33,16 +33,16 @@ const expected = {...keys, VERSION:keys.PROTOCOL_VERSION};
 delete expected.PROTOCOL_VERSION;
 assert.deepStrictEqual(kotlinKeys, expected);
 
-assert.strictEqual(packageJson.version, '0.2.2');
-assert.strictEqual(packageLock.version, '0.2.2');
-assert.strictEqual(packageLock.packages[''].version, '0.2.2');
-assert.strictEqual(pkjs.RELEASE, '0.2.2');
-assert(androidBuild.includes('versionCode = 13'));
-assert(androidBuild.includes('versionName = "0.2.2"'));
-assert(watch.includes('#define RELEASE_VERSION "0.2.2"'));
-assert(sphinx.includes("version = '0.2.2'") && sphinx.includes("release = '0.2.2'"));
+const release = packageJson.version;
+assert(/^\d+\.\d+\.\d+$/.test(release));
+assert.strictEqual(packageLock.version, release);
+assert.strictEqual(packageLock.packages[''].version, release);
+assert.strictEqual(pkjs.RELEASE, release);
+assert(androidBuild.includes(`versionName = "${release}"`));
+assert(watch.includes(`#define RELEASE_VERSION "${release}"`));
+assert(sphinx.includes(`version = '${release}'`) && sphinx.includes(`release = '${release}'`));
 assert(protocol.startsWith('# Bridge protocol v4'));
-assert(protocol.includes('currently `0.2.2`'));
+assert(protocol.includes(`currently \`${release}\``));
 
 assert.strictEqual(pkjs.VERSION, 4);
 assert(kotlin.includes('const val VERSION = 4'));
