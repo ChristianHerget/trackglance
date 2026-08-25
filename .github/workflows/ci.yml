@@ -17,7 +17,7 @@ on:
         description: Acceptance provisioning path
         type: choice
         options: [source, published, compare]
-        default: source
+        default: published
         required: true
 
 permissions:
@@ -63,7 +63,7 @@ jobs:
       ACCEPTANCE_CONTAINER_ENGINE: docker
       ACCEPTANCE_REPORT_RESOURCES: 1
       WATCH_PASSES: ${{ inputs.watch_passes || '1' }}
-      ACCEPTANCE_PROVISIONING: ${{ inputs.acceptance_provisioning || 'source' }}
+      ACCEPTANCE_PROVISIONING: ${{ inputs.acceptance_provisioning || 'published' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

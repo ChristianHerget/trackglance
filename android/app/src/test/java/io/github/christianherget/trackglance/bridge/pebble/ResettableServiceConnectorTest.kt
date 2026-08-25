@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -116,7 +117,6 @@ class ResettableServiceConnectorTest {
     fun cancelledConnectionAttemptIsResetBeforeTheNextSend() = runBlocking {
         val attempts = mutableListOf<FakeBindingAttempt>()
         val firstBindStarted = CompletableDeferred<Unit>()
-        val firstBindReturned = CompletableDeferred<Unit>()
         val workers = BoundedAbandonableCallExecutor(1, "binding-cancel-test")
         val connector =
             ResettableServiceConnector(
@@ -130,7 +130,6 @@ class ResettableServiceConnectorTest {
                                     } else {
                                         firstBindStarted.complete(Unit)
                                     }
-                                    firstBindReturned.complete(Unit)
                                     true
                                 }
                             )
@@ -143,6 +142,8 @@ class ResettableServiceConnectorTest {
         try {
             val first = async(start = CoroutineStart.UNDISPATCHED) { connector.getOrConnect() }
             firstBindStarted.await()
+            val firstBindReturned = CompletableDeferred<Unit>()
+            while (!workers.execute { firstBindReturned.complete(Unit) }) yield()
             firstBindReturned.await()
             first.cancelAndJoin()
             assertEquals(1, attempts.first().closeCount)

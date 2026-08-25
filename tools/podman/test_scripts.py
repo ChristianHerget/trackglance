@@ -19,6 +19,7 @@ E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 CI_IMAGE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-ci-images.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 BUILD_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.build"
@@ -119,16 +120,22 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_manual_acceptance_can_compare_source_and_published_provisioning(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("options: [source, published, compare]", source)
+        self.assertIn("default: published", source)
+        self.assertIn("inputs.acceptance_provisioning || 'published'", source)
         self.assertIn("run_suite Source --fresh", source)
         self.assertIn("run_suite Published --published", source)
         self.assertIn("build/acceptance-timings.txt", source)
 
 
 class PublishedCiImageTest(unittest.TestCase):
-    def test_image_set_bootstraps_unpublished_and_requires_digest_pins_after_publication(self):
+    def test_image_set_uses_only_immutable_digest_pins(self):
         pins = CI_IMAGE_PINS.read_text(encoding="utf-8")
         self.assertIn("CI_IMAGE_SET_SCHEMA=1", pins)
-        self.assertEqual(pins.count("=UNPUBLISHED"), 3)
+        self.assertNotIn("=UNPUBLISHED", pins)
+        image_lines = [line for line in pins.splitlines() if line.startswith(("ACCEPTANCE_", "CODEQL_"))]
+        self.assertEqual(len(image_lines), 3)
+        for line in image_lines:
+            self.assertRegex(line, r"^[A-Z_]+_IMAGE=ghcr\.io/[a-z0-9/_.-]+@sha256:[a-f0-9]{64}$")
         source = PODMAN_TEST.read_text(encoding="utf-8")
         self.assertIn("require_published_ci_image_pins", source)
         self.assertIn("@sha256:[a-f0-9]{64}", source)
@@ -154,6 +161,20 @@ class PublishedCiImageTest(unittest.TestCase):
         self.assertIn("TrackGlance Kotlin CodeQL toolchain", source)
         self.assertIn("command -v aapt2", source)
         self.assertNotIn("Containerfile.acceptance-runner", source)
+
+    def test_kotlin_codeql_traces_a_manual_gradle_build_in_the_pinned_image(self):
+        workflow = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        codeql_pin = next(
+            line.split("=", 1)[1]
+            for line in CI_IMAGE_PINS.read_text(encoding="utf-8").splitlines()
+            if line.startswith("CODEQL_KOTLIN_IMAGE=")
+        )
+        kotlin_job = workflow.split("  analyze-kotlin:", 1)[1]
+        self.assertIn(f"image: {codeql_pin}", kotlin_job)
+        self.assertIn("languages: java-kotlin", kotlin_job)
+        self.assertIn("build-mode: manual", kotlin_job)
+        self.assertIn(":android:app:assembleDebug", kotlin_job)
+        self.assertIn("category: /language:java-kotlin", kotlin_job)
 
     def test_image_invalidation_keys_cover_pins_and_relevant_inputs(self):
         source = CI_IMAGE_KEY.read_text(encoding="utf-8")

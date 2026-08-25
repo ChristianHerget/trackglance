@@ -37,3 +37,24 @@ jobs:
         uses: github/codeql-action/analyze@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
         with:
           category: /language:${{ matrix.language }}
+
+  analyze-kotlin:
+    name: Analyze java-kotlin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/christianherget/trackglance-codeql-kotlin@sha256:7bc63f1acd2e6145c52994f9f565257d32168e982b7197f3d860adb05a8d45f5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+      - name: Trace the Kotlin and Gradle build
+        run: ./gradlew --no-daemon :android:app:assembleDebug
+      - name: Analyze
+        uses: github/codeql-action/analyze@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
+        with:
+          category: /language:java-kotlin
