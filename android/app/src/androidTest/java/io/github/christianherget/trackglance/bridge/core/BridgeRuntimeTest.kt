@@ -623,8 +623,8 @@ class BridgeRuntimeTest {
             assertTrue(locus.mutationStarted.await(15, TimeUnit.SECONDS))
             val revocation =
                 async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    currentGeneration.incrementAndGet()
                     leases.mutateSession {
-                        currentGeneration.incrementAndGet()
                         runtime.companionTrustLost()
                     }
                 }
