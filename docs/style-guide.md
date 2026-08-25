@@ -25,7 +25,8 @@ Primary actions use the primary token with adequate contrast. Disabled controls 
 Show stale and unavailable states without hiding cached content. Confirm resets.
 
 Every control needs an accessible name, visible keyboard focus, and a non-color state cue. Reorder
-controls support pointer use and explicit keyboard-operable up/down actions. Respect
+controls use a dedicated six-dot handle, support live pointer dragging, and respond directly to
+keyboard Up/Down actions with an announced position. Respect
 `prefers-reduced-motion`; animation must never be required to understand a change.
 
 ## Platform constraints

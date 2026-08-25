@@ -9,6 +9,9 @@ release is published.
   heart-rate forwarding moved to a separate General screen.
 - Each activity now has four reorderable page slots. Adding or removing metrics activates or
   deactivates pages, with live zero-to-six metric counts and nested metric ordering.
+- Made page and metric ordering directly draggable again, clarified the nested metric hierarchy,
+  and made full pages visibly stop accepting additional metrics.
+- Labeled and separated General settings from the activity list so its app-wide scope is clear.
 - Added automatic localized page names, separate activity and General resets, light/dark
   presentation, and accessible reorder controls. Existing page customization is preserved.
 - Pages may now intentionally share a display name; stable page identity remains unique.

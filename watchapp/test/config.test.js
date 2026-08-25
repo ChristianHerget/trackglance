@@ -181,12 +181,69 @@ const dom = new JSDOM(html, {runScripts:'dangerously', beforeParse(window) {
 }});
 const activities = [...dom.window.document.querySelectorAll('.activity .label')].map(node => node.textContent);
 assert.deepStrictEqual(activities, ['Cycling','Hiking','Paddling','Running']);
+const generalLink = dom.window.document.querySelector('#generalOpen');
+const activitiesHeading = dom.window.document.querySelector('.section-title');
+assert.strictEqual(generalLink.querySelector('.label').textContent, 'General settings');
+assert(generalLink.compareDocumentPosition(activitiesHeading) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+  'General settings is a separate navigation row above Activities');
 assert(!html.includes('id="mapping"'), 'activity editor has no Locus mapping dropdown');
 dom.window.document.querySelector('.activity').click();
 assert.strictEqual(dom.window.document.querySelectorAll('.page').length, 4);
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[0].textContent, '6/6');
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '0/6');
 assert(dom.window.document.querySelectorAll('.handle').length >= 8, 'pages and metrics expose keyboard reorder actions');
+assert(html.includes('margin:0 12px 12px 36px') && html.includes('border-left:2px solid var(--border)'),
+  'metrics are indented beneath their page with a visual rail');
+const fullAdd = dom.window.document.querySelectorAll('.add')[0];
+assert(fullAdd.disabled, 'Add Metric is disabled at 6/6');
+const fullCount = dom.window.draft.pages[0].metrics.length;
+fullAdd.click();
+assert.strictEqual(dom.window.draft.pages[0].metrics.length, fullCount, 'disabled Add Metric does nothing');
+
+const pageBeforeKeyboard = dom.window.draft.pages.map(page => page.id);
+dom.window.document.querySelector('.handle[data-key="page"][data-index="1"]').dispatchEvent(
+  new dom.window.KeyboardEvent('keydown', {key:'ArrowUp', bubbles:true}),
+);
+assert.strictEqual(dom.window.draft.pages.map(page => page.id).join(','),
+  [pageBeforeKeyboard[1], pageBeforeKeyboard[0], pageBeforeKeyboard[2], pageBeforeKeyboard[3]].join(','));
+assert.strictEqual(dom.window.document.activeElement.dataset.index, '0', 'keyboard reorder restores handle focus');
+assert(dom.window.document.querySelector('#reorderStatus').textContent.includes('position 1 of 4'));
+
+const pagesBeforeDrag = dom.window.draft.pages.map(page => page.id);
+const draggedHandle = dom.window.document.querySelector('.handle[data-key="page"][data-index="0"]');
+[...dom.window.document.querySelectorAll('.page')].forEach((page, index) => {
+  page.getBoundingClientRect = () => ({top:index * 100, height:80});
+});
+draggedHandle.onpointerdown({pointerId:1});
+draggedHandle.onpointermove({pointerId:1, clientY:1000});
+draggedHandle.onpointerup({pointerId:1});
+assert.strictEqual(dom.window.draft.pages[3].id, pagesBeforeDrag[0], 'pointer drag reorders page slots');
+
+const firstActivePageIndex = dom.window.draft.pages.findIndex(page => page.metrics.length === 6);
+const metricKey = `metric-${firstActivePageIndex}`;
+const metricsBeforeKeyboard = dom.window.draft.pages[firstActivePageIndex].metrics.slice();
+dom.window.document.querySelector(`.handle[data-key="${metricKey}"][data-index="0"]`).dispatchEvent(
+  new dom.window.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true}),
+);
+assert.strictEqual(dom.window.draft.pages[firstActivePageIndex].metrics.slice(0, 2).join(','),
+  [metricsBeforeKeyboard[1], metricsBeforeKeyboard[0]].join(','), 'keyboard reorders metrics within their page');
+const metricsBeforeDrag = dom.window.draft.pages[firstActivePageIndex].metrics.slice();
+const activePageElement = dom.window.document.querySelectorAll('.page')[firstActivePageIndex];
+[...activePageElement.querySelectorAll('.metric')].forEach((metric, index) => {
+  metric.getBoundingClientRect = () => ({top:index * 60, height:44});
+});
+const draggedMetric = activePageElement.querySelector('.metric .handle[data-index="0"]');
+draggedMetric.onpointerdown({pointerId:2});
+draggedMetric.onpointermove({pointerId:2, clientY:1000});
+draggedMetric.onpointerup({pointerId:2});
+assert.strictEqual(dom.window.draft.pages[firstActivePageIndex].metrics[5], metricsBeforeDrag[0],
+  'pointer drag reorders metrics within their page');
+dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.metric .remove').click();
+assert(!dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').disabled,
+  'removing a metric re-enables Add Metric');
+dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').click();
+assert(dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').disabled,
+  'adding the sixth metric disables Add Metric again');
 dom.window.document.querySelectorAll('.add')[1].click();
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '1/6');
 dom.window.document.querySelector('#activityCancel').click();
@@ -204,6 +261,7 @@ supportedLocales.forEach(language => {
   ).split(',').slice(1).join(','));
   const localizedDom = new JSDOM(localizedHtml, {runScripts: 'dangerously'});
   assert(localizedDom.window.document.querySelector('#save').textContent.trim());
+  assert(localizedDom.window.document.querySelector('#generalOpen .label').textContent.trim());
   const firstActivity = localizedDom.window.document.querySelector('.activity');
   assert(firstActivity, `settings page renders an activity for ${language}`);
   firstActivity.click();
