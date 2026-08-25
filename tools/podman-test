@@ -409,6 +409,8 @@ build_static_image() {
     --build-arg "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
     --build-arg "UV_VERSION=$UV_VERSION" \
     --build-arg "UV_X86_64_SHA256=$UV_X86_64_SHA256" \
+    --build-arg "NODE_VERSION=$NODE_VERSION" \
+    --build-arg "NODE_X86_64_SHA256=$NODE_X86_64_SHA256" \
     --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" \
     --build-arg "ACTIONLINT_X86_64_SHA256=$ACTIONLINT_X86_64_SHA256" \
     --file "$SCRIPT_DIR/podman/Containerfile.build" \

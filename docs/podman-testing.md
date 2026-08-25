@@ -48,7 +48,7 @@ bootstrap and all test runs publish no ports.
 | API 32 Google APIs x86_64 image | revision 8, `x86_64-32_r08.zip`, SHA-256 `2709bcc5a4aa98539b12c2169df606dfe9184fc3b4a0aac7120f319721e63bf1` |
 | Android Emulator | 37.1.11, `emulator-linux_x64-15917651.zip`, SHA-256 `95771e0ae431897b2a4bd2d97fa095f29a8b0624a7b216baf529f9306161c266` |
 | Pebble App source | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
-| Pebble Tool / SDK | 5.0.39 / 4.33.1 |
+| Pebble Tool / SDK | 5.0.40 / 4.33.1 |
 | uv bootstrap | 0.12.4, SHA-256 `c8c60f47e6f88d18dbf6f33d7279fb1fbf7ae76631768152cf5578c3d65729b4` |
 | Public Locus fixture | 4.35.0 (1215), SHA-256 `d8bf8fe208193f0e491caf742956681bb8992541c1e51c1e9616772e40d431aa` |
 

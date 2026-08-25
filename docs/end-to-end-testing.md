@@ -46,7 +46,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | --- | --- |
 | JDK | 17 |
 | Node.js | 18 |
-| Pebble Tool | 5.0.39 |
+| Pebble Tool | 5.0.40 |
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |

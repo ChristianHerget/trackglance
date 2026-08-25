@@ -97,6 +97,17 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             versions,
         )
 
+    def test_node_is_checksum_pinned_in_the_build_container(self):
+        containerfile = BUILD_CONTAINERFILE.read_text(encoding="utf-8")
+        versions = VERSIONS.read_text(encoding="utf-8")
+        self.assertIn("node-v${NODE_VERSION}-linux-x64.tar.xz", containerfile)
+        self.assertIn("NODE_VERSION=22.23.2", versions)
+        self.assertIn(
+            "NODE_X86_64_SHA256="
+            "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
+            versions,
+        )
+
 
 class DeviceReadinessTest(unittest.TestCase):
     def test_tap_text_initializes_its_timeout_before_deadline_expansion(self):
