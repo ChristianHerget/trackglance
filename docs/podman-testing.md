@@ -4,11 +4,13 @@ The repository includes a Docker and rootless Podman workflow for x86_64 Linux h
 all automated Android tests on Android 12L, API 32. API 32 is the acceptance runtime, while the
 bridge remains installable on Android 7.0 (API 24); Platform 36 remains the compile and target SDK.
 
-No image is published. Locally, the Locus APK remains in a host directory. Hosted CI downloads the
-pinned public fixture into `$RUNNER_TEMP` for that job only. In both cases it is mounted read-only
-only for validation and bootstrap; it is never copied into an image, repository, test artifact, or
-persistent cache. Android's installed Locus state lives only in the golden data volume and its
-short-lived clones, which cleanup deletes after each run.
+Three public, immutable CI images contain only the reproducible Android/Pebble toolchains, the API
+32 emulator, and the Pebble App APK built from its pinned public source. Locally, the Locus APK
+remains in a host directory. Hosted CI downloads the pinned public fixture into `$RUNNER_TEMP` for
+that job only. In both cases it is mounted read-only only for validation and bootstrap; it is never
+copied into an image, repository, test artifact, or persistent cache. Android's installed Locus
+state lives only in the golden data volume and its short-lived clones, which cleanup deletes after
+each run.
 
 ## Host requirements
 
@@ -128,9 +130,10 @@ provenance; the APK remains read-only and is not mounted into the test pod.
 
 Fast CI runs `static`, documentation, and the release check on GitHub-hosted Ubuntu without KVM or
 Locus. Every pull request also runs hosted acceptance on `ubuntu-24.04` with Docker and `/dev/kvm`.
-It downloads the official public fixture only into `$RUNNER_TEMP`, builds headless inputs, creates
-its golden volume from scratch, runs every Android/Locus instrumentation test, and runs Emery plus
-Gabbro acceptance once. The check is required before merging to `main`.
+It verifies and pulls the digest-pinned published runner and emulator, downloads the official public
+fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden volume
+from scratch, runs every Android/Locus instrumentation test, and runs Emery plus Gabbro acceptance
+once. The check is required before merging to `main`.
 
 The workflow prints `df -h`, `docker system df`, and relevant directory sizes after each major
 stage. On failure it uploads a seven-day diagnostic bundle containing only bounded logs, JUnit/XML
@@ -183,7 +186,9 @@ pair is one versioned image set and shares the acceptance invalidation key.
 full `ghcr.io/...@sha256:...` digest. Before pulling, `tools/verify-ci-image` checks GitHub's signed
 SLSA provenance and the independent keyless Cosign signature. Both identities must resolve to
 `.github/workflows/publish-ci-images.yml` on `main`. A tag, an unattested digest, a different
-repository, or a different workflow fails closed.
+repository, or a different workflow fails closed. GitHub Actions installs the pinned Cosign binary;
+local verification uses that binary when present or the official Cosign container pinned by digest,
+so it does not install another host tool.
 
 The protected `ci-images` environment controls publication. The workflow has repository read,
 package write, OIDC, and attestation permissions only. It creates SPDX JSON SBOMs, GitHub
@@ -204,12 +209,12 @@ project dependency locks remain runtime inputs from the checked-out commit. `too
 the executable list of these invalidation rules. A changed key requires a new publication and a
 reviewed digest-only pin update; existing tags and manifests are never overwritten.
 
-For the initial rollout and later image refreshes, manually dispatch CI with
+For image refreshes, manually dispatch CI with
 `acceptance_provisioning=compare`. It runs the source-built and verified published paths against
 the same commit, validated Locus fixture, Android instrumentation suite, and Emery/Gabbro pass. The
-step summary records total durations. Keep pull requests on the source path until both paths have
-identical behavioral results and the published path demonstrates the intended setup-time saving.
-After pinning, local verification uses:
+step summary records total durations. Keep pull requests on the existing published image set until
+both paths have identical behavioral results and the replacement demonstrates the intended
+setup-time saving. Local verification uses:
 
 ```sh
 GH_TOKEN="$(gh auth token)" ./tools/podman-test acceptance-suite \

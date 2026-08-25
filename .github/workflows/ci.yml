@@ -96,6 +96,9 @@ jobs:
         run: |
           run_suite() {
             local label=$1 provisioning=$2 started elapsed
+            sudo setfacl -m "u:${USER}:rw" /dev/kvm
+            test -r /dev/kvm
+            test -w /dev/kvm
             started=$SECONDS
             timeout 110m tools/podman-test acceptance-suite \
               "$provisioning" --cleanup --watch-passes "$WATCH_PASSES"

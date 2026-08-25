@@ -20,12 +20,30 @@ workflow=$2
 
 : "${GH_TOKEN:?GH_TOKEN is required to verify GitHub attestations}"
 command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
-command -v cosign >/dev/null || { echo "cosign is required" >&2; exit 1; }
 
 gh attestation verify "oci://$image" \
   --repo "${workflow%%/.github/workflows/*}" \
   --signer-workflow "${workflow%@*}" \
   --source-ref refs/heads/main
-cosign verify "$image" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity "https://github.com/$workflow" >/dev/null
+
+cosign_args=(
+  verify "$image"
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  --certificate-identity "https://github.com/$workflow"
+)
+if command -v cosign >/dev/null; then
+  cosign "${cosign_args[@]}" >/dev/null
+else
+  cosign_image=ghcr.io/sigstore/cosign/cosign@sha256:6ca1127dc1e9ff19f3f2bfa214936813a86fbbf52919652eda49d393c888ad3c
+  if [[ -n "${DEV_CONTAINER_ENGINE:-}" ]]; then
+    engine=$DEV_CONTAINER_ENGINE
+  elif command -v docker >/dev/null; then
+    engine=docker
+  elif command -v podman >/dev/null; then
+    engine=podman
+  else
+    echo "cosign or a Docker-compatible container engine is required" >&2
+    exit 1
+  fi
+  "$engine" run --rm "$cosign_image" "${cosign_args[@]}" >/dev/null
+fi

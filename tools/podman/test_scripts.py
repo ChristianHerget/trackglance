@@ -125,6 +125,9 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("run_suite Source --fresh", source)
         self.assertIn("run_suite Published --published", source)
         self.assertIn("build/acceptance-timings.txt", source)
+        run_suite = source.split("run_suite() {", 1)[1].split("\n          }", 1)[0]
+        self.assertIn('sudo setfacl -m "u:${USER}:rw" /dev/kvm', run_suite)
+        self.assertIn("test -w /dev/kvm", run_suite)
 
 
 class PublishedCiImageTest(unittest.TestCase):
@@ -141,6 +144,15 @@ class PublishedCiImageTest(unittest.TestCase):
         self.assertIn("@sha256:[a-f0-9]{64}", source)
         self.assertIn('"$SCRIPT_DIR/verify-ci-image"', source)
         self.assertIn("build_project_inputs false false", source)
+
+    def test_local_signature_verification_uses_a_digest_pinned_cosign_fallback(self):
+        source = CI_IMAGE_VERIFIER.read_text(encoding="utf-8")
+        self.assertRegex(
+            source,
+            r"ghcr\.io/sigstore/cosign/cosign@sha256:[a-f0-9]{64}",
+        )
+        self.assertIn('if command -v cosign', source)
+        self.assertIn('"$engine" run --rm "$cosign_image"', source)
 
     def test_acceptance_runner_embeds_only_the_public_pebble_app_fixture(self):
         source = ACCEPTANCE_RUNNER_CONTAINERFILE.read_text(encoding="utf-8")
