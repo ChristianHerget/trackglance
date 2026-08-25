@@ -412,6 +412,14 @@ class StaticPreflightTest(unittest.TestCase):
         self.assertIn('tap_text "General settings" 30', e2e_stage)
         self.assertIn("grep -Fq 'resource-id=\"theme\"'", e2e_stage)
 
+    def test_e2e_commits_general_edits_before_saving_the_overview(self):
+        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
+        branches = e2e_stage.split('if [[ "$PEBBLE_PLATFORM" == "emery" ]]', 1)[1]
+        emery, gabbro = branches.split("\nelse\n", 1)
+        self.assertLess(emery.index('tap_text "Done"'), emery.index('tap_text "Save"'))
+
+        self.assertLess(gabbro.index('tap_text "Done"'), gabbro.index('tap_text "Save"'))
+
     def test_e2e_starts_recording_through_the_debug_only_locus_api_surface(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         self.assertIn("--method acceptance-start-recording", e2e_stage)
