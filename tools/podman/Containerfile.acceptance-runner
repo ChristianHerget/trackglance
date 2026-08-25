@@ -1,0 +1,17 @@
+ARG BUILD_IMAGE
+FROM ${BUILD_IMAGE}
+
+ARG CORE_APP_COMMIT
+ARG SOURCE_REVISION
+
+COPY build/podman/images/pebble-app-x86_64-debug.apk /opt/trackglance/pebble-app-x86_64-debug.apk
+
+LABEL org.opencontainers.image.title="TrackGlance acceptance runner" \
+      org.opencontainers.image.description="Pinned Android and Pebble acceptance toolchain with the public Pebble App fixture" \
+      org.opencontainers.image.source="https://github.com/ChristianHerget/trackglance" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      io.trackglance.core-app-commit="${CORE_APP_COMMIT}"
+
+RUN test -s /opt/trackglance/pebble-app-x86_64-debug.apk && \
+    test -z "$(find /opt/trackglance -mindepth 1 -maxdepth 1 -type f \
+      ! -name pebble-app-x86_64-debug.apk -print -quit)"

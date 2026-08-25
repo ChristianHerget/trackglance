@@ -1,6 +1,6 @@
 {
   "name": "TrackGlance",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "category": "Health & Fitness",
   "summary": "View and control Locus Map track recordings from a Pebble Time 2 or Pebble Round 2.",
   "description": "TrackGlance brings an active Locus Map track recording to your wrist. Choose the metrics shown for each Locus activity, switch between up to four pages, pause or resume recording, stop and save, and add waypoints. Pebble Time 2 also supports dictated waypoint notes and can send watch heart-rate readings to Locus. The TrackGlance Android Bridge and Locus Map are required.",

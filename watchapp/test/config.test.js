@@ -3,9 +3,10 @@
 const assert = require('assert');
 const {JSDOM} = require('jsdom');
 const config = require('../src/pkjs/index.js');
+const packageVersion = require('../package.json').version;
 
 assert.strictEqual(config.VERSION, 4);
-assert.strictEqual(config.RELEASE, '0.2.3');
+assert.strictEqual(config.RELEASE, packageVersion);
 assert.strictEqual(config.LIMIT.pages, 4);
 assert.strictEqual(config.KEYS.locusId, 51);
 assert.strictEqual(config.KEYS.fingerprintA, 52);

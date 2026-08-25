@@ -1,0 +1,8 @@
+**
+!tools/
+!tools/podman/
+!tools/podman/**
+!build/
+!build/podman/
+!build/podman/images/
+!build/podman/images/pebble-app-x86_64-debug.apk
