@@ -10,7 +10,7 @@ args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[1]
 text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
 match = re.search(
-    rf"^## {re.escape(args.version)}(?: - [^\n]+)?\n\n(?P<body>.*?)(?=\n## |\Z)",
+    rf"^## {re.escape(args.version)}(?: - [^\n]+)?\n\n(?P<body>.*?)(?=^## |\Z)",
     text,
     re.MULTILINE | re.DOTALL,
 )

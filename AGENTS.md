@@ -72,6 +72,12 @@ acceptance once. Manual dispatch can select a second Emery/Gabbro pass as a soak
 `acceptance-suite` command reuses the validated golden state by default; `--fresh --cleanup` matches
 the hosted provisioning lifecycle but is intentionally slower and removes generated acceptance state.
 
+Published CI images are immutable GHCR digest references from `tools/ci-images.env`. Update them
+only from the protected `Publish CI images` workflow, retain its provenance/SBOM attestations and
+keyless signature verification, and run the source-versus-published acceptance comparison before
+making a new image set authoritative. Never add Locus, TrackGlance APK/PBW files, signing material,
+emulator state, or persistent caches to a published image.
+
 The API 32 image includes Google Play services, so use the regular Locus Map 4 Google Play APK for
 acceptance. Do not use the `GooglePlayAfa` all-files-access build unless that permission is the
 specific subject of a test, and do not use the Amazon/no-Google-services build in this emulator.

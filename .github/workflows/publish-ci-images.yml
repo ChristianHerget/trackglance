@@ -1,0 +1,198 @@
+name: Publish CI images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-ci-images.yml
+      - tools/ci-image-key
+      - tools/podman/Containerfile.acceptance-runner
+      - tools/podman/Containerfile.build
+      - tools/podman/Containerfile.codeql-kotlin
+      - tools/podman/Containerfile.emulator
+      - tools/podman/Containerfile.generator
+      - tools/podman/android-emulator-entrypoint.sh
+      - tools/podman/build-coreapp.sh
+      - tools/podman/coreapp-x86_64.patch
+      - tools/podman/patches/android-emulator-dest-path.patch
+      - tools/podman/versions.env
+      - gradle/verification-metadata.xml
+      - gradle/wrapper/gradle-wrapper.properties
+      - android/app/gradle.lockfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-ci-images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: ci-images
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      ACCEPTANCE_CONTAINER_ENGINE: docker
+      ACCEPTANCE_RUNNER_REPOSITORY: ghcr.io/christianherget/trackglance-acceptance-runner
+      ACCEPTANCE_EMULATOR_REPOSITORY: ghcr.io/christianherget/trackglance-acceptance-emulator
+      CODEQL_KOTLIN_REPOSITORY: ghcr.io/christianherget/trackglance-codeql-kotlin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Grant this runner access to KVM
+        run: sudo setfacl -m "u:${USER}:rw" /dev/kvm
+      - name: Authenticate to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - name: Build immutable public image inputs
+        id: build
+        run: |
+          tools/podman-test build-acceptance
+          acceptance_key=$(tools/ci-image-key acceptance)
+          codeql_key=$(tools/ci-image-key codeql-kotlin)
+          source tools/podman/versions.env
+          source tools/podman/release-metadata.sh
+          load_release_metadata "$PWD"
+          build_image="localhost/trackglance/build:${RELEASE_VERSION}"
+          emulator_image="localhost/trackglance/android-api32:${ANDROID_EMULATOR_VERSION}"
+          runner_tag="${ACCEPTANCE_RUNNER_REPOSITORY}:${acceptance_key}"
+          emulator_tag="${ACCEPTANCE_EMULATOR_REPOSITORY}:${acceptance_key}"
+          codeql_tag="${CODEQL_KOTLIN_REPOSITORY}:${codeql_key}"
+          for image in "$runner_tag" "$emulator_tag" "$codeql_tag"; do
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "Refusing to overwrite published image tag $image." >&2
+              exit 1
+            fi
+          done
+          docker build \
+            --build-arg "BUILD_IMAGE=$build_image" \
+            --build-arg "CORE_APP_COMMIT=$CORE_APP_COMMIT" \
+            --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+            --file tools/podman/Containerfile.acceptance-runner \
+            --tag "$runner_tag" .
+          docker build \
+            --build-arg "BUILD_IMAGE=$build_image" \
+            --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+            --file tools/podman/Containerfile.codeql-kotlin \
+            --tag "$codeql_tag" .
+          docker tag "$emulator_image" "$emulator_tag"
+          for image in "$runner_tag" "$emulator_tag" "$codeql_tag"; do
+            docker push "$image"
+            docker pull "$image"
+          done
+          runner_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$runner_tag")
+          emulator_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$emulator_tag")
+          codeql_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$codeql_tag")
+          {
+            echo "runner_ref=$runner_ref"
+            echo "runner_digest=${runner_ref#*@}"
+            echo "emulator_ref=$emulator_ref"
+            echo "emulator_digest=${emulator_ref#*@}"
+            echo "codeql_ref=$codeql_ref"
+            echo "codeql_digest=${codeql_ref#*@}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Reject forbidden image content
+        env:
+          RUNNER_REF: ${{ steps.build.outputs.runner_ref }}
+          EMULATOR_REF: ${{ steps.build.outputs.emulator_ref }}
+          CODEQL_REF: ${{ steps.build.outputs.codeql_ref }}
+        run: |
+          for image in "$RUNNER_REF" "$EMULATOR_REF" "$CODEQL_REF"; do
+            docker image history --no-trunc "$image" > /tmp/history
+            if grep -E '/(locus|trackglance-bridge).*[.]apk|[.]pbw|[.]p12|[.]keystore' /tmp/history; then
+              echo "Forbidden artifact reference found in $image history." >&2
+              exit 1
+            fi
+          done
+          test "$(docker run --rm "$RUNNER_REF" find /opt/trackglance -type f -printf '%f\n')" = pebble-app-x86_64-debug.apk
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Sign immutable image digests
+        env:
+          RUNNER_REF: ${{ steps.build.outputs.runner_ref }}
+          EMULATOR_REF: ${{ steps.build.outputs.emulator_ref }}
+          CODEQL_REF: ${{ steps.build.outputs.codeql_ref }}
+        run: |
+          cosign sign --yes "$RUNNER_REF"
+          cosign sign --yes "$EMULATOR_REF"
+          cosign sign --yes "$CODEQL_REF"
+      - name: Generate acceptance runner SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.build.outputs.runner_ref }}
+          format: spdx-json
+          output-file: build/acceptance-runner.spdx.json
+          upload-artifact: false
+      - name: Generate acceptance emulator SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.build.outputs.emulator_ref }}
+          format: spdx-json
+          output-file: build/acceptance-emulator.spdx.json
+          upload-artifact: false
+      - name: Generate Kotlin CodeQL SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.build.outputs.codeql_ref }}
+          format: spdx-json
+          output-file: build/codeql-kotlin.spdx.json
+          upload-artifact: false
+      - name: Attest acceptance runner provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ env.ACCEPTANCE_RUNNER_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.runner_digest }}
+          push-to-registry: true
+      - name: Attest acceptance runner SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-name: ${{ env.ACCEPTANCE_RUNNER_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.runner_digest }}
+          sbom-path: build/acceptance-runner.spdx.json
+          push-to-registry: true
+      - name: Attest acceptance emulator provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ env.ACCEPTANCE_EMULATOR_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.emulator_digest }}
+          push-to-registry: true
+      - name: Attest acceptance emulator SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-name: ${{ env.ACCEPTANCE_EMULATOR_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.emulator_digest }}
+          sbom-path: build/acceptance-emulator.spdx.json
+          push-to-registry: true
+      - name: Attest Kotlin CodeQL provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-name: ${{ env.CODEQL_KOTLIN_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.codeql_digest }}
+          push-to-registry: true
+      - name: Attest Kotlin CodeQL SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-name: ${{ env.CODEQL_KOTLIN_REPOSITORY }}
+          subject-digest: ${{ steps.build.outputs.codeql_digest }}
+          sbom-path: build/codeql-kotlin.spdx.json
+          push-to-registry: true
+      - name: Report immutable references for the pin update
+        env:
+          RUNNER_REF: ${{ steps.build.outputs.runner_ref }}
+          EMULATOR_REF: ${{ steps.build.outputs.emulator_ref }}
+          CODEQL_REF: ${{ steps.build.outputs.codeql_ref }}
+        run: |
+          {
+            echo '## CI image pins'
+            echo '```dotenv'
+            echo "ACCEPTANCE_RUNNER_IMAGE=$RUNNER_REF"
+            echo "ACCEPTANCE_EMULATOR_IMAGE=$EMULATOR_REF"
+            echo "CODEQL_KOTLIN_IMAGE=$CODEQL_REF"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

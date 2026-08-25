@@ -1,0 +1,13 @@
+ARG BUILD_IMAGE
+FROM ${BUILD_IMAGE}
+
+ARG SOURCE_REVISION
+
+LABEL org.opencontainers.image.title="TrackGlance Kotlin CodeQL toolchain" \
+      org.opencontainers.image.description="Pinned Android and Gradle toolchain for traced Kotlin CodeQL builds" \
+      org.opencontainers.image.source="https://github.com/ChristianHerget/trackglance" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}"
+
+RUN java -version && \
+    test -x /opt/android-sdk/platform-tools/adb && \
+    command -v aapt2

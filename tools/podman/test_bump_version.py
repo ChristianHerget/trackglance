@@ -1,4 +1,5 @@
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -42,20 +43,25 @@ class BumpVersionTest(unittest.TestCase):
         )
 
     def test_bumps_all_release_sources_and_android_code(self):
-        self.assertIn("versionCode = 14", (self.root / "android/app/build.gradle.kts").read_text())
-        result = self.run_tool("0.2.4")
+        android_before = (self.root / "android/app/build.gradle.kts").read_text()
+        code = int(re.search(r"versionCode = ([0-9]+)", android_before).group(1))
+        current = re.search(r'versionName = "([0-9]+\.[0-9]+\.)([0-9]+)"', android_before)
+        next_version = f"{current.group(1)}{int(current.group(2)) + 1}"
+        result = self.run_tool(next_version)
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(0, self.run_tool("--check", "0.2.4").returncode)
+        self.assertEqual(0, self.run_tool("--check", next_version).returncode)
         android = (self.root / "android/app/build.gradle.kts").read_text()
-        self.assertIn("versionCode = 15", android)
-        self.assertIn('versionName = "0.2.4"', android)
-        self.assertNotIn("0.2.3", (self.root / "protocol/README.md").read_text())
-        self.assertIn("## 0.2.4 - Unreleased", (self.root / "CHANGELOG.md").read_text())
+        self.assertIn(f"versionCode = {code + 1}", android)
+        self.assertIn(f'versionName = "{next_version}"', android)
+        self.assertNotIn(current.group(0), android)
+        self.assertIn(f"## {next_version} - Unreleased", (self.root / "CHANGELOG.md").read_text())
 
     def test_rejects_mismatched_current_sources(self):
         package = self.root / "watchapp/package.json"
-        package.write_text(package.read_text().replace('"version": "0.2.3"', '"version": "9.9.9"', 1))
-        self.assertNotEqual(0, self.run_tool("0.2.4").returncode)
+        package.write_text(
+            re.sub(r'"version": "[0-9.]+"', '"version": "9.9.9"', package.read_text(), count=1)
+        )
+        self.assertNotEqual(0, self.run_tool("9.9.8").returncode)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 source "$SCRIPT_DIR/podman/versions.env"
 source "$SCRIPT_DIR/podman/release-metadata.sh"
+source "$SCRIPT_DIR/ci-images.env"
 load_release_metadata "$PROJECT_DIR"
 
 BUILD_ROOT="$PROJECT_DIR/build/podman"
@@ -40,6 +41,7 @@ SUITE_CLEANUP_ON_EXIT=false
 PULL_POLICY=missing
 STATIC_ENGINE=
 ACCEPTANCE_ENGINE=
+CI_IMAGE_SIGNER_WORKFLOW="$CI_IMAGE_SOURCE_REPOSITORY/.github/workflows/publish-ci-images.yml@refs/heads/main"
 
 usage() {
   cat <<'EOF'
@@ -63,6 +65,7 @@ Commands:
   clean                          Remove this workflow's generated state and images
 
 LOCUS_APKS_DIR may be used instead of --locus-apks.
+Use acceptance-suite --published to provision from the verified, digest-pinned GHCR image set.
 EOF
 }
 
@@ -474,6 +477,7 @@ run_static_container() {
 
 build_project_inputs() {
   local run_checks=${1:-true}
+  local build_core_app=${2:-true}
   ensure_cache_volumes
   if [[ "$run_checks" == true ]]; then
     run_build_container bash -euo pipefail -c '
@@ -492,8 +496,10 @@ build_project_inputs() {
       (cd watchapp && pebble clean && pebble build && npm run verify:pbw)
     '
   fi
-  run_build_container env CORE_APP_COMMIT="$CORE_APP_COMMIT" \
-    bash /workspace/tools/podman/build-coreapp.sh /workspace
+  if [[ "$build_core_app" == true ]]; then
+    run_build_container env CORE_APP_COMMIT="$CORE_APP_COMMIT" \
+      bash /workspace/tools/podman/build-coreapp.sh /workspace
+  fi
 }
 
 build_all() {
@@ -510,6 +516,36 @@ build_acceptance_all() {
   build_images false
   build_project_inputs false
   echo "Pinned headless acceptance images and provisioning artifacts are ready."
+}
+
+require_published_ci_image_pins() {
+  local name value
+  for name in ACCEPTANCE_RUNNER_IMAGE ACCEPTANCE_EMULATOR_IMAGE; do
+    value=${!name}
+    [[ "$value" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[a-f0-9]{64}$ ]] \
+      || die "$name is not an immutable published image pin."
+  done
+}
+
+prepare_published_acceptance_images() {
+  doctor_acceptance
+  ensure_network
+  ensure_cache_volumes
+  require_published_ci_image_pins
+  : "${GH_TOKEN:?GH_TOKEN is required for published image attestation verification}"
+  "$SCRIPT_DIR/verify-ci-image" "$ACCEPTANCE_RUNNER_IMAGE" "$CI_IMAGE_SIGNER_WORKFLOW"
+  "$SCRIPT_DIR/verify-ci-image" "$ACCEPTANCE_EMULATOR_IMAGE" "$CI_IMAGE_SIGNER_WORKFLOW"
+  acceptance_engine pull "$ACCEPTANCE_RUNNER_IMAGE"
+  acceptance_engine pull "$ACCEPTANCE_EMULATOR_IMAGE"
+  BUILD_IMAGE=$ACCEPTANCE_RUNNER_IMAGE
+  EMULATOR_IMAGE=$ACCEPTANCE_EMULATOR_IMAGE
+  mkdir -p "$BUILD_ROOT/images"
+  local -a security
+  mapfile -t security < <(acceptance_security_args)
+  acceptance_engine run --rm "${security[@]}" --network none \
+    --volume "$BUILD_ROOT/images:/export" "$BUILD_IMAGE" \
+    cp /opt/trackglance/pebble-app-x86_64-debug.apk /export/pebble-app-x86_64-debug.apk
+  build_project_inputs false false
 }
 
 require_images() {
@@ -1019,12 +1055,17 @@ assert_no_active_acceptance_runtime() {
 }
 
 acceptance_suite() {
-  local fresh=false cleanup=false watch_passes=1 status cleanup_status pass
+  local fresh=false published=false cleanup=false watch_passes=1 status cleanup_status pass
   local -a locus_options=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --fresh)
         fresh=true
+        shift
+        ;;
+      --published)
+        fresh=true
+        published=true
         shift
         ;;
       --cleanup)
@@ -1054,7 +1095,11 @@ acceptance_suite() {
   set +e
   (
     set -e
-    if [[ "$fresh" == true ]]; then
+    if [[ "$published" == true ]]; then
+      clean
+      prepare_published_acceptance_images
+      ACCEPTANCE_BOOTSTRAP_AUTOMATED=1 bootstrap --locus-apks "$locus_dir"
+    elif [[ "$fresh" == true ]]; then
       clean
       build_acceptance_all
       ACCEPTANCE_BOOTSTRAP_AUTOMATED=1 bootstrap --locus-apks "$locus_dir"
@@ -1119,7 +1164,9 @@ clean() {
   for image in \
     "$EMULATOR_IMAGE" "$GENERATED_EMULATOR_IMAGE" "$GENERATED_EMULATOR_LATEST" \
     "$GENERATED_EMULATOR_BARE" "$GENERATED_SYSTEM_IMAGE" "$GENERATED_SYSTEM_IMAGE_BARE" \
-    "$WEB_IMAGE" "$GENERATOR_IMAGE" "$BUILD_IMAGE"; do
+    "$WEB_IMAGE" "$GENERATOR_IMAGE" "$BUILD_IMAGE" \
+    "$ACCEPTANCE_RUNNER_IMAGE" "$ACCEPTANCE_EMULATOR_IMAGE"; do
+    [[ "$image" != UNPUBLISHED ]] || continue
     acceptance_image_exists "$image" \
       && acceptance_engine image rm --force "$image" >/dev/null || true
   done

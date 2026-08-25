@@ -171,6 +171,51 @@ The earlier emulator-only probe and protected self-hosted fallback were retired 
 complete GitHub-hosted runs proved the Docker/KVM path. The required pull-request job is now the
 authoritative clean acceptance environment.
 
+### Published acceptance image set
+
+The hosted suite can replace its cold source build with two public images: an acceptance runner
+and an API 32 emulator. The runner contains the pinned Android/Pebble toolchain and the x86_64
+Pebble App APK built from `CORE_APP_COMMIT`. The emulator image contains the pinned Google system
+image and emulator runtime. The split matches the runtime isolation used by local acceptance; the
+pair is one versioned image set and shares the acceptance invalidation key.
+
+`tools/ci-images.env` is the only accepted image-pin source. Every published reference must use a
+full `ghcr.io/...@sha256:...` digest. Before pulling, `tools/verify-ci-image` checks GitHub's signed
+SLSA provenance and the independent keyless Cosign signature. Both identities must resolve to
+`.github/workflows/publish-ci-images.yml` on `main`. A tag, an unattested digest, a different
+repository, or a different workflow fails closed.
+
+The protected `ci-images` environment controls publication. The workflow has repository read,
+package write, OIDC, and attestation permissions only. It creates SPDX JSON SBOMs, GitHub
+provenance/SBOM attestations, and keyless signatures for the acceptance runner, emulator, and
+Kotlin CodeQL images. No credentials are stored in the repository or image.
+
+The publication build context is intentionally narrow. The runner copies only the public Pebble
+App APK. The Locus fixture is downloaded and validated in `$RUNNER_TEMP` at acceptance runtime;
+the current TrackGlance APK/PBW are built from the checked-out change. Locus, TrackGlance binaries,
+signing identities, emulator data, Gradle/npm caches, and diagnostics must never be copied into an
+image or registry layer. Publication rejects suspicious image history and unexpected runner
+fixture files before signing.
+
+The acceptance key changes when any emulator download/revision, Android or Pebble tool version,
+Pebble App commit/patch, emulator generator/entrypoint, or relevant container definition changes.
+The Kotlin CodeQL key changes for its Android/Gradle toolchain pins or container definition;
+project dependency locks remain runtime inputs from the checked-out commit. `tools/ci-image-key` is
+the executable list of these invalidation rules. A changed key requires a new publication and a
+reviewed digest-only pin update; existing tags and manifests are never overwritten.
+
+For the initial rollout and later image refreshes, manually dispatch CI with
+`acceptance_provisioning=compare`. It runs the source-built and verified published paths against
+the same commit, validated Locus fixture, Android instrumentation suite, and Emery/Gabbro pass. The
+step summary records total durations. Keep pull requests on the source path until both paths have
+identical behavioral results and the published path demonstrates the intended setup-time saving.
+After pinning, local verification uses:
+
+```sh
+GH_TOKEN="$(gh auth token)" ./tools/podman-test acceptance-suite \
+  --published --cleanup --locus-apks /absolute/private/path
+```
+
 ## Automated stages
 
 ```sh

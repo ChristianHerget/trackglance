@@ -13,6 +13,12 @@ on:
         options: ['1', '2']
         default: '1'
         required: true
+      acceptance_provisioning:
+        description: Acceptance provisioning path
+        type: choice
+        options: [source, published, compare]
+        default: source
+        required: true
 
 permissions:
   contents: read
@@ -52,11 +58,13 @@ jobs:
     name: Hosted full-stack acceptance
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 240
     env:
       ACCEPTANCE_CONTAINER_ENGINE: docker
       ACCEPTANCE_REPORT_RESOURCES: 1
       WATCH_PASSES: ${{ inputs.watch_passes || '1' }}
+      ACCEPTANCE_PROVISIONING: ${{ inputs.acceptance_provisioning || 'source' }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure ephemeral fixture location
@@ -79,10 +87,32 @@ jobs:
         run: |
           mkdir -p "$LOCUS_APKS_DIR"
           tools/download-locus-apk --output "$LOCUS_APKS_DIR/locus.apk"
+      - name: Install the pinned image signature verifier
+        if: env.ACCEPTANCE_PROVISIONING != 'source'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
       - name: Run fresh Android, Emery, and Gabbro acceptance
-        run: >-
-          timeout 110m tools/podman-test acceptance-suite
-          --fresh --cleanup --watch-passes "$WATCH_PASSES"
+        run: |
+          run_suite() {
+            local label=$1 provisioning=$2 started elapsed
+            started=$SECONDS
+            timeout 110m tools/podman-test acceptance-suite \
+              "$provisioning" --cleanup --watch-passes "$WATCH_PASSES"
+            elapsed=$((SECONDS - started))
+            echo "$label provisioning and acceptance: ${elapsed}s" | tee -a build/acceptance-timings.txt
+            echo "- $label: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          }
+          case "$ACCEPTANCE_PROVISIONING" in
+            source) run_suite Source --fresh ;;
+            published) run_suite Published --published ;;
+            compare)
+              echo '## Acceptance provisioning comparison' >> "$GITHUB_STEP_SUMMARY"
+              run_suite Source --fresh
+              run_suite Published --published
+              ;;
+            *) echo "Unknown provisioning path: $ACCEPTANCE_PROVISIONING" >&2; exit 2 ;;
+          esac
       - name: Print bounded failure diagnostics
         if: failure()
         run: |

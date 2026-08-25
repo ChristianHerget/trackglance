@@ -50,7 +50,7 @@ The following versions were used for the verified setup on 2026-08-16:
 | Pebble SDK | 4.33.1 |
 | Android compile/target SDK | 36 |
 | Android Build Tools | 36.0.0 |
-| Bridge and watchapp | 0.2.3 |
+| Bridge and watchapp | 0.2.4 |
 | Wire protocol | v4 |
 | CoreApp QEMU support | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Watch targets | Emery (Pebble Time 2) and Gabbro (Pebble Round 2) only |
@@ -570,3 +570,8 @@ See [Containerized acceptance environment](podman-testing.md) for host requireme
 commands, privacy boundaries, failure handling, artifact paths, and the Android-minimum upgrade
 procedure. The ARCVM and direct-QEMU sections above remain useful for manual and physical-device
 diagnostics; they are separate from the disposable API 32 automation.
+
+GitHub-hosted acceptance may use the signed, digest-pinned public image set described in the
+[published acceptance image documentation](podman-testing.md#published-acceptance-image-set).
+Only toolchains, the emulator runtime, and the public prebuilt Pebble App fixture are published;
+Locus and the current TrackGlance APK/PBW remain runtime inputs.

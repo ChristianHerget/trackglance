@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+kind=${1:-}
+case "$kind" in
+  acceptance)
+    files=(
+      tools/podman/versions.env
+      tools/podman/Containerfile.build
+      tools/podman/Containerfile.generator
+      tools/podman/Containerfile.emulator
+      tools/podman/Containerfile.acceptance-runner
+      tools/podman/android-emulator-entrypoint.sh
+      tools/podman/build-coreapp.sh
+      tools/podman/coreapp-x86_64.patch
+      tools/podman/patches/android-emulator-dest-path.patch
+    )
+    ;;
+  codeql-kotlin)
+    files=(
+      tools/podman/versions.env
+      tools/podman/Containerfile.build
+      tools/podman/Containerfile.codeql-kotlin
+    )
+    ;;
+  *)
+    echo "Usage: $0 acceptance|codeql-kotlin" >&2
+    exit 2
+    ;;
+esac
+
+for file in "${files[@]}"; do
+  [[ -f "$root/$file" ]] || { echo "Missing image input: $file" >&2; exit 1; }
+  printf '%s  %s\n' "$(sha256sum "$root/$file" | cut -d' ' -f1)" "$file"
+done | sha256sum | cut -c1-20

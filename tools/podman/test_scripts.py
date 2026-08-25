@@ -19,8 +19,15 @@ E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CI_IMAGE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-ci-images.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 BUILD_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.build"
+ACCEPTANCE_RUNNER_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.acceptance-runner"
+CODEQL_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.codeql-kotlin"
+CI_IMAGE_PINS = ROOT / "tools" / "ci-images.env"
+CI_IMAGE_KEY = ROOT / "tools" / "ci-image-key"
+CI_IMAGE_VERIFIER = ROOT / "tools" / "verify-ci-image"
+DOCKERIGNORE = ROOT / ".dockerignore"
 VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
@@ -61,7 +68,8 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("github.event_name == 'pull_request'", source)
         self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
         self.assertIn("tools/podman-test acceptance-suite", source)
-        self.assertIn("--fresh --cleanup --watch-passes", source)
+        self.assertIn('source) run_suite Source --fresh', source)
+        self.assertIn('"$provisioning" --cleanup --watch-passes', source)
 
     def test_obsolete_probe_and_self_hosted_jobs_are_absent(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -107,6 +115,88 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
             versions,
         )
+
+    def test_manual_acceptance_can_compare_source_and_published_provisioning(self):
+        source = CI_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("options: [source, published, compare]", source)
+        self.assertIn("run_suite Source --fresh", source)
+        self.assertIn("run_suite Published --published", source)
+        self.assertIn("build/acceptance-timings.txt", source)
+
+
+class PublishedCiImageTest(unittest.TestCase):
+    def test_image_set_bootstraps_unpublished_and_requires_digest_pins_after_publication(self):
+        pins = CI_IMAGE_PINS.read_text(encoding="utf-8")
+        self.assertIn("CI_IMAGE_SET_SCHEMA=1", pins)
+        self.assertEqual(pins.count("=UNPUBLISHED"), 3)
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        self.assertIn("require_published_ci_image_pins", source)
+        self.assertIn("@sha256:[a-f0-9]{64}", source)
+        self.assertIn('"$SCRIPT_DIR/verify-ci-image"', source)
+        self.assertIn("build_project_inputs false false", source)
+
+    def test_acceptance_runner_embeds_only_the_public_pebble_app_fixture(self):
+        source = ACCEPTANCE_RUNNER_CONTAINERFILE.read_text(encoding="utf-8")
+        self.assertIn("COPY build/podman/images/pebble-app-x86_64-debug.apk", source)
+        for forbidden in ("locus.apk", "trackglance-bridge", ".pbw", ".p12", ".keystore"):
+            self.assertNotIn(forbidden, source.lower())
+
+    def test_docker_context_excludes_everything_except_public_build_inputs(self):
+        source = DOCKERIGNORE.read_text(encoding="utf-8")
+        self.assertTrue(source.startswith("**\n"))
+        self.assertIn("!tools/podman/**", source)
+        self.assertIn("!build/podman/images/pebble-app-x86_64-debug.apk", source)
+        for forbidden in ("locus", "trackglance-bridge", "watchapp/build", ".plist"):
+            self.assertNotIn(forbidden, source)
+
+    def test_kotlin_codeql_toolchain_is_a_separate_image(self):
+        source = CODEQL_CONTAINERFILE.read_text(encoding="utf-8")
+        self.assertIn("TrackGlance Kotlin CodeQL toolchain", source)
+        self.assertIn("command -v aapt2", source)
+        self.assertNotIn("Containerfile.acceptance-runner", source)
+
+    def test_image_invalidation_keys_cover_pins_and_relevant_inputs(self):
+        source = CI_IMAGE_KEY.read_text(encoding="utf-8")
+        for required in (
+            "tools/podman/versions.env",
+            "tools/podman/Containerfile.emulator",
+            "tools/podman/coreapp-x86_64.patch",
+            "tools/podman/Containerfile.codeql-kotlin",
+        ):
+            self.assertIn(required, source)
+        for kind in ("acceptance", "codeql-kotlin"):
+            result = subprocess.run(
+                [str(CI_IMAGE_KEY), kind], capture_output=True, text=True, check=False
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertRegex(result.stdout.strip(), r"^[a-f0-9]{20}$")
+
+    def test_verifier_rejects_mutable_tags_before_external_tools_are_needed(self):
+        result = subprocess.run(
+            [
+                str(CI_IMAGE_VERIFIER),
+                "ghcr.io/christianherget/image:latest",
+                "ChristianHerget/trackglance/.github/workflows/publish-ci-images.yml@refs/heads/main",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not an immutable GHCR", result.stderr)
+
+    def test_publication_is_protected_signed_attested_and_least_privilege(self):
+        source = CI_IMAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("environment: ci-images", source)
+        self.assertIn("packages: write", source)
+        self.assertIn("id-token: write", source)
+        self.assertIn("attestations: write", source)
+        self.assertIn("permissions:\n  contents: read", source)
+        self.assertIn("cosign sign --yes", source)
+        self.assertIn("Refusing to overwrite published image tag", source)
+        self.assertEqual(source.count("actions/attest-build-provenance@"), 3)
+        self.assertEqual(source.count("actions/attest-sbom@"), 3)
+        self.assertIn("Reject forbidden image content", source)
 
 
 class DeviceReadinessTest(unittest.TestCase):

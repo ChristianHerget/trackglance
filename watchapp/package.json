@@ -2,7 +2,7 @@
   "name": "trackglance-watch",
   "description": "TrackGlance displays and controls Locus Map track recordings on supported Pebble Time 2 and Pebble Round 2 smartwatches. Independent and unofficial; not affiliated with or endorsed by Core Devices, Pebble Technology, or Asamm Software.",
   "author": "Christian Herget",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "license": "Apache-2.0",
   "repository": {
@@ -10,11 +10,17 @@
     "url": "git+https://github.com/ChristianHerget/trackglance.git"
   },
   "homepage": "https://christianherget.github.io/trackglance/",
-  "keywords": ["locus", "hiking", "fitness"],
+  "keywords": [
+    "locus",
+    "hiking",
+    "fitness"
+  ],
   "trackglance": {
     "legalNotice": "TrackGlance is an independent, unofficial project. It is not affiliated with, endorsed by, sponsored by, or associated with Core Devices LLC, Pebble Technology Corp., or Asamm Software, s.r.o. Pebble is a trademark of Pebble Technology Corp. Locus Map is a brand of Asamm Software, s.r.o. Those names are used solely to identify compatibility: TrackGlance connects supported Pebble smartwatches with Locus Map. No ownership of those names or marks, or endorsement by their owners, is claimed."
   },
-  "engines": {"node": ">=22.13"},
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "test": "node test/config.test.js && node test/protocol_parity.test.js && node test/c_core.test.js && node test/watch_stack.test.js",
     "lint": "eslint src/pkjs test eslint.config.js",
@@ -31,12 +37,27 @@
     "uuid": "51c8d7cf-4cb2-4ef8-98c9-641706feb250",
     "sdkVersion": "3",
     "enableMultiJS": true,
-    "targetPlatforms": ["emery", "gabbro"],
-    "watchapp": {"watchface": false},
-    "capabilities": ["configurable", "health"],
-    "resources": {"media": [
-      {"type": "png", "name": "IMAGE_MENU_ICON", "file": "images/menu-icon.png", "menuIcon": true}
-    ]},
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "capabilities": [
+      "configurable",
+      "health"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "png",
+          "name": "IMAGE_MENU_ICON",
+          "file": "images/menu-icon.png",
+          "menuIcon": true
+        }
+      ]
+    },
     "messageKeys": {
       "PROTOCOL_VERSION": 0,
       "MESSAGE_TYPE": 1,
@@ -97,7 +118,9 @@
       "android": {
         "url": "https://github.com/ChristianHerget/trackglance/releases/latest",
         "apps": [
-          {"package": "app.trackglance.bridge"}
+          {
+            "package": "app.trackglance.bridge"
+          }
         ]
       }
     }
