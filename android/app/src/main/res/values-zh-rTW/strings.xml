@@ -15,4 +15,11 @@
     <string name="failure_watch_lookup">無法查詢已連線的 Pebble 手錶</string><string name="failure_watchapp_launch">無法啟動 Pebble 手錶應用程式</string><string name="failure_watchapp_timeout">自動啟動手錶應用程式逾時</string>
     <string name="failure_untrusted">Pebble App 不受信任</string><string name="failure_not_installed">未安裝 Pebble App</string><string name="failure_not_selected">無法選擇 Pebble App</string><string name="failure_incompatible">手錶應用程式版本不相容</string>
     <string name="failure_snapshot_delivery">無法傳送 Locus 資料</string><string name="failure_command_delivery">無法傳送命令結果</string><string name="failure_profile_delivery">無法傳送設定檔列表</string><string name="failure_third_party">外部元件失敗</string>
+    <string name="tagline">Pebble 上的 Locus Map</string>
+    <string name="status">狀態</string>
+    <string name="section_pebble">Pebble</string>
+    <string name="section_heart_rate">心率</string>
+    <string name="section_settings">設定</string>
+    <string name="availability">可用性</string>
+    <string name="refresh_interval">重新整理間隔</string>
 </resources>

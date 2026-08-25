@@ -5,6 +5,9 @@ release is published.
 
 ## 0.2.3 - Unreleased
 
+- Restyled the Android Bridge with clearer grouped status and refresh controls, accessible state
+  labels, and automatic light/dark presentation matching the phone. The documentation now follows
+  the same appearance.
 - Redesigned Watch Settings around an alphabetical activity list, with watch appearance and
   heart-rate forwarding moved to a separate General screen.
 - Each activity now has four reorderable page slots. Adding or removing metrics activates or

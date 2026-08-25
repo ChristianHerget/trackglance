@@ -15,4 +15,11 @@
     <string name="failure_watch_lookup">Impossibile trovare gli orologi Pebble connessi</string><string name="failure_watchapp_launch">Impossibile avviare l’app Pebble</string><string name="failure_watchapp_timeout">Tempo scaduto per l’avvio automatico</string>
     <string name="failure_untrusted">Pebble App non è attendibile</string><string name="failure_not_installed">Pebble App non è installata</string><string name="failure_not_selected">Impossibile selezionare Pebble App</string><string name="failure_incompatible">La versione dell’app Pebble non è compatibile</string>
     <string name="failure_snapshot_delivery">Impossibile inviare i dati Locus</string><string name="failure_command_delivery">Impossibile inviare il risultato del comando</string><string name="failure_profile_delivery">Impossibile inviare l’elenco dei profili</string><string name="failure_third_party">Errore di un componente esterno</string>
+    <string name="tagline">Locus Map sul tuo Pebble</string>
+    <string name="status">Stato</string>
+    <string name="section_pebble">Pebble</string>
+    <string name="section_heart_rate">Frequenza cardiaca</string>
+    <string name="section_settings">Impostazioni</string>
+    <string name="availability">Disponibilità</string>
+    <string name="refresh_interval">Intervallo di aggiornamento</string>
 </resources>

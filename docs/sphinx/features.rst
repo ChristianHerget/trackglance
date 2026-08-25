@@ -63,7 +63,21 @@ Android Bridge App
 ------------------
 
 The required Android Bridge connects the watch to Locus Map. Its status screen shows whether the
-Pebble App, watch, and Locus Map are available and displays recent connection problems.
+Pebble App, watch, and Locus Map are available, groups recording and heart-rate details, and
+displays recent connection problems. The refresh interval is available from the Settings dropdown.
+The Bridge follows the phone's light or dark system theme.
+
+.. list-table:: Android Bridge in system light and dark modes
+   :widths: 50 50
+
+   * - **Light**
+     - **Dark**
+   * - .. image:: _static/bridge_app_light.png
+          :alt: TrackGlance Bridge status screen in light mode with Pebble and Locus connected
+          :width: 320px
+     - .. image:: _static/bridge_app_dark.png
+          :alt: TrackGlance Bridge status screen in dark mode with Pebble and Locus connected
+          :width: 320px
 
 .. _locus-units:
 

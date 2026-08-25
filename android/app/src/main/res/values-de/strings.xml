@@ -46,4 +46,11 @@
     <string name="failure_command_delivery">Das Befehlsergebnis konnte nicht übertragen werden</string>
     <string name="failure_profile_delivery">Die Profilliste konnte nicht übertragen werden</string>
     <string name="failure_third_party">Eine externe Komponente ist fehlgeschlagen</string>
+    <string name="tagline">Locus Map auf deiner Pebble</string>
+    <string name="status">Status</string>
+    <string name="section_pebble">Pebble</string>
+    <string name="section_heart_rate">Herzfrequenz</string>
+    <string name="section_settings">Einstellungen</string>
+    <string name="availability">Verfügbarkeit</string>
+    <string name="refresh_interval">Aktualisierungsintervall</string>
 </resources>

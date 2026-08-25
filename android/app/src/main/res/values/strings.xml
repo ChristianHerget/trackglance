@@ -56,4 +56,11 @@
     <string name="failure_command_delivery">Could not deliver the command result</string>
     <string name="failure_profile_delivery">Could not deliver the profile list</string>
     <string name="failure_third_party">An external component failed</string>
+    <string name="tagline">Locus Map on your Pebble</string>
+    <string name="status">Status</string>
+    <string name="section_pebble">Pebble</string>
+    <string name="section_heart_rate">Heart rate</string>
+    <string name="section_settings">Settings</string>
+    <string name="availability">Availability</string>
+    <string name="refresh_interval">Refresh interval</string>
 </resources>

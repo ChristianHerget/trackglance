@@ -126,6 +126,10 @@ metadata without launching emulators, installing packages, or changing tracked f
 Run `./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally updating images; that
 maintenance task may launch Pebble QEMU and install the pinned browser tooling. Both documentation
 tasks are explicit and are not dependencies of routine code verification.
+With a disposable Android emulator available through `adb`, run `./tools/podman-test dev ./gradlew
+regenerateAndroidBridgeScreenshots` to refresh the native Bridge light/dark images. The task installs
+the debug APK, fixes font scale and orientation during capture, and restores the device settings
+afterward.
 `verify:pbw` must run after `pebble build`; it inspects the generated archive rather than assuming
 package declarations were honored.
 

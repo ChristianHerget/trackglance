@@ -134,6 +134,23 @@ val regenerateDocumentationScreenshots =
         )
     }
 
+tasks.register<Exec>("regenerateAndroidBridgeScreenshots") {
+    group = "documentation"
+    description =
+        "Captures light and dark Android Bridge documentation screenshots from a connected emulator."
+    dependsOn(":android:app:assembleDebug")
+    workingDir(layout.projectDirectory)
+    commandLine("bash", "docs/capture_android_bridge_screenshots.sh")
+    inputs.file(layout.projectDirectory.file("docs/capture_android_bridge_screenshots.sh"))
+    inputs.file(layout.projectDirectory.file("docs/validate_bridge_screenshots.py"))
+    inputs.dir(layout.projectDirectory.dir("android/app/src/main"))
+    inputs.dir(layout.projectDirectory.dir("android/app/src/debug"))
+    outputs.files(
+        layout.projectDirectory.file("docs/sphinx/_static/bridge_app_light.png"),
+        layout.projectDirectory.file("docs/sphinx/_static/bridge_app_dark.png"),
+    )
+}
+
 val verifyDocumentation =
     tasks.register<Exec>("verifyDocumentation") {
         group = "verification"
