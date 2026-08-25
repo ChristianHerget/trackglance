@@ -83,9 +83,9 @@ for (const [name, value] of Object.entries(packageJson.pebble.messageKeys)) {
 }
 const canonical = settings.reconcile(settings.defaultsFor('en'), [{id:'1',name:'Hiking'}], 'en').config;
 const group = settings.activity(canonical, '1');
-for (const name of ['Climb', 'Map', 'Heart rate']) {
-  settings.add(canonical, '1', group.pages[0], 'en');
-  group.pages[group.pages.length - 1].name = name;
+for (const [index, name] of ['Climb', 'Map', 'Heart rate'].entries()) {
+  settings.add(canonical, '1', index + 1, index + 10);
+  group.pages[index + 1].name = name;
 }
 emit('DEFAULT_CONFIG_BASE64', Buffer.from(settings.projection(canonical, '1'), 'utf8').toString('base64'));
 NODE

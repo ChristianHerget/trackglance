@@ -22,7 +22,8 @@ assert(source.includes('MESSAGE_KEY_CONFIG_FINGERPRINT_A'));
 assert(source.includes('MESSAGE_KEY_CONFIG_FINGERPRINT_B'));
 assert(source.includes('strcmp(s_parsed_config.locus_id, s_current_locus_id)'));
 assert(source.includes('s_parsed_config.fingerprint_a != s_transfer_fingerprint_a'));
-assert(config.includes('watch_profile_names_equal(output->profiles[i].name, profile->name)'));
+assert(!config.includes('watch_profile_names_equal(output->profiles[i].name, profile->name)'));
+assert(config.includes('strcmp(output->profiles[i].id, profile->id) == 0'));
 
 assert(source.includes('i18n_text(I18N_START_IN_LOCUS)'));
 assert(source.includes('i18n_text(I18N_LOCUS_UNAVAILABLE_INSTRUCTION)'));

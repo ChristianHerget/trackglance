@@ -200,8 +200,9 @@ watch-version responses, the relay supplies a stable synthetic serial and the ru
 Gabbro hardware identifier. Serial-bearing real-watch responses, including their platform fields,
 pass through unchanged. This lets PebbleKit use the emulated watch as a valid, correctly typed watch
 without carrying an acceptance-only modification in Pebble App.
-The Emery and Gabbro runs open Watch Settings after catalog transfer and verify grouped activity
-pages, stopped/unavailable instructions, page indicators and wrapping, revised Controls, and the
+The Emery and Gabbro runs open Watch Settings after catalog transfer and verify the alphabetical
+activity list, four-slot editor, General screen, stopped/unavailable instructions, page indicators
+and wrapping, revised Controls, and the
 waypoint submenu where supported. Recording start is performed in Locus UI; acceptance never sends
 obsolete command 1. Emery additionally exercises pause/resume, waypoint, heart-rate forwarding,
 60-second configuration reconciliation, and stop/save. Gabbro proves that unsupported

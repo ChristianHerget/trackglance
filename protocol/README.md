@@ -100,7 +100,8 @@ theme|watchHr|interval|locusId|fingerprintA|fingerprintB
 pageName|metric,metric,...|stablePageId
 ```
 
-There are one through four pages and one through six unique metric IDs per page. The complete
+The canonical schema stores exactly four typed metric-page slots per activity. Only active slots are
+projected, so the wire has one through four pages and one through six unique metric IDs per page. The complete
 serialized projection is at most 4095 bytes and 52 chunks. Keys 52 and 53 must accompany every
 chunk and equal the header values; inconsistency invalidates the candidate. Config result `0` means
 applied, `8` invalid, and `9` storage failure. Legacy queued result `7` remains accepted, but 0.2.1
@@ -109,7 +110,9 @@ control the cache.
 
 Type 11 carries key 51 and the watch's cached fingerprints. PKJS sends a projection when the ID is
 known and either fingerprint differs. The watch requests this on context arrival and every 60
-seconds. A refresh preserves the selected stable page ID if present, otherwise page 1.
+seconds. Display names may repeat, but stable page IDs remain unique. Unnamed active slots are
+projected as localized `Page N`, numbered among active pages, so fingerprints include watch locale.
+A refresh preserves the selected stable page ID if present, otherwise page 1.
 
 ## Transfer and delivery rules
 

@@ -878,7 +878,7 @@ static void test_watch_config(void) {
   assert(!parse("dark|0|5|1|1|2\nOnly|1x|id", NULL, &config));
   assert(!parse("dark|0|5|1|1|2\nOnly|1,1|id", NULL, &config));
   assert(!parse("dark|0|5|1|1|2\nOnly|1|same\nOther|2|same", NULL, &config));
-  assert(!parse("dark|0|5|1|1|2\nOnly|1|one\nonly|2|two", NULL, &config));
+  assert(parse("dark|0|5|1|1|2\nOnly|1|one\nonly|2|two", NULL, &config));
   assert(!parse("dark|0|5|1|1|2\nOnly|1|id|extra", NULL, &config));
   assert(!parse("dark|0|5|1|1|2\n   |1|id", NULL, &config));
   assert(!parse("dark|0|5|1|1|2\nOnly|1|1234567890123456789012345678901234567890", NULL, &config));

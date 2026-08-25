@@ -16,7 +16,8 @@ async function main() {
   const configuration = settings.reconcile(settings.defaultsFor('en'), catalog, 'en').config;
   configuration.watchHrToLocus = true;
   configuration.heartRateIntervalSeconds = 5;
-  settings.add(configuration, '1', settings.activity(configuration, '1').pages[0], 'en');
+  settings.add(configuration, '1', 1, 10);
+  settings.add(configuration, '1', 1, 11);
   settings.activity(configuration, '1').pages[1].name = 'Climb';
 
   const settingsUrl = settings.settingsPage(
@@ -31,13 +32,15 @@ async function main() {
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,
   });
+  await page.emulateMedia({ colorScheme: 'light' });
 
   await page.goto(settingsUrl);
   await page.screenshot({
     path: path.join(outputDirectory, 'watch_settings_overview.png'),
   });
 
-  await page.getByRole('button', { name: 'Default' }).first().click();
+  await page.getByRole('button', { name: 'Edit activity Hiking' }).click();
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.screenshot({
     path: path.join(outputDirectory, 'watch_settings_profile.png'),
   });

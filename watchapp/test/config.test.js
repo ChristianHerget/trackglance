@@ -37,15 +37,17 @@ assert.deepStrictEqual(config.activity(reconciled.config, '10').pages[0].metrics
 assert.deepStrictEqual(config.activity(reconciled.config, '20').pages[0].metrics, [1,3,8,9,11,22]);
 assert.deepStrictEqual(config.activity(reconciled.config, '30').pages[0].metrics, [1,3,5,6,7,22]);
 assert.deepStrictEqual(config.activity(reconciled.config, '40').pages[0].metrics, [1,3,5,6,10,22]);
-assert(reconciled.config.activities.every(activity => activity.pages[0].name === 'Default'));
+assert(reconciled.config.activities.every(activity => activity.pages.length === 4));
+assert(reconciled.config.activities.every(activity => activity.pages[0].name === null));
+assert(reconciled.config.activities.every(activity => activity.pages.slice(1).every(page => page.metrics.length === 0)));
 
 const german = config.reconcile(config.defaultsFor('de'), [{id:'1', name:'Wandern'}], 'de').config;
-assert.strictEqual(german.activities[0].pages[0].name, 'Standard');
+assert.strictEqual(german.activities[0].pages[0].name, null);
 assert.deepStrictEqual(german.activities[0].pages[0].metrics, [1,3,10,11,5,22]);
 assert.strictEqual(
-  config.reconcile(german, [{id:'1', name:'Wandern'}], 'en').config.activities[0].pages[0].name,
-  'Standard',
-  'generated display names are not retranslated',
+  config.projection(german, '1', 'de').split('\n')[1].split('|')[0],
+  'Seite 1',
+  'automatic display names are projected from locale',
 );
 
 const legacyWire = 'dark|0|1|7\nTrail|Hiking|0|1,3,11|legacy-page';
@@ -55,13 +57,19 @@ const migrated = config.reconcile(legacy, [{id:'987',name:'Hiking'}], 'en').conf
 assert.strictEqual(migrated.activities[0].locusId, '987');
 assert.strictEqual(migrated.activities[0].pages[0].id, 'legacy-page');
 assert.strictEqual(migrated.activities[0].pages[0].name, 'Trail');
+const schemaTwo = {schema:2,theme:'light',watchHrToLocus:true,heartRateIntervalSeconds:7,
+  activities:[{locusId:'9',locusName:'Walk',pages:[{id:'kept',name:'Custom',metrics:[1,3]}]}]};
+const schemaThree = config.migrate(schemaTwo);
+assert.strictEqual(schemaThree.schema, 3);
+assert.strictEqual(schemaThree.activities[0].pages.length, 4);
+assert.deepStrictEqual(schemaThree.activities[0].pages[0], {id:'kept',type:'metrics',name:'Custom',metrics:[1,3]});
 
 const retained = config.reconcile(reconciled.config, [
   {id:'10',name:'Hiking renamed'}, {id:'50',name:'New activity'}
 ], 'en').config;
 assert.deepStrictEqual(retained.activities.map(activity => activity.locusId), ['10','50']);
 assert.strictEqual(retained.activities[0].locusName, 'Hiking renamed');
-assert.strictEqual(retained.activities[0].pages[0].name, 'Default');
+assert.strictEqual(retained.activities[0].pages[0].name, null);
 assert.strictEqual(config.reconcile(retained, [], 'en').authoritative, false);
 assert.deepStrictEqual(config.reconcile(retained, [], 'en').config, retained);
 assert.deepStrictEqual(config.reconcile(retained, [{id:'bad|id',name:'Bad'}], 'en').config, retained);
@@ -75,46 +83,49 @@ const unlimited = config.reconcile(config.defaultsFor('en'), unlimitedCatalog, '
 assert.strictEqual(unlimited.activities.length, 32);
 assert(config.validate(unlimited));
 
-const editable = config.reconcile(config.defaultsFor('en'), catalog.slice(0, 2), 'en').config;
+const editable = config.reconcile(config.defaultsFor('en'), catalog, 'en').config;
 const hiking = config.activity(editable, '10');
-assert(config.add(editable, '10', hiking.pages[0], 'en'));
-assert(config.add(editable, '10', hiking.pages[0], 'en'));
-assert(config.add(editable, '10', hiking.pages[0], 'en'));
 assert.strictEqual(hiking.pages.length, 4);
-assert(!config.add(editable, '10', hiking.pages[0], 'en'));
-assert(config.move(editable, '10', 3, 0));
+assert(config.add(editable, '10', 1, 1));
+assert(config.add(editable, '10', 1, 3));
+assert(!config.add(editable, '10', 1, 3));
 assert(config.rename(editable, '10', 0, 'Priority'));
-assert(!config.rename(editable, '10', 1, 'priority'));
-while (hiking.pages.length > 1) assert(config.remove(editable, '10', 0, 'en'));
-const oldOnlyId = hiking.pages[0].id;
-assert(config.remove(editable, '10', 0, 'en'));
-assert.strictEqual(hiking.pages.length, 1);
-assert.notStrictEqual(hiking.pages[0].id, oldOnlyId);
-
-const sourcePage = hiking.pages[0];
-assert(config.moveToActivity(editable, '10', 0, '30', 'en'));
-assert.strictEqual(hiking.pages.length, 1, 'moving the last page recreates the source default');
-assert(config.activity(editable, '30').pages.some(page => page.id === sourcePage.id));
-while (config.activity(editable, '30').pages.length < 4) {
-  assert(config.add(editable, '30', config.activity(editable, '30').pages[0], 'en'));
-}
-assert(!config.moveToActivity(editable, '10', 0, '30', 'en'));
+assert(config.rename(editable, '10', 1, 'Priority'), 'duplicate display names are allowed');
+assert(config.moveMetric(editable, '10', 1, 1, 0));
+assert(config.remove(editable, '10', 1, 0));
+assert(config.remove(editable, '10', 1, 0));
+assert(!config.remove(editable, '10', 1, 0));
+assert(config.move(editable, '10', 3, 0));
 
 const reset = config.resetLibrary(catalog, 'en');
 assert(reset.authoritative);
 assert.strictEqual(reset.config.theme, 'dark');
 assert.strictEqual(reset.config.watchHrToLocus, false);
-assert(reset.config.activities.every(activity => activity.pages.length === 1));
+assert(reset.config.activities.every(activity => activity.pages.length === 4));
 assert.deepStrictEqual(config.activity(reset.config, '20').pages[0].metrics, [1,3,8,9,11,22]);
+const beforeOther = JSON.stringify(config.activity(editable, '20').pages);
+assert(config.resetActivity(editable, '10'));
+assert.strictEqual(JSON.stringify(config.activity(editable, '20').pages), beforeOther);
+editable.theme = 'light'; config.resetGeneral(editable); assert.strictEqual(editable.theme, 'dark');
 
 const wire = config.projection(editable, '10');
 assert(wire.startsWith('dark|0|5|10|'));
 assert(wire.split('\n').length <= 5);
+assert.strictEqual(wire.split('\n').length, 2, 'inactive slots are not projected');
 assert(Buffer.byteLength(wire, 'utf8') <= config.LIMIT.configBytes);
 assert.deepStrictEqual(config.fingerprints(editable), config.fingerprints(config.parse(config.serialize(editable))));
+assert.notDeepStrictEqual(config.fingerprints(editable, 'en'), config.fingerprints(editable, 'de'));
 const changed = JSON.parse(config.serialize(editable));
 changed.theme = 'light';
 assert.notDeepStrictEqual(config.fingerprints(editable), config.fingerprints(changed));
+const duplicateNames = JSON.parse(config.serialize(editable));
+duplicateNames.activities[0].pages[0].name = 'Same';
+duplicateNames.activities[0].pages[1].name = 'Same';
+duplicateNames.activities[0].pages[1].metrics = [1];
+assert(config.validate(duplicateNames));
+const invalidType = JSON.parse(config.serialize(editable));
+invalidType.activities[0].pages[0].type = 'map';
+assert(!config.validate(invalidType));
 
 assert.deepStrictEqual(config.profilePayload('10|Hiking\n20|Running'), catalog.slice(1,3).map((item, index) => index === 0 ? {id:'10',name:'Hiking'} : {id:'20',name:'Running'}));
 assert.strictEqual(config.profilePayload(''), null);
@@ -168,20 +179,23 @@ const dom = new JSDOM(html, {runScripts:'dangerously', beforeParse(window) {
   window.confirm = () => true;
   window.alert = () => {};
 }});
-const headings = [...dom.window.document.querySelectorAll('h2')].map(node => node.textContent);
-assert.deepStrictEqual(headings.slice(0, 4), ['Cycling','Hiking','Paddling','Running']);
+const activities = [...dom.window.document.querySelectorAll('.activity .label')].map(node => node.textContent);
+assert.deepStrictEqual(activities, ['Cycling','Hiking','Paddling','Running']);
+assert(!html.includes('id="mapping"'), 'activity editor has no Locus mapping dropdown');
+dom.window.document.querySelector('.activity').click();
 assert.strictEqual(dom.window.document.querySelectorAll('.page').length, 4);
-assert(dom.window.document.querySelectorAll('.handle').length >= 4);
-assert(!html.includes('id="addProfile"'), 'activity groups do not expose an add button');
-assert(dom.window.document.querySelector('#reset'), 'settings expose an explicit canonical reset');
-dom.window.document.querySelector('.page .name').click();
-assert(!dom.window.document.querySelector('#editor').classList.contains('hidden'), 'tapping a page opens Edit');
-dom.window.document.querySelector('#editorCancel').click();
+assert.strictEqual(dom.window.document.querySelectorAll('.badge')[0].textContent, '6/6');
+assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '0/6');
+assert(dom.window.document.querySelectorAll('.handle').length >= 8, 'pages and metrics expose keyboard reorder actions');
+dom.window.document.querySelectorAll('.add')[1].click();
+assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '1/6');
+dom.window.document.querySelector('#activityCancel').click();
+assert.strictEqual(dom.window.c.activities[0].pages[1].metrics.length, 0, 'activity Cancel discards its draft');
+dom.window.document.querySelector('#generalOpen').click();
+dom.window.document.querySelector('#theme').value = 'light';
+dom.window.document.querySelector('#generalDone').click();
 dom.window.document.querySelector('#save').click();
-assert.deepStrictEqual(JSON.parse(closedSettings), reconciled.config, 'Save returns canonical JSON once');
-dom.window.c.activities[0].pages[0].name = '🥾'.repeat(20);
-dom.window.document.querySelector('.clone').click();
-assert(dom.window.c.activities[0].pages.every(page => config.validName(page.name)));
+assert.strictEqual(JSON.parse(closedSettings).theme, 'light', 'final Save returns the combined draft once');
 
 supportedLocales.forEach(language => {
   const localized = config.reconcile(config.defaultsFor(language), catalog, language).config;
@@ -190,9 +204,9 @@ supportedLocales.forEach(language => {
   ).split(',').slice(1).join(','));
   const localizedDom = new JSDOM(localizedHtml, {runScripts: 'dangerously'});
   assert(localizedDom.window.document.querySelector('#save').textContent.trim());
-  const firstPage = localizedDom.window.document.querySelector('.page .name');
-  assert(firstPage, `settings page renders an activity for ${language}`);
-  firstPage.click();
+  const firstActivity = localizedDom.window.document.querySelector('.activity');
+  assert(firstActivity, `settings page renders an activity for ${language}`);
+  firstActivity.click();
   assert.strictEqual(localizedDom.window.document.querySelectorAll('.metric').length > 0, true);
 });
 

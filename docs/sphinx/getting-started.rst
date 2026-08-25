@@ -61,8 +61,8 @@ Locus itself is unavailable, the watch gives a separate instruction to open Locu
 Automatic Activity Pages
 ------------------------
 
-Open Watch Settings once after installation. Every installed Locus activity receives a localized
-default page. The six initial metrics are chosen from the
+Open Watch Settings once after installation. Every installed Locus activity receives four page
+slots: one active heuristic page and three inactive slots. The six initial metrics are chosen from the
 activity name:
 
 * walking or hiking: elapsed, distance, altitude, ascent, current speed, current HR;
@@ -71,8 +71,8 @@ activity name:
 * all other activities: elapsed, distance, current and average speed, altitude, current HR.
 
 Common walking, hiking, running, jogging, cycling and bicycle terms in every supported language are recognized.
-Generated page names are saved as ordinary data and are not translated later when the watch
-language changes.
+Automatic page names follow the watch language. Custom names are saved as ordinary data and are not
+translated when the watch language changes.
 
 Using the Watch
 ---------------

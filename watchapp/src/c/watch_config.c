@@ -203,8 +203,7 @@ static bool parse_profile(char *line, int index, WatchConfig *output) {
   if (!id_valid(id) || !copy_field(profile->id, sizeof(profile->id), id)) return false;
 
   for (int i = 0; i < index; i++) {
-    if (watch_profile_names_equal(output->profiles[i].name, profile->name) ||
-        strcmp(output->profiles[i].id, profile->id) == 0) {
+    if (strcmp(output->profiles[i].id, profile->id) == 0) {
       return false;
     }
   }
