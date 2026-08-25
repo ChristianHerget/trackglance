@@ -365,7 +365,7 @@ class StaticPreflightTest(unittest.TestCase):
         )[0]
 
         self.assertIn("for _ in 1 2 3", settings)
-        self.assertIn('resource-id="theme"', settings)
+        self.assertIn('resource-id="generalOpen"', settings)
         self.assertIn("KEYCODE_BACK", settings)
 
     def test_acceptance_uses_the_manifest_activity_class_not_the_application_id(self):
@@ -408,6 +408,8 @@ class StaticPreflightTest(unittest.TestCase):
     def test_e2e_polls_until_the_watch_settings_webview_is_rendered(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
         self.assertIn("settings_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn("general_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn('tap_text "General settings" 30', e2e_stage)
         self.assertIn("grep -Fq 'resource-id=\"theme\"'", e2e_stage)
 
     def test_e2e_starts_recording_through_the_debug_only_locus_api_surface(self):

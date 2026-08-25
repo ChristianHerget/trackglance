@@ -89,7 +89,7 @@ for _ in 1 2 3; do
   settings_deadline=$((SECONDS + 30))
   while (( SECONDS < settings_deadline )); do
     dump_ui
-    if grep -Fq 'resource-id="theme"' /tmp/trackglance-window.xml; then
+    if grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
       settings_loaded=1
       break 2
     fi
@@ -102,6 +102,22 @@ cp /tmp/trackglance-window.xml "/artifacts/${PEBBLE_PLATFORM}-settings.xml"
 android_screenshot "${PEBBLE_PLATFORM}-settings"
 if (( ! settings_loaded )); then
   echo "${PEBBLE_PLATFORM} settings did not finish loading" >&2
+  exit 1
+fi
+
+tap_text "General settings" 30
+general_loaded=0
+general_deadline=$((SECONDS + 30))
+while (( SECONDS < general_deadline )); do
+  dump_ui
+  if grep -Fq 'resource-id="theme"' /tmp/trackglance-window.xml; then
+    general_loaded=1
+    break
+  fi
+  sleep 0.5
+done
+if (( ! general_loaded )); then
+  echo "${PEBBLE_PLATFORM} General settings did not finish loading" >&2
   exit 1
 fi
 
