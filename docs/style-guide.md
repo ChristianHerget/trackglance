@@ -25,8 +25,11 @@ Primary actions use the primary token with adequate contrast. Disabled controls 
 Show stale and unavailable states without hiding cached content. Confirm resets.
 
 Every control needs an accessible name, visible keyboard focus, and a non-color state cue. Reorder
-controls use a dedicated six-dot handle, support live pointer dragging, and respond directly to
-keyboard Up/Down actions with an announced position. Respect
+controls use a dedicated six-dot handle and support touch, pointer, and mouse dragging. Show a
+floating item and an outlined insertion point without making color the only status cue. Long lists
+must edge-scroll during a drag, and unavailable destinations must remain traversable and explain why
+they cannot accept a drop. Keyboard reordering uses a grab mode: Space or Enter picks up and drops,
+Up and Down move, and Escape cancels, with every state and position announced. Respect
 `prefers-reduced-motion`; animation must never be required to understand a change.
 
 ## Platform constraints

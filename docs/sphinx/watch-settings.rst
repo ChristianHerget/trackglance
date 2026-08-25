@@ -18,7 +18,14 @@ An inactive slot shows ``Inactive page`` and ``0/6``. Its first metric activates
 last metric deactivates a page and preserves its hidden custom name, but at least one page must stay
 active. Metrics are unique within a page but may repeat on different pages. A full ``6/6`` page keeps
 its Add Metric action visible but disabled. Six-dot handles drag page slots and metrics; focused
-handles also reorder directly with the keyboard's Up and Down keys.
+handles can also move metrics between pages. A full page cannot accept another metric, but it does
+not interrupt a drag to a later page. The editor scrolls when a dragged item approaches the top or
+bottom edge.
+
+For keyboard or switch access, focus a six-dot handle and press Space or Enter to pick up the item.
+Use Up and Down to move it within or between pages, then press Space or Enter again to drop it.
+Escape cancels the move. Invalid destinations, including full pages and pages that already contain
+the metric, are identified without changing the draft.
 
 **Done** updates the main unsaved draft. A subpage **Cancel** discards only that screen's changes.
 The overview's final **Save** or **Cancel** closes Watch Settings. Activity reset restores its

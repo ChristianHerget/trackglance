@@ -178,6 +178,10 @@ const dom = new JSDOM(html, {runScripts:'dangerously', beforeParse(window) {
   window.__pebbleConfigClose = value => { closedSettings = value; };
   window.confirm = () => true;
   window.alert = () => {};
+  window.__scrollDeltas = [];
+  window.scrollBy = (_x, y) => { window.__scrollDeltas.push(y); };
+  window.requestAnimationFrame = callback => { window.__dragFrame = callback; return 1; };
+  window.cancelAnimationFrame = () => {};
 }});
 const activities = [...dom.window.document.querySelectorAll('.activity .label')].map(node => node.textContent);
 assert.deepStrictEqual(activities, ['Cycling','Hiking','Paddling','Running']);
@@ -200,49 +204,118 @@ const fullCount = dom.window.draft.pages[0].metrics.length;
 fullAdd.click();
 assert.strictEqual(dom.window.draft.pages[0].metrics.length, fullCount, 'disabled Add Metric does nothing');
 
+function key(target, value) {
+  target.dispatchEvent(new dom.window.KeyboardEvent('keydown', {key:value, bubbles:true}));
+}
+function touch(target, type, x, y) {
+  const event = new dom.window.Event(type, {bubbles:true, cancelable:true});
+  const points = type === 'touchend' || type === 'touchcancel' ? [] : [{clientX:x, clientY:y}];
+  Object.defineProperty(event, 'touches', {value:points});
+  Object.defineProperty(event, 'changedTouches', {value:[{clientX:x, clientY:y}]});
+  target.dispatchEvent(event);
+}
+function setPageGeometry(window, height = 250, gap = 50) {
+  [...window.document.querySelectorAll('.page')].forEach((page, index) => {
+    page.getBoundingClientRect = () => ({left:0, top:index * (height + gap), width:320, height});
+  });
+}
+function setMetricGeometry(page, top) {
+  [...page.querySelectorAll('.metric')].forEach((metric, index) => {
+    metric.getBoundingClientRect = () => ({left:40, top:top + index * 50, width:260, height:44});
+  });
+}
+
 const pageBeforeKeyboard = dom.window.draft.pages.map(page => page.id);
-dom.window.document.querySelector('.handle[data-key="page"][data-index="1"]').dispatchEvent(
-  new dom.window.KeyboardEvent('keydown', {key:'ArrowUp', bubbles:true}),
-);
+let keyboardHandle = dom.window.document.querySelector('.handle[data-key="page"][data-index="1"]');
+key(keyboardHandle, ' ');
+key(keyboardHandle, 'ArrowUp');
+key(dom.window.document.activeElement, ' ');
 assert.strictEqual(dom.window.draft.pages.map(page => page.id).join(','),
   [pageBeforeKeyboard[1], pageBeforeKeyboard[0], pageBeforeKeyboard[2], pageBeforeKeyboard[3]].join(','));
 assert.strictEqual(dom.window.document.activeElement.dataset.index, '0', 'keyboard reorder restores handle focus');
-assert(dom.window.document.querySelector('#reorderStatus').textContent.includes('position 1 of 4'));
+assert(dom.window.document.querySelector('#reorderStatus').textContent.includes('Dropped'));
 
 const pagesBeforeDrag = dom.window.draft.pages.map(page => page.id);
 const draggedHandle = dom.window.document.querySelector('.handle[data-key="page"][data-index="0"]');
-[...dom.window.document.querySelectorAll('.page')].forEach((page, index) => {
-  page.getBoundingClientRect = () => ({top:index * 100, height:80});
-});
-draggedHandle.onpointerdown({pointerId:1});
-draggedHandle.onpointermove({pointerId:1, clientY:1000});
-draggedHandle.onpointerup({pointerId:1});
+setPageGeometry(dom.window, 80, 20);
+touch(draggedHandle, 'touchstart', 20, 60);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 20, 390);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchend', 20, 390);
 assert.strictEqual(dom.window.draft.pages[3].id, pagesBeforeDrag[0], 'pointer drag reorders page slots');
 
 const firstActivePageIndex = dom.window.draft.pages.findIndex(page => page.metrics.length === 6);
 const metricKey = `metric-${firstActivePageIndex}`;
 const metricsBeforeKeyboard = dom.window.draft.pages[firstActivePageIndex].metrics.slice();
-dom.window.document.querySelector(`.handle[data-key="${metricKey}"][data-index="0"]`).dispatchEvent(
-  new dom.window.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true}),
-);
+keyboardHandle = dom.window.document.querySelector(`.handle[data-key="${metricKey}"][data-index="0"]`);
+key(keyboardHandle, 'Enter');
+key(keyboardHandle, 'ArrowDown');
+key(dom.window.document.activeElement, 'Enter');
 assert.strictEqual(dom.window.draft.pages[firstActivePageIndex].metrics.slice(0, 2).join(','),
   [metricsBeforeKeyboard[1], metricsBeforeKeyboard[0]].join(','), 'keyboard reorders metrics within their page');
 const metricsBeforeDrag = dom.window.draft.pages[firstActivePageIndex].metrics.slice();
 const activePageElement = dom.window.document.querySelectorAll('.page')[firstActivePageIndex];
-[...activePageElement.querySelectorAll('.metric')].forEach((metric, index) => {
-  metric.getBoundingClientRect = () => ({top:index * 60, height:44});
-});
+activePageElement.getBoundingClientRect = () => ({left:0, top:100, width:320, height:400});
+setMetricGeometry(activePageElement, 120);
 const draggedMetric = activePageElement.querySelector('.metric .handle[data-index="0"]');
-draggedMetric.onpointerdown({pointerId:2});
-draggedMetric.onpointermove({pointerId:2, clientY:1000});
-draggedMetric.onpointerup({pointerId:2});
+touch(draggedMetric, 'touchstart', 60, 130);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 60, 410);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchend', 60, 410);
 assert.strictEqual(dom.window.draft.pages[firstActivePageIndex].metrics[5], metricsBeforeDrag[0],
-  'pointer drag reorders metrics within their page');
-dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.metric .remove').click();
-assert(!dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').disabled,
+  'touch drag reorders metrics within its page');
+
+dom.window.draft.pages[0].metrics = [1,2];
+dom.window.draft.pages[1].metrics = [3,4,5,6,7,8];
+dom.window.draft.pages[2].metrics = [];
+dom.window.drawPages();
+setPageGeometry(dom.window);
+setMetricGeometry(dom.window.document.querySelectorAll('.page')[0], 20);
+const crossingMetric = dom.window.document.querySelectorAll('.page')[0].querySelector('.metric .handle');
+touch(crossingMetric, 'touchstart', 60, 30);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 60, 760);
+dom.window.__dragFrame();
+assert(dom.window.__scrollDeltas.some(delta => delta > 0), 'dragging near the viewport edge auto-scrolls');
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 60, 350);
+assert(dom.window.document.querySelectorAll('.page')[1].classList.contains('drop-unavailable'),
+  'a full page is unavailable as a destination');
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 60, 650);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchend', 60, 650);
+assert.deepStrictEqual([...dom.window.draft.pages[0].metrics], [2]);
+assert.deepStrictEqual([...dom.window.draft.pages[1].metrics], [3,4,5,6,7,8],
+  'dragging across a full page leaves it unchanged');
+assert.deepStrictEqual([...dom.window.draft.pages[2].metrics], [1],
+  'a metric moves to the exact valid page beyond a full page');
+
+dom.window.draft.pages[0].metrics = [9];
+dom.window.draft.pages[2].metrics = [9];
+dom.window.drawPages();
+setPageGeometry(dom.window);
+setMetricGeometry(dom.window.document.querySelectorAll('.page')[0], 20);
+const duplicateMetric = dom.window.document.querySelectorAll('.page')[0].querySelector('.metric .handle');
+touch(duplicateMetric, 'touchstart', 60, 30);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchmove', 60, 650);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchend', 60, 650);
+assert.deepStrictEqual([...dom.window.draft.pages[0].metrics], [9], 'invalid duplicate drop restores the source');
+assert.strictEqual(dom.window.document.querySelector('#dragMessage').textContent,
+  'This metric is already on that page.');
+
+dom.window.draft.pages[2].metrics = [];
+dom.window.drawPages();
+const beforeKeyboardCancel = JSON.stringify(dom.window.draft.pages);
+keyboardHandle = dom.window.document.querySelector('.handle[data-key="metric-0"][data-index="0"]');
+key(keyboardHandle, ' ');
+key(keyboardHandle, 'ArrowDown');
+key(dom.window.document.activeElement, 'Escape');
+assert.strictEqual(JSON.stringify(dom.window.draft.pages), beforeKeyboardCancel,
+  'Escape cancels a keyboard move across pages');
+
+dom.window.draft.pages[0].metrics = [1,2,3,4,5,6];
+dom.window.draft.pages[1].metrics = [];
+dom.window.drawPages();
+dom.window.document.querySelectorAll('.page')[0].querySelector('.metric .remove').click();
+assert(!dom.window.document.querySelectorAll('.page')[0].querySelector('.add').disabled,
   'removing a metric re-enables Add Metric');
-dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').click();
-assert(dom.window.document.querySelectorAll('.page')[firstActivePageIndex].querySelector('.add').disabled,
+dom.window.document.querySelectorAll('.page')[0].querySelector('.add').click();
+assert(dom.window.document.querySelectorAll('.page')[0].querySelector('.add').disabled,
   'adding the sixth metric disables Add Metric again');
 dom.window.document.querySelectorAll('.add')[1].click();
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '1/6');
