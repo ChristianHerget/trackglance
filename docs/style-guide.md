@@ -28,8 +28,10 @@ Every control needs an accessible name, visible keyboard focus, and a non-color 
 controls use a dedicated six-dot handle and support touch, pointer, and mouse dragging. Show a
 floating item and an outlined insertion point without making color the only status cue. Long lists
 must edge-scroll during a drag, and unavailable destinations must remain traversable and explain why
-they cannot accept a drop. Keyboard reordering uses a grab mode: Space or Enter picks up and drops,
-Up and Down move, and Escape cancels, with every state and position announced. Respect
+they cannot accept a drop. A handle tap exposes an inline movement fallback, with only one movement
+menu open at a time. Keyboard reordering uses a grab mode: Space or Enter picks up and drops, Up and
+Down move, and Escape cancels, with every state and position announced. Clear all transient reorder
+state and feedback when changing screens or resetting content. Respect
 `prefers-reduced-motion`; animation must never be required to understand a change.
 
 ## Platform constraints

@@ -22,10 +22,17 @@ handles can also move metrics between pages. A full page cannot accept another m
 not interrupt a drag to a later page. The editor scrolls when a dragged item approaches the top or
 bottom edge.
 
+Tap a six-dot handle without dragging to open its inline movement menu. Page menus provide Move up
+and Move down. Metric menus provide movement within the current page and append-to-page actions for
+the other page slots. Destinations that are full or already contain that metric remain visible with
+an explanation but cannot be selected. The menu stays open for repeated adjustments.
+
 For keyboard or switch access, focus a six-dot handle and press Space or Enter to pick up the item.
 Use Up and Down to move it within or between pages, then press Space or Enter again to drop it.
 Escape cancels the move. Invalid destinations, including full pages and pages that already contain
-the metric, are identified without changing the draft.
+the metric, are identified without changing the draft. Pressing **Done** while an item is still
+picked up keeps its current position; leaving or resetting the activity clears all transient move
+state and messages.
 
 **Done** updates the main unsaved draft. A subpage **Cancel** discards only that screen's changes.
 The overview's final **Save** or **Cancel** closes Watch Settings. Activity reset restores its

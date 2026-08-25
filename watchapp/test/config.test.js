@@ -298,6 +298,59 @@ assert.deepStrictEqual([...dom.window.draft.pages[0].metrics], [9], 'invalid dup
 assert.strictEqual(dom.window.document.querySelector('#dragMessage').textContent,
   'This metric is already on that page.');
 
+dom.window.document.querySelector('#activityCancel').click();
+dom.window.document.querySelectorAll('.activity')[0].click();
+assert(dom.window.document.querySelector('#dragMessage').classList.contains('hidden'),
+  'leaving an activity clears invalid-drop feedback');
+assert.strictEqual(dom.window.document.querySelector('#dragMessage').textContent, '');
+
+const pagesBeforeImplicitDrop = dom.window.draft.pages.map(page => page.id);
+keyboardHandle = dom.window.document.querySelector('.handle[data-key="page"][data-index="0"]');
+key(keyboardHandle, ' ');
+key(keyboardHandle, 'ArrowDown');
+dom.window.document.querySelector('#activityDone').click();
+dom.window.document.querySelectorAll('.activity')[0].click();
+assert.strictEqual(dom.window.draft.pages[1].id, pagesBeforeImplicitDrop[0],
+  'Activity Done keeps the current keyboard-grab position');
+dom.window.document.querySelector('#activityCancel').click();
+dom.window.document.querySelectorAll('.activity')[1].click();
+assert.strictEqual(dom.window.document.querySelectorAll('.handle[aria-pressed="true"]').length, 0,
+  'keyboard grab state does not leak into another activity');
+const unrelatedPages = JSON.stringify(dom.window.draft.pages);
+key(dom.window.document.querySelector('.handle[data-key="page"][data-index="0"]'), 'Escape');
+assert.strictEqual(JSON.stringify(dom.window.draft.pages), unrelatedPages,
+  'Escape cannot restore another activity snapshot');
+dom.window.document.querySelector('#activityCancel').click();
+dom.window.document.querySelectorAll('.activity')[0].click();
+
+dom.window.draft.pages[0].metrics = [1,2];
+dom.window.draft.pages[1].metrics = [];
+dom.window.draft.pages[2].metrics = [3,4,5,6,7,8];
+dom.window.draft.pages[3].metrics = [1];
+dom.window.drawPages();
+let menuHandle = dom.window.document.querySelector('.handle[data-key="metric-0"][data-index="0"]');
+touch(menuHandle, 'touchstart', 60, 30);
+touch(dom.window.document.querySelector('#activityEditor'), 'touchend', 60, 30);
+assert.strictEqual(dom.window.document.querySelectorAll('.move-menu').length, 1,
+  'tapping a handle opens exactly one inline move menu');
+assert.strictEqual(dom.window.document.querySelectorAll('.drag-floating').length, 0,
+  'a handle tap does not select a floating row');
+let menuButtons = [...dom.window.document.querySelectorAll('.move-menu button')];
+assert(menuButtons.find(button => button.textContent.startsWith('Move to Page 3')).disabled,
+  'the fallback disables a full destination');
+assert(menuButtons.find(button => button.textContent.startsWith('Move to Page 4')).disabled,
+  'the fallback disables a destination containing the metric');
+menuButtons.find(button => button.textContent === 'Move down').click();
+assert.deepStrictEqual([...dom.window.draft.pages[0].metrics], [2,1]);
+assert.strictEqual(dom.window.document.querySelectorAll('.move-menu').length, 1,
+  'the move menu remains open after an action');
+menuButtons = [...dom.window.document.querySelectorAll('.move-menu button')];
+menuButtons.find(button => button.textContent === 'Move to Page 2').click();
+assert.deepStrictEqual([...dom.window.draft.pages[0].metrics], [2]);
+assert.deepStrictEqual([...dom.window.draft.pages[1].metrics], [1],
+  'the move menu appends a metric to another page');
+assert.strictEqual(dom.window.document.querySelectorAll('.move-menu').length, 1);
+
 dom.window.draft.pages[2].metrics = [];
 dom.window.drawPages();
 const beforeKeyboardCancel = JSON.stringify(dom.window.draft.pages);
@@ -308,6 +361,7 @@ key(dom.window.document.activeElement, 'Escape');
 assert.strictEqual(JSON.stringify(dom.window.draft.pages), beforeKeyboardCancel,
   'Escape cancels a keyboard move across pages');
 
+const beforeActivityCancel = JSON.stringify(dom.window.editing.pages);
 dom.window.draft.pages[0].metrics = [1,2,3,4,5,6];
 dom.window.draft.pages[1].metrics = [];
 dom.window.drawPages();
@@ -320,7 +374,8 @@ assert(dom.window.document.querySelectorAll('.page')[0].querySelector('.add').di
 dom.window.document.querySelectorAll('.add')[1].click();
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '1/6');
 dom.window.document.querySelector('#activityCancel').click();
-assert.strictEqual(dom.window.c.activities[0].pages[1].metrics.length, 0, 'activity Cancel discards its draft');
+assert.strictEqual(JSON.stringify(dom.window.c.activities[0].pages), beforeActivityCancel,
+  'activity Cancel discards its draft');
 dom.window.document.querySelector('#generalOpen').click();
 dom.window.document.querySelector('#theme').value = 'light';
 dom.window.document.querySelector('#generalDone').click();
