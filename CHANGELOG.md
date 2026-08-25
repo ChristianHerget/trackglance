@@ -3,7 +3,7 @@
 User-visible TrackGlance changes are recorded here. Release dates replace **Unreleased** when a
 release is published.
 
-## 0.2.3 - Unreleased
+## 0.2.3 - 2026-08-25
 
 - Restyled the Android Bridge with clearer grouped status and refresh controls, accessible state
   labels, and automatic light/dark presentation matching the phone. The documentation now follows

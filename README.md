@@ -43,7 +43,7 @@ latest-release artifact URL.
 ## Build and test
 
 The only host development prerequisite is Docker, or rootless Podman as a Docker-compatible
-fallback. JDK 17, Android SDK 36, Node, Python, Pebble Tool 5.0.39, and Pebble SDK 4.33.1 stay in the
+fallback. JDK 17, Android SDK 37, Node, Python, Pebble Tool 5.0.40, and Pebble SDK 4.33.1 stay in the
 version-pinned development image.
 
 ```sh

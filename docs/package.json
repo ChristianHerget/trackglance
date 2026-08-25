@@ -5,6 +5,6 @@
     "test:settings-gestures": "node watch_settings_gesture.test.js"
   },
   "devDependencies": {
-    "playwright-chromium": "1.55.0"
+    "playwright-chromium": "1.62.1"
   }
 }
