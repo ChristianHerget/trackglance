@@ -109,5 +109,12 @@ complement, but do not replace, QEMU.
 History uses short imperative subjects such as `Route resume through Locus start action`. Keep each
 commit focused and include tests with behavioral fixes. Pull requests should explain user-visible
 behavior, list verified commands and hardware/platforms, link relevant issues, and include watch
-photos or screenshots for layout changes. Never commit SDK paths, generated builds, signing keys, or
-third-party CoreApp source.
+photos or screenshots for layout changes. Before opening a pull request, run the full local acceptance
+suite with the hosted-equivalent lifecycle:
+
+```sh
+./tools/podman-test acceptance-suite --fresh --cleanup --locus-apks /absolute/private/path
+```
+
+Do not treat static checks, a prepared-emulator smoke test, or hosted CI as a substitute for this local
+prerequisite. Never commit SDK paths, generated builds, signing keys, or third-party CoreApp source.
