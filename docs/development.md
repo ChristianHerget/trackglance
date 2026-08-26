@@ -166,6 +166,15 @@ metadata without launching emulators, installing packages, or changing tracked f
 application ID, version, minimum and target SDK, permission declarations, backup/debug/cleartext
 attributes, and exported-component allowlist. The unsigned local build and signed release workflow
 use the same compiled-manifest policy; signed builds additionally verify the release certificate.
+
+Before documentation deployment, build the manual and visually review **Getting Started**,
+**Features**, **Android Bridge Settings**, and **User Guide** with light and dark browser themes at
+desktop and 390px mobile widths. Confirm that table and figure captions plus their permalinks are
+legible, referenced phone screenshots follow the light-theme policy and current release version,
+images retain their intended size and aspect ratio, and no text, images, tables, or navigation
+overflow or clip at either width. Record and explain any intentional screenshot-theme exception in
+the affected page.
+
 Run `./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally updating images; that
 maintenance task may launch Pebble QEMU and install the pinned browser tooling. Both documentation
 tasks are explicit and are not dependencies of routine code verification.

@@ -37,8 +37,8 @@ Pebble App, watch, and Locus Map are available, groups recording and heart-rate 
 displays recent connection problems. The refresh interval is available from the Settings dropdown.
 The Bridge follows the phone's light or dark system theme.
 
-.. image:: _static/bridge_app_dark.png
-   :alt: TrackGlance Android Bridge status screen in dark mode with Pebble and Locus connected
+.. image:: _static/bridge_app_light.png
+   :alt: TrackGlance Android Bridge status screen in light mode with Pebble and Locus connected
    :align: center
    :width: 320px
 
