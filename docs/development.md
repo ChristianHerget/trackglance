@@ -162,6 +162,10 @@ Normal verification compiles the instrumentation test but does not change Locus 
 `verifyPebbleTargets` checks stack/scheduler invariants plus cross-language protocol and packaging
 metadata without launching emulators, installing packages, or changing tracked files.
 `documentation` validates the committed screenshots without regenerating them.
+`release-check` assembles the final release APK with the pinned Android SDK tools and enforces its
+application ID, version, minimum and target SDK, permission declarations, backup/debug/cleartext
+attributes, and exported-component allowlist. The unsigned local build and signed release workflow
+use the same compiled-manifest policy; signed builds additionally verify the release certificate.
 Run `./tools/podman-test dev ./gradlew regenerateDocumentationScreenshots` only when intentionally updating images; that
 maintenance task may launch Pebble QEMU and install the pinned browser tooling. Both documentation
 tasks are explicit and are not dependencies of routine code verification.

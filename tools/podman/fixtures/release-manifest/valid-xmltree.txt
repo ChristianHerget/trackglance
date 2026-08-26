@@ -1,0 +1,29 @@
+N: android=http://schemas.android.com/apk/res/android
+  E: manifest
+    A: http://schemas.android.com/apk/res/android:versionCode(0x0101021b)=16
+    A: http://schemas.android.com/apk/res/android:versionName(0x0101021c)="0.2.5" (Raw: "0.2.5")
+    A: package="app.trackglance.bridge" (Raw: "app.trackglance.bridge")
+      E: uses-sdk
+        A: http://schemas.android.com/apk/res/android:minSdkVersion(0x0101020c)=24
+        A: http://schemas.android.com/apk/res/android:targetSdkVersion(0x01010270)=36
+      E: permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (Raw: "app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+        A: http://schemas.android.com/apk/res/android:protectionLevel(0x01010009)=0x00000002
+      E: uses-permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (Raw: "app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+      E: application
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.BridgeApplication" (Raw: "io.github.christianherget.trackglance.bridge.BridgeApplication")
+        A: http://schemas.android.com/apk/res/android:allowBackup(0x01010280)=false
+          E: activity
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.MainActivity" (Raw: "io.github.christianherget.trackglance.bridge.MainActivity")
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=true
+          E: service
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.pebble.BridgePebbleListenerService" (Raw: "io.github.christianherget.trackglance.bridge.pebble.BridgePebbleListenerService")
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=true
+          E: provider
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="androidx.startup.InitializationProvider" (Raw: "androidx.startup.InitializationProvider")
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=false
+          E: receiver
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="androidx.profileinstaller.ProfileInstallReceiver" (Raw: "androidx.profileinstaller.ProfileInstallReceiver")
+            A: http://schemas.android.com/apk/res/android:permission(0x01010006)="android.permission.DUMP" (Raw: "android.permission.DUMP")
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=true

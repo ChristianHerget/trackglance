@@ -17,6 +17,7 @@ EMULATOR_ENTRYPOINT = ROOT / "tools" / "podman" / "android-emulator-entrypoint.s
 EMULATOR_CONSOLE = ROOT / "tools" / "podman" / "emulator-console.py"
 E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
+RELEASE_MANIFEST_POLICY = ROOT / "tools" / "podman" / "check_release_manifest.py"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
@@ -872,16 +873,20 @@ class StaticPreflightTest(unittest.TestCase):
         self.assertIn("PULL_POLICY=always", source)
         self.assertNotIn("podman build --pull=always", source)
 
-    def test_release_metadata_checks_do_not_trip_pipefail(self):
+    def test_release_manifest_policy_reads_the_compiled_apk_without_pipefail(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         release_body = source.split("release_check() {", 1)[1].split("\n}", 1)[0]
-        self.assertIn('badging=$(aapt2 dump badging "$release_apk")', release_body)
-        self.assertIn('manifest=$(aapt2 dump xmltree', release_body)
+        self.assertIn('aapt2 dump badging "$release_apk" > "$badging_file"', release_body)
         self.assertIn(
-            'grep -Eq "android:allowBackup\\\\([^)]*\\\\)=false"',
+            'aapt2 dump xmltree --file AndroidManifest.xml "$release_apk" > "$manifest_file"',
             release_body,
         )
+        self.assertIn("python3 tools/podman/check_release_manifest.py", release_body)
+        self.assertIn("--debug-manifest android/app/src/debug/AndroidManifest.xml", release_body)
+        self.assertIn('--target-sdk "$expected_target"', release_body)
+        self.assertIn('rm -f "$badging_file" "$manifest_file"', release_body)
         self.assertNotIn('aapt2 dump badging "$release_apk" |', release_body)
+        self.assertTrue(RELEASE_MANIFEST_POLICY.is_file())
 
     def test_acceptance_release_expectations_come_from_package_metadata(self):
         result = subprocess.run(
