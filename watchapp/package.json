@@ -26,9 +26,6 @@
     "lint": "eslint src/pkjs test eslint.config.js",
     "verify:pbw": "node test/pbw.test.js"
   },
-  "dependencies": {
-    "lodash": "4.17.20"
-  },
   "devDependencies": {
     "eslint": "10.9.1",
     "jsdom": "30.0.1"
@@ -126,5 +123,8 @@
         ]
       }
     }
+  },
+  "dependencies": {
+    "tough-cookie": "4.1.2"
   }
 }
