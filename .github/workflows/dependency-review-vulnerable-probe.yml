@@ -1,0 +1,15 @@
+name: Dependency review vulnerable probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record-vulnerable-action:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Record a vulnerable unknown-scope action dependency
+        if: ${{ false }}
+        uses: actions/download-artifact@eaceaf801fd36c7dee90939fad912460b18a1ffe # v4.1.2

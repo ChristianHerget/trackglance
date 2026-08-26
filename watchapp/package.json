@@ -26,10 +26,13 @@
     "lint": "eslint src/pkjs test eslint.config.js",
     "verify:pbw": "node test/pbw.test.js"
   },
-  "dependencies": {},
+  "dependencies": {
+    "lodash": "4.17.20"
+  },
   "devDependencies": {
     "eslint": "10.9.1",
-    "jsdom": "30.0.1"
+    "jsdom": "30.0.1",
+    "minimist": "1.2.5"
   },
   "pebble": {
     "displayName": "TrackGlance",
