@@ -108,6 +108,31 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
+    def test_codeql_actions_use_one_reviewed_v4_full_sha(self):
+        source = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        expected_pin = (
+            "cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9"
+        )
+        action_lines = [
+            line.strip()
+            for line in source.splitlines()
+            if "uses: github/codeql-action/" in line
+        ]
+
+        self.assertEqual(len(action_lines), 4)
+        self.assertEqual(
+            action_lines.count(
+                f"uses: github/codeql-action/init@{expected_pin}"
+            ),
+            2,
+        )
+        self.assertEqual(
+            action_lines.count(
+                f"uses: github/codeql-action/analyze@{expected_pin}"
+            ),
+            2,
+        )
+
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("branches: [main]", source)
