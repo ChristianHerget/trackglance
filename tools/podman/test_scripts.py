@@ -256,9 +256,12 @@ class DeviceReadinessTest(unittest.TestCase):
                     """\
                     <hierarchy>
                       <node bounds="[0,0][1080,2400]">
-                        <node class="android.widget.ScrollView" bounds="[53,116][1027,2305]">
-                          <node clickable="true" bounds="[423,2261][658,2387]">
-                            <node text="Finished" bounds="[465,2297][605,2305]" />
+                        <node class="android.widget.ScrollView" scrollable="true"
+                              bounds="[53,116][1027,2305]">
+                          <node bounds="[53,116][1027,1525]">
+                            <node clickable="true" bounds="[423,2261][658,2387]">
+                              <node text="Finished" bounds="[465,2297][605,2305]" />
+                            </node>
                           </node>
                         </node>
                       </node>

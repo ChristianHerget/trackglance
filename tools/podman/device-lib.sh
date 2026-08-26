@@ -252,11 +252,13 @@ for node in root.iter('node'):
         if target is None:
             target = node
         # UiAutomator can expose a control's full layout bounds even when a scroll viewport clips
-        # it. Tap the center of the portion that is actually visible through every ancestor.
+        # it. Non-scrolling ancestors do not necessarily clip fixed-position WebView controls, so
+        # intersect only with actual scroll viewports.
         visible_bounds = node_bounds(target)
         ancestor = parents.get(target)
         while ancestor is not None and visible_bounds is not None:
-            visible_bounds = intersect_bounds(visible_bounds, node_bounds(ancestor))
+            if ancestor.attrib.get('scrollable') == 'true':
+                visible_bounds = intersect_bounds(visible_bounds, node_bounds(ancestor))
             ancestor = parents.get(ancestor)
         if visible_bounds is not None:
             print(
