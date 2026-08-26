@@ -246,6 +246,56 @@ class PublishedCiImageTest(unittest.TestCase):
 
 
 class DeviceReadinessTest(unittest.TestCase):
+    def test_tap_text_targets_the_visible_part_of_a_clipped_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            fixture = temporary / "window.xml"
+            adb_log = temporary / "adb.log"
+            fixture.write_text(
+                textwrap.dedent(
+                    """\
+                    <hierarchy>
+                      <node bounds="[0,0][1080,2400]">
+                        <node class="android.widget.ScrollView" bounds="[53,116][1027,2305]">
+                          <node clickable="true" bounds="[423,2261][658,2387]">
+                            <node text="Finished" bounds="[465,2297][605,2305]" />
+                          </node>
+                        </node>
+                      </node>
+                    </hierarchy>
+                    """
+                ),
+                encoding="utf-8",
+            )
+            environment = {
+                **os.environ,
+                "ADB_LOG": str(adb_log),
+                "DEVICE_LIB": str(DEVICE_LIB),
+                "UI_FIXTURE": str(fixture),
+            }
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-euo",
+                    "pipefail",
+                    "-c",
+                    textwrap.dedent(
+                        """\
+                        source "$DEVICE_LIB"
+                        dump_ui() { cp "$UI_FIXTURE" /tmp/trackglance-window.xml; }
+                        adb_device() { printf '%s\\n' "$*" > "$ADB_LOG"; }
+                        tap_text Finished 2
+                        """
+                    ),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(adb_log.read_text().strip(), "shell input tap 540 2283")
+
     def test_tap_text_initializes_its_timeout_before_deadline_expansion(self):
         environment = {**os.environ, "DEVICE_LIB": str(DEVICE_LIB)}
         script = textwrap.dedent(
