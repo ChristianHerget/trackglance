@@ -358,8 +358,12 @@ build_emulator_image() {
     "$GENERATOR_IMAGE" bash -euo pipefail -c '
       emulator_zip=/downloads/emulator-linux_x64-15917651.zip
       system_zip=/downloads/x86_64-32_r08.zip
-      [[ -s "$emulator_zip" ]] || curl --fail --location --retry 4 "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
-      [[ -s "$system_zip" ]] || curl --fail --location --retry 4 "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
+      echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict >/dev/null 2>&1 \
+        || curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+          --continue-at - "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
+      echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict >/dev/null 2>&1 \
+        || curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+          --continue-at - "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
       echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
       echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
       emu-docker create "$emulator_zip" "$system_zip" \

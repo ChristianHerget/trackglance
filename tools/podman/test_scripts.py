@@ -453,6 +453,21 @@ class CleanupScopeTest(unittest.TestCase):
 
 
 class StaticPreflightTest(unittest.TestCase):
+    def test_large_emulator_downloads_resume_and_retry_transport_failures(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        generator = source.split("build_emulator_image() {", 1)[1].split(
+            "\n}", 1
+        )[0]
+
+        self.assertEqual(generator.count("--retry-all-errors"), 2)
+        self.assertEqual(generator.count("--continue-at -"), 2)
+        system_checksum = 'echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip"'
+        system_download = 'curl --fail --location'
+        self.assertLess(
+            generator.index(system_checksum),
+            generator.index(system_download, generator.index(system_checksum)),
+        )
+
     def test_headless_acceptance_build_does_not_repeat_the_static_suite(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         build = source.split("build_acceptance_all() {", 1)[1].split("\n}", 1)[0]
