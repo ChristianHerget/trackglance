@@ -1136,7 +1136,7 @@ acceptance_suite() {
 
 clean() {
   select_acceptance_engine
-  local pod container volume image cleanup_image=
+  local pod container volume image cleanup_image='' cleanup_status=0
   if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
     while read -r pod; do
       [[ "$pod" == trackglance-* ]] && podman pod rm --force "$pod" >/dev/null
@@ -1156,6 +1156,12 @@ clean() {
     if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
       if acceptance_image_exists "$GENERATOR_IMAGE"; then
         cleanup_image=$GENERATOR_IMAGE
+      elif [[ "$ACCEPTANCE_RUNNER_IMAGE" != UNPUBLISHED ]] \
+        && acceptance_image_exists "$ACCEPTANCE_RUNNER_IMAGE"; then
+        # BUILD_IMAGE is changed only inside the acceptance-suite provisioning subshell. Refer to
+        # the immutable runner pin directly so the outer cleanup can still remove Docker-owned
+        # workspace files after that subshell exits.
+        cleanup_image=$ACCEPTANCE_RUNNER_IMAGE
       elif acceptance_image_exists "$BUILD_IMAGE"; then
         # Published acceptance deliberately has no source-built generator image. Its runner may
         # create root-owned files in the bind-mounted workspace, so clean them in a container too.
@@ -1164,10 +1170,12 @@ clean() {
     fi
     if [[ -n "$cleanup_image" ]]; then
       docker run --rm --volume "$BUILD_ROOT:/target" "$cleanup_image" \
-        find /target -mindepth 1 -delete
-      rmdir "$BUILD_ROOT"
+        find /target -mindepth 1 -delete || cleanup_status=$?
+      if (( cleanup_status == 0 )); then
+        rmdir "$BUILD_ROOT" || cleanup_status=$?
+      fi
     else
-      find "$BUILD_ROOT" -depth -delete
+      find "$BUILD_ROOT" -depth -delete || cleanup_status=$?
     fi
   fi
   for image in \
@@ -1182,6 +1190,7 @@ clean() {
   acceptance_network_exists "$NETWORK" \
     && acceptance_engine network rm "$NETWORK" >/dev/null || true
   echo "Removed acceptance images, volumes, containers, network, caches, and generated artifacts."
+  return "$cleanup_status"
 }
 
 main() {

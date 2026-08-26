@@ -163,9 +163,15 @@ class PublishedCiImageTest(unittest.TestCase):
     def test_docker_cleanup_uses_the_published_runner_when_generator_is_absent(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         clean = source.split("clean() {", 1)[1].split("\n}\n\nmain()", 1)[0]
-        self.assertIn('elif acceptance_image_exists "$BUILD_IMAGE"', clean)
-        self.assertIn('cleanup_image=$BUILD_IMAGE', clean)
+        self.assertIn('acceptance_image_exists "$ACCEPTANCE_RUNNER_IMAGE"', clean)
+        self.assertIn('cleanup_image=$ACCEPTANCE_RUNNER_IMAGE', clean)
         self.assertIn('docker run --rm --volume "$BUILD_ROOT:/target" "$cleanup_image"', clean)
+
+    def test_cleanup_does_not_mask_a_failed_artifact_deletion(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        clean = source.split("clean() {", 1)[1].split("\n}\n\nmain()", 1)[0]
+        self.assertIn('find "$BUILD_ROOT" -depth -delete || cleanup_status=$?', clean)
+        self.assertIn('return "$cleanup_status"', clean)
 
     def test_docker_context_excludes_everything_except_public_build_inputs(self):
         source = DOCKERIGNORE.read_text(encoding="utf-8")
