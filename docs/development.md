@@ -14,6 +14,29 @@ For the automated rootless Android 12L environment, see [Podman test environment
 The bridge supports API 24 and newer. Android 12L/API 32 is the sole automated acceptance runtime,
 not the product installation minimum. Platform 36 remains the compile and target SDK.
 
+## Repository security merge gates
+
+The repository ruleset named **Require high-severity CodeQL results** is active for the default
+branch. Its `code_scanning` rule requires the `CodeQL` tool with `alerts_threshold` set to `none`
+and `security_alerts_threshold` set to `high_or_higher`. Non-security findings and low- or
+medium-severity security alerts remain advisory. High- and critical-severity security alerts block
+the update, as do missing, failed, or still-running required CodeQL results.
+
+The ruleset is separate from the existing `main` branch protection and must not replace its
+required CI, documentation, acceptance, and dependency-review checks or its administrator,
+conversation-resolution, force-push, and deletion restrictions. Audit the live rule and thresholds
+with:
+
+```sh
+gh api repos/ChristianHerget/trackglance/rulesets \
+  --jq '.[] | {id, name, target, enforcement}'
+gh api repos/ChristianHerget/trackglance/rulesets/RULESET_ID
+```
+
+The five advanced CodeQL categories and their `security-extended` query configuration remain in
+`.github/workflows/codeql.yml`; changing the remote merge rule does not configure or replace those
+analyses.
+
 ## Release environment prerequisites
 
 The tag-triggered release job uses the protected GitHub `release` environment. Before creating a
