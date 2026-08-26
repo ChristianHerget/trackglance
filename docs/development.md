@@ -14,6 +14,22 @@ For the automated rootless Android 12L environment, see [Podman test environment
 The bridge supports API 24 and newer. Android 12L/API 32 is the sole automated acceptance runtime,
 not the product installation minimum. Platform 36 remains the compile and target SDK.
 
+## Release environment prerequisites
+
+The tag-triggered release job uses the protected GitHub `release` environment. Before creating a
+release tag, confirm that the environment contains the Android signing secrets and a working
+`VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
+argument or log:
+
+```sh
+gh secret set VIRUSTOTAL_API_KEY --env release --repo ChristianHerget/trackglance
+```
+
+The release job submits the staged signed APK and PBW after deleting the private signing key. Both
+uploads and their analysis links must succeed before a draft is created. The links identify
+successful submissions only: the workflow does not wait for analysis or gate publication on later
+malicious or suspicious detections.
+
 ## Private Locus acceptance fixture
 
 On the primary development machine, keep the regular Locus Map 4 Google Play APK outside the

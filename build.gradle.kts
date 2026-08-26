@@ -126,6 +126,7 @@ val regenerateDocumentationScreenshots =
                     "screenshot_gabbro_stopped.png",
                     "screenshot_gabbro_menu.png",
                     "watch_settings_overview.png",
+                    "watch_settings_general.png",
                     "watch_settings_profile.png",
                 )
                 .map { screenshot ->

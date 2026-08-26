@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Validate VirusTotal action output and append release-note submission badges."""
+
+import argparse
+import os
+import pathlib
+import re
+from urllib.parse import urlsplit
+
+
+def analysis_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "www.virustotal.com"
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(r"/gui/file-analysis/[^/?#\s]+/detection", parsed.path)
+    ):
+        raise ValueError(f"malformed VirusTotal analysis URL: {value!r}")
+    return value
+
+
+def reports(version: str, output: str) -> dict[str, str]:
+    expected = {
+        f"trackglance-bridge-{version}.apk": "APK",
+        f"trackglance-watch-{version}.pbw": "PBW",
+    }
+    found: dict[str, str] = {}
+    entries = output.split(",") if output else []
+    for entry in entries:
+        path, separator, url = entry.partition("=")
+        if not separator or not path or not url:
+            raise ValueError(f"malformed VirusTotal report entry: {entry!r}")
+        filename = pathlib.PurePosixPath(path).name
+        if filename not in expected:
+            raise ValueError(f"unexpected VirusTotal artifact: {path!r}")
+        if filename in found:
+            raise ValueError(f"duplicate VirusTotal report for {filename}")
+        found[filename] = analysis_url(url)
+
+    missing = expected.keys() - found.keys()
+    if missing:
+        raise ValueError(
+            "missing VirusTotal report for " + ", ".join(sorted(missing))
+        )
+    return found
+
+
+def append_badges(version: str, notes_path: pathlib.Path, output: str) -> None:
+    found = reports(version, output)
+    notes = notes_path.read_text(encoding="utf-8")
+    if not notes.endswith("\n"):
+        notes += "\n"
+    notes += "\n"
+    badges = (
+        (
+            "APK",
+            f"trackglance-bridge-{version}.apk",
+            "https://img.shields.io/badge/VirusTotal-APK%20submitted-394eff?logo=virustotal",
+        ),
+        (
+            "PBW",
+            f"trackglance-watch-{version}.pbw",
+            "https://img.shields.io/badge/VirusTotal-PBW%20submitted-394eff?logo=virustotal",
+        ),
+    )
+    for label, filename, badge in badges:
+        notes += f"[![VirusTotal: {label} submitted]({badge})]({found[filename]})\n"
+    notes_path.write_text(notes, encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Append validated VirusTotal submission badges to release notes"
+    )
+    parser.add_argument("version")
+    parser.add_argument("notes", type=pathlib.Path)
+    args = parser.parse_args()
+    try:
+        append_badges(
+            args.version,
+            args.notes,
+            os.environ.get("VIRUSTOTAL_ANALYSIS", ""),
+        )
+    except (OSError, ValueError) as error:
+        raise SystemExit(f"VirusTotal release-note validation failed: {error}") from error
+
+
+if __name__ == "__main__":
+    main()

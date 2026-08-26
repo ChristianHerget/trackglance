@@ -60,6 +60,52 @@ class ReleaseWorkflowTest(unittest.TestCase):
             source,
         )
 
+    def test_virustotal_submission_is_pinned_protected_and_rate_limited(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        build_draft = source.split("  build-draft:", 1)[1].split("\n  deploy-pages:", 1)[0]
+        submission = build_draft.split(
+            "- name: Submit APK and PBW to VirusTotal", 1
+        )[1].split("- name: Validate VirusTotal reports", 1)[0]
+
+        self.assertIn("environment: release", build_draft)
+        self.assertIn(
+            "crazy-max/ghaction-virustotal@"
+            "936d8c5c00afe97d3d9a1af26d017cfdf26800a2 # v5.0.0",
+            submission,
+        )
+        self.assertIn("vt_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}", submission)
+        self.assertEqual(submission.count("./build/release-assets/*.apk"), 1)
+        self.assertEqual(submission.count("./build/release-assets/*.pbw"), 1)
+        self.assertIn("request_rate: 4", submission)
+        self.assertIn("update_release_body: false", submission)
+
+    def test_virustotal_failure_blocks_draft_creation(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        build_draft = source.split("  build-draft:", 1)[1].split("\n  deploy-pages:", 1)[0]
+        private_key_removal = build_draft.index(
+            "rm -f build/release-private/trackglance-release.p12"
+        )
+        submission = build_draft.index("- name: Submit APK and PBW to VirusTotal")
+        validation = build_draft.index(
+            "- name: Validate VirusTotal reports and add submission badges"
+        )
+        draft = build_draft.index("- name: Create or refresh draft release")
+
+        self.assertLess(private_key_removal, submission)
+        self.assertLess(submission, validation)
+        self.assertLess(validation, draft)
+        self.assertIn(
+            "VIRUSTOTAL_ANALYSIS: ${{ steps.virustotal.outputs.analysis }}",
+            build_draft,
+        )
+        self.assertIn(
+            'tools/append-virustotal-badges "${GITHUB_REF_NAME#v}" '
+            "build/release-notes.md",
+            build_draft,
+        )
+        self.assertNotIn("continue-on-error", build_draft)
+        self.assertNotIn("if: always()", build_draft)
+
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):

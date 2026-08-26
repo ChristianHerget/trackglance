@@ -80,7 +80,7 @@ Using the Watch
 During recording or pause, **Up** and **Down** switch between one to four pages and wrap at the
 ends. The header always shows the state and position, for example ``Recording · 2/4``. The page
 name appears briefly after a switch. **Select** opens recording controls. See
-:doc:`watchapp-options` and :doc:`watch-settings`.
+:doc:`user-guide` for on-watch controls and Watch Settings.
 
 If a new Locus profile has not synchronized yet, the watch shows ``Preparing profile...``. After
 15 seconds it asks you to open Watch Settings, while synchronization continues once per minute.
