@@ -5,6 +5,9 @@ release is published.
 
 ## 0.2.5 - Unreleased
 
+- Release notes now link to separate VirusTotal submissions for the signed Android APK and Pebble
+  watch app. The links confirm successful submission and do not claim a clean scan verdict.
+
 ## 0.2.3 - 2026-08-25
 
 - Restyled the Android Bridge with clearer grouped status and refresh controls, accessible state

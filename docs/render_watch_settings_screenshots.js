@@ -39,6 +39,12 @@ async function main() {
     path: path.join(outputDirectory, 'watch_settings_overview.png'),
   });
 
+  await page.getByRole('button', { name: 'General settings' }).click();
+  await page.screenshot({
+    path: path.join(outputDirectory, 'watch_settings_general.png'),
+  });
+  await page.locator('#generalCancel').click();
+
   await page.getByRole('button', { name: 'Edit activity Hiking' }).click();
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.screenshot({
