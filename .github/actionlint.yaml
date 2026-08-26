@@ -1,0 +1,4 @@
+paths:
+  .github/workflows/codeql.yml:
+    ignore:
+      - '"github.event.pull_request.title" is potentially untrusted'

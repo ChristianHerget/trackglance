@@ -61,7 +61,6 @@ android {
             setOf(
                 "AndroidGradlePluginVersion",
                 "GradleDependency",
-                "HardcodedDebugMode",
                 "NewerVersionAvailable",
                 "OldTargetApi",
             )

@@ -10,7 +10,6 @@
     <application
         android:name=".BridgeApplication"
         android:allowBackup="false"
-        android:debuggable="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:description="@string/app_description"
         android:fullBackupContent="@xml/backup_rules"
