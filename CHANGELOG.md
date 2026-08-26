@@ -3,7 +3,7 @@
 User-visible TrackGlance changes are recorded here. Release dates replace **Unreleased** when a
 release is published.
 
-## 0.2.4 - Unreleased
+## 0.2.5 - Unreleased
 
 ## 0.2.3 - 2026-08-25
 
