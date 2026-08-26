@@ -160,6 +160,13 @@ class PublishedCiImageTest(unittest.TestCase):
         for forbidden in ("locus.apk", "trackglance-bridge", ".pbw", ".p12", ".keystore"):
             self.assertNotIn(forbidden, source.lower())
 
+    def test_docker_cleanup_uses_the_published_runner_when_generator_is_absent(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        clean = source.split("clean() {", 1)[1].split("\n}\n\nmain()", 1)[0]
+        self.assertIn('elif acceptance_image_exists "$BUILD_IMAGE"', clean)
+        self.assertIn('cleanup_image=$BUILD_IMAGE', clean)
+        self.assertIn('docker run --rm --volume "$BUILD_ROOT:/target" "$cleanup_image"', clean)
+
     def test_docker_context_excludes_everything_except_public_build_inputs(self):
         source = DOCKERIGNORE.read_text(encoding="utf-8")
         self.assertTrue(source.startswith("**\n"))
