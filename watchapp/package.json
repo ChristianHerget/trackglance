@@ -31,8 +31,7 @@
   },
   "devDependencies": {
     "eslint": "10.9.1",
-    "jsdom": "30.0.1",
-    "minimist": "1.2.5"
+    "jsdom": "30.0.1"
   },
   "pebble": {
     "displayName": "TrackGlance",
