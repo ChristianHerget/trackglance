@@ -781,18 +781,18 @@ class StaticPreflightTest(unittest.TestCase):
         force_stop = "adb_device shell am force-stop menion.android.locus"
         sync = "adb_device shell sync"
         marker = "> /golden/.trackglance-bootstrap"
-        emulator_kill = "adb_device emu kill"
-        container_wait = "wait_for_active_android_exit"
+        container_stop = "stop_active_android_gracefully"
 
         self.assertLess(bootstrap.index(force_stop), bootstrap.index(sync))
         self.assertLess(bootstrap.index(sync), bootstrap.index(marker))
-        self.assertLess(bootstrap.index(marker), bootstrap.index(emulator_kill))
-        self.assertLess(bootstrap.index(emulator_kill), bootstrap.index(container_wait))
+        self.assertLess(bootstrap.index(marker), bootstrap.index(container_stop))
+        self.assertNotIn("adb_device emu kill", bootstrap)
 
-        wait_helper = source.split("wait_for_active_android_exit() {", 1)[1].split(
+        stop_helper = source.split("stop_active_android_gracefully() {", 1)[1].split(
             "\n}", 1
         )[0]
-        self.assertIn('timeout 60 "$ACCEPTANCE_ENGINE" wait', wait_helper)
+        self.assertIn('stop --time 60 "$ACTIVE_ANDROID_CONTAINER"', stop_helper)
+        self.assertIn("{{.State.Status}}", stop_helper)
 
 
 class PrivateApkFingerprintTest(unittest.TestCase):

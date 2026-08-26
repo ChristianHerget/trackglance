@@ -703,13 +703,13 @@ stop_active_pod() {
   fi
 }
 
-wait_for_active_android_exit() {
-  [[ -n "$ACTIVE_ANDROID_CONTAINER" ]] || die "No active Android container to wait for."
-  local emulator_exit
-  emulator_exit=$(timeout 60 "$ACCEPTANCE_ENGINE" wait "$ACTIVE_ANDROID_CONTAINER") \
-    || die "Android emulator container did not exit cleanly after guest shutdown."
-  [[ "$emulator_exit" == 0 ]] \
-    || die "Android emulator container exited with status $emulator_exit."
+stop_active_android_gracefully() {
+  [[ -n "$ACTIVE_ANDROID_CONTAINER" ]] || die "No active Android container to stop."
+  timeout 75 "$ACCEPTANCE_ENGINE" stop --time 60 "$ACTIVE_ANDROID_CONTAINER" >/dev/null \
+    || die "Android emulator container did not stop within its graceful shutdown deadline."
+  local state
+  state=$("$ACCEPTANCE_ENGINE" inspect --format '{{.State.Status}}' "$ACTIVE_ANDROID_CONTAINER")
+  [[ "$state" == exited ]] || die "Android emulator container remained in state $state."
 }
 
 bootstrap() {
@@ -813,9 +813,8 @@ bootstrap() {
         \"\$emulator_config\" '$CORE_APP_COMMIT' \"\$core_apk\" \\
         \"\$fixture_config\" \"\$fingerprint\" \\
         > /golden/.trackglance-bootstrap
-      adb_device emu kill >/dev/null 2>&1 || true
     "
-  wait_for_active_android_exit
+  stop_active_android_gracefully
   stop_active_pod
   ACTIVE_DATA_VOLUME=
   acceptance_engine volume rm --force "$ACTIVE_RUNTIME_VOLUME" >/dev/null
