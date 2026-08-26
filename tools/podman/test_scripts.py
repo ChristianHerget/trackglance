@@ -760,6 +760,25 @@ class StaticPreflightTest(unittest.TestCase):
             bootstrap.index("> /golden/.trackglance-bootstrap"),
         )
 
+    def test_bootstrap_closes_locus_and_waits_for_guest_shutdown_before_reuse(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        bootstrap = source.split("bootstrap() {", 1)[1].split("\n}", 1)[0]
+        force_stop = "adb_device shell am force-stop menion.android.locus"
+        sync = "adb_device shell sync"
+        marker = "> /golden/.trackglance-bootstrap"
+        emulator_kill = "adb_device emu kill"
+        container_wait = "wait_for_active_android_exit"
+
+        self.assertLess(bootstrap.index(force_stop), bootstrap.index(sync))
+        self.assertLess(bootstrap.index(sync), bootstrap.index(marker))
+        self.assertLess(bootstrap.index(marker), bootstrap.index(emulator_kill))
+        self.assertLess(bootstrap.index(emulator_kill), bootstrap.index(container_wait))
+
+        wait_helper = source.split("wait_for_active_android_exit() {", 1)[1].split(
+            "\n}", 1
+        )[0]
+        self.assertIn('timeout 60 "$ACCEPTANCE_ENGINE" wait', wait_helper)
+
 
 class PrivateApkFingerprintTest(unittest.TestCase):
     def fingerprint(self, directory: Path) -> str:

@@ -216,6 +216,13 @@ step summary records total durations. Keep pull requests on the existing publish
 both paths have identical behavioral results and the replacement demonstrates the intended
 setup-time saving. Local verification uses:
 
+The initial hosted comparison used the same four-CPU `ubuntu-24.04` class and test scope. The
+[source-built path](https://github.com/ChristianHerget/trackglance/actions/runs/32897640091)
+completed provisioning, all Android instrumentation, and Emery/Gabbro acceptance in 1,983 seconds.
+The [digest-pinned published path](https://github.com/ChristianHerget/trackglance/actions/runs/32939094054)
+completed the same behavior in 1,018 seconds, a 49% reduction. These timings cover provisioning and
+acceptance together; registry and runner cache conditions can change the absolute duration.
+
 ```sh
 GH_TOKEN="$(gh auth token)" ./tools/podman-test acceptance-suite \
   --published --cleanup --locus-apks /absolute/private/path
