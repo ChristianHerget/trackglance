@@ -1,3 +1,4 @@
+import json
 import pathlib
 import re
 import struct
@@ -53,6 +54,44 @@ def contrast_ratio(first: str, second: str) -> float:
 
 
 class DocumentationManualTest(unittest.TestCase):
+    def test_local_only_privacy_promise_and_boundaries_are_public_and_consistent(self):
+        listing = json.loads((ROOT / "appstore" / "listing.json").read_text(encoding="utf-8"))
+        surfaces = {
+            "README": (ROOT / "README.md").read_text(encoding="utf-8"),
+            "Features": (SPHINX / "features.rst").read_text(encoding="utf-8"),
+            "Privacy": (SPHINX / "legal.rst").read_text(encoding="utf-8"),
+            "App store": listing["description"],
+        }
+
+        for name, content in surfaces.items():
+            normalized = re.sub(r"\s+", " ", content.lower())
+            with self.subTest(surface=name):
+                for promise in (
+                    "local-only by design",
+                    "trackglance server",
+                    "account",
+                    "analytics",
+                    "hosted crash reporting",
+                    "network permission",
+                    "locus map",
+                    "pebble app",
+                    "user runtime data",
+                ):
+                    self.assertIn(promise, normalized)
+
+        privacy = re.sub(r"\s+", " ", surfaces["Privacy"])
+        for boundary in (
+            "does not collect or transmit user data to a TrackGlance service",
+            "at most 20 entries",
+            "excluded from Android backup and device transfer",
+            "locally and builds the settings screen as an offline page",
+            "not the full profile catalog or recorded track",
+            "own storage, synchronization, network, and privacy behavior",
+            "external browser",
+            "VirusTotal",
+        ):
+            self.assertIn(boundary, privacy)
+
     def test_navigation_starts_with_features_and_uses_one_user_guide(self):
         index = (SPHINX / "index.rst").read_text(encoding="utf-8")
 
