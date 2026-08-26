@@ -16,10 +16,32 @@ pause/resume, stop-and-save, and adding a waypoint. Up and Down wrap through the
 created for the active Locus activity. Pebble Time 2 can optionally forward its raw heart rate to
 Locus while recording; navigation and map previews remain out of scope.
 
-The Android bridge explicitly selects the local `coredevices.coreapp` package and verifies that
-incoming Binder calls resolve to that installed package and UID. Android's package manager enforces
-package-name uniqueness and signature-compatible updates, so no separate certificate enrollment is
-required. Only one watch is active at a time; opening another watch replaces the previous one.
+## Local-only by design
+
+TrackGlance has no TrackGlance server or account, analytics, or hosted crash reporting. The release
+Android Bridge has no network permission for runtime operation: it requests neither
+`android.permission.INTERNET` nor `android.permission.ACCESS_NETWORK_STATE`. Recording data and
+commands therefore stay on the device-local path between Locus Map, the Android Bridge, the Pebble
+App, Bluetooth/AppMessage, and the watch.
+
+The Bridge keeps its refresh preference only on the device, excludes it from Android backup and
+device transfer, and holds at most 20 recent diagnostics in process memory. The Pebble App stores
+the watch configuration and last Locus profile catalog locally; its TrackGlance settings page is a
+locally generated offline page. The watch persists only the active activity's small configuration
+projection and ordering counters, not the complete catalog or recorded track.
+
+This promise covers TrackGlance itself. Locus Map and the Pebble App are required, separate
+applications with their own storage, synchronization, network, and privacy behavior; it does not
+promise that either third-party app works fully offline. Installing the apps and downloading this
+documentation use their normal external services, and tapping the Bridge's legal link deliberately
+opens the page in the user's browser. Maintainers also submit release APK and PBW artifacts to
+VirusTotal; those build artifacts contain no user runtime data.
+
+The Android bridge explicitly selects the installed Pebble App package (`coredevices.coreapp`) and
+verifies that incoming Binder calls resolve to that package and UID. Android's package manager
+enforces package-name uniqueness and signature-compatible updates, so no separate certificate
+enrollment is required. Only one watch is active at a time; opening another watch replaces the
+previous one.
 Before clearing bridge storage or reinstalling the bridge, close the watchapp first, keep it closed
 through restart, and reopen it afterward so snapshot ordering starts from a
 coordinated new snapshot and profile-transfer ordering baseline.

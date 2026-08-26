@@ -13,8 +13,32 @@ At a glance
 * **Waypoints:** Save a quick waypoint from either watch or a dictated note from Pebble Time 2.
 * **Profile-aware setup:** Receive the Locus activity catalog and choose the metrics, order, page
   names, and watch theme in Watch Settings.
+* **Local-only by design:** Use TrackGlance without a TrackGlance server, account, analytics,
+  hosted crash reporting, or a network permission for runtime operation.
 
 See the :doc:`user-guide` for every on-watch control and setting.
+
+Local-only by design
+--------------------
+
+Recording metrics and commands stay on the device-local path between Locus Map, the Android
+Bridge, the Pebble App, Bluetooth/AppMessage, and the watch. TrackGlance has no TrackGlance server
+or account, analytics, or hosted crash reporting. Its release Android Bridge declares neither
+``android.permission.INTERNET`` nor ``android.permission.ACCESS_NETWORK_STATE``.
+
+The Bridge keeps only its refresh preference across launches. That preference stays on the device
+and is excluded from Android backup and device transfer. Its recent diagnostics are a bounded list
+of at most 20 entries held only in process memory. The Pebble App stores the complete watch
+configuration and last Locus profile catalog locally and opens a locally generated settings page
+with no network dependencies. The watch persists only the active activity's small configuration
+projection and ordering counters, not the full catalog or recorded track.
+
+These guarantees apply to TrackGlance itself. Locus Map and the Pebble App are required, separate
+applications with their own storage, synchronization, network, and privacy behavior; TrackGlance
+does not promise that either app works fully offline. Installation and documentation downloads use
+their normal external services. Tapping the Bridge's legal link opens this documentation in the
+user's browser. Maintainers submit release APK and PBW artifacts to VirusTotal for malware
+scanning, but those build artifacts contain no user runtime data.
 
 .. _heart-rate-feature:
 

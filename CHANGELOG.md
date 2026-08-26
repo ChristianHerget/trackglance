@@ -11,6 +11,8 @@ release is published.
   opt-ins, debug components, or unexpected exported Android components.
 - Manual captions now remain legible in light and dark browser themes, and phone-side screenshots
   use one consistent light theme.
+- TrackGlance's local-only privacy model, on-device data retention, third-party boundaries, and
+  release-artifact scanning are now documented in the manual and Pebble app-store description.
 
 ## 0.2.5 - 2026-08-26
 
