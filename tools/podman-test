@@ -24,7 +24,7 @@ GOLDEN_VOLUME=trackglance-android-api32-golden
 DOWNLOAD_VOLUME=trackglance-android-downloads
 GRADLE_CACHE=trackglance-gradle-cache
 NPM_CACHE=trackglance-npm-cache
-BOOTSTRAP_SCHEMA=3
+BOOTSTRAP_SCHEMA=4
 LOCUS_FIXTURE_CONFIG="$SCRIPT_DIR/locus-test-apk.properties"
 ACTIVE_POD=
 ACTIVE_ANDROID_CONTAINER=
@@ -358,8 +358,12 @@ build_emulator_image() {
     "$GENERATOR_IMAGE" bash -euo pipefail -c '
       emulator_zip=/downloads/emulator-linux_x64-15917651.zip
       system_zip=/downloads/x86_64-32_r08.zip
-      [[ -s "$emulator_zip" ]] || curl --fail --location --retry 4 "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
-      [[ -s "$system_zip" ]] || curl --fail --location --retry 4 "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
+      echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict >/dev/null 2>&1 \
+        || curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+          --continue-at - "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
+      echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict >/dev/null 2>&1 \
+        || curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
+          --continue-at - "$ANDROID_SYSTEM_IMAGE_URL" --output "$system_zip"
       echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict
       echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
       emu-docker create "$emulator_zip" "$system_zip" \
@@ -699,6 +703,15 @@ stop_active_pod() {
   fi
 }
 
+stop_active_android_gracefully() {
+  [[ -n "$ACTIVE_ANDROID_CONTAINER" ]] || die "No active Android container to stop."
+  timeout 75 "$ACCEPTANCE_ENGINE" stop --time 60 "$ACTIVE_ANDROID_CONTAINER" >/dev/null \
+    || die "Android emulator container did not stop within its graceful shutdown deadline."
+  local state
+  state=$("$ACCEPTANCE_ENGINE" inspect --format '{{.State.Status}}' "$ACTIVE_ANDROID_CONTAINER")
+  [[ "$state" == exited ]] || die "Android emulator container remained in state $state."
+}
+
 bootstrap() {
   parse_locus_apk_options "$@"
   local locus_dir=$LOCUS_INPUT_DIR
@@ -790,13 +803,18 @@ bootstrap() {
       core_apk=\$(sha256sum /workspace/build/podman/images/pebble-app-x86_64-debug.apk | cut -d' ' -f1)
       emulator_config=\$(sha256sum /workspace/tools/podman/android-emulator-entrypoint.sh | cut -d' ' -f1)
       fixture_config=\$(sha256sum /workspace/tools/locus-test-apk.properties | cut -d' ' -f1)
+      # Locus initializes and writes its PROJ database asynchronously. Close it and flush the
+      # guest filesystem before capturing the reusable volume so a cold clone cannot inherit a
+      # partially written SQLite database.
+      adb_device shell am force-stop menion.android.locus
+      adb_device shell sync
       printf 'bootstrap_schema=%s\\napi=32\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=$RELEASE_VERSION\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
         '$BOOTSTRAP_SCHEMA' '$ANDROID_EMULATOR_VERSION' '$ANDROID_SYSTEM_IMAGE_SHA256' \\
         \"\$emulator_config\" '$CORE_APP_COMMIT' \"\$core_apk\" \\
         \"\$fixture_config\" \"\$fingerprint\" \\
         > /golden/.trackglance-bootstrap
-      adb_device emu kill >/dev/null 2>&1 || true
     "
+  stop_active_android_gracefully
   stop_active_pod
   ACTIVE_DATA_VOLUME=
   acceptance_engine volume rm --force "$ACTIVE_RUNTIME_VOLUME" >/dev/null
@@ -1136,7 +1154,7 @@ acceptance_suite() {
 
 clean() {
   select_acceptance_engine
-  local pod container volume image
+  local pod container volume image cleanup_image='' cleanup_status=0
   if [[ "$ACCEPTANCE_ENGINE" == podman ]]; then
     while read -r pod; do
       [[ "$pod" == trackglance-* ]] && podman pod rm --force "$pod" >/dev/null
@@ -1153,12 +1171,29 @@ clean() {
   done < <(acceptance_engine volume ls --format '{{.Name}}' --filter name=trackglance-)
   if [[ -d "$BUILD_ROOT" ]]; then
     [[ "$BUILD_ROOT" == "$PROJECT_DIR/build/podman" ]] || die "Refusing unexpected clean path."
-    if [[ "$ACCEPTANCE_ENGINE" == docker ]] && acceptance_image_exists "$GENERATOR_IMAGE"; then
-      docker run --rm --volume "$BUILD_ROOT:/target" "$GENERATOR_IMAGE" \
-        find /target -mindepth 1 -delete
-      rmdir "$BUILD_ROOT"
+    if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
+      if acceptance_image_exists "$GENERATOR_IMAGE"; then
+        cleanup_image=$GENERATOR_IMAGE
+      elif [[ "$ACCEPTANCE_RUNNER_IMAGE" != UNPUBLISHED ]] \
+        && acceptance_image_exists "$ACCEPTANCE_RUNNER_IMAGE"; then
+        # BUILD_IMAGE is changed only inside the acceptance-suite provisioning subshell. Refer to
+        # the immutable runner pin directly so the outer cleanup can still remove Docker-owned
+        # workspace files after that subshell exits.
+        cleanup_image=$ACCEPTANCE_RUNNER_IMAGE
+      elif acceptance_image_exists "$BUILD_IMAGE"; then
+        # Published acceptance deliberately has no source-built generator image. Its runner may
+        # create root-owned files in the bind-mounted workspace, so clean them in a container too.
+        cleanup_image=$BUILD_IMAGE
+      fi
+    fi
+    if [[ -n "$cleanup_image" ]]; then
+      docker run --rm --volume "$BUILD_ROOT:/target" "$cleanup_image" \
+        find /target -mindepth 1 -delete || cleanup_status=$?
+      if (( cleanup_status == 0 )); then
+        rmdir "$BUILD_ROOT" || cleanup_status=$?
+      fi
     else
-      find "$BUILD_ROOT" -depth -delete
+      find "$BUILD_ROOT" -depth -delete || cleanup_status=$?
     fi
   fi
   for image in \
@@ -1173,6 +1208,7 @@ clean() {
   acceptance_network_exists "$NETWORK" \
     && acceptance_engine network rm "$NETWORK" >/dev/null || true
   echo "Removed acceptance images, volumes, containers, network, caches, and generated artifacts."
+  return "$cleanup_status"
 }
 
 main() {

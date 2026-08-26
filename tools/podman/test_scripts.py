@@ -19,6 +19,7 @@ E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 CI_IMAGE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-ci-images.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 BUILD_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.build"
@@ -119,27 +120,58 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_manual_acceptance_can_compare_source_and_published_provisioning(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("options: [source, published, compare]", source)
+        self.assertIn("default: published", source)
+        self.assertIn("inputs.acceptance_provisioning || 'published'", source)
         self.assertIn("run_suite Source --fresh", source)
         self.assertIn("run_suite Published --published", source)
         self.assertIn("build/acceptance-timings.txt", source)
+        run_suite = source.split("run_suite() {", 1)[1].split("\n          }", 1)[0]
+        self.assertIn('sudo setfacl -m "u:${USER}:rw" /dev/kvm', run_suite)
+        self.assertIn("test -w /dev/kvm", run_suite)
 
 
 class PublishedCiImageTest(unittest.TestCase):
-    def test_image_set_bootstraps_unpublished_and_requires_digest_pins_after_publication(self):
+    def test_image_set_uses_only_immutable_digest_pins(self):
         pins = CI_IMAGE_PINS.read_text(encoding="utf-8")
         self.assertIn("CI_IMAGE_SET_SCHEMA=1", pins)
-        self.assertEqual(pins.count("=UNPUBLISHED"), 3)
+        self.assertNotIn("=UNPUBLISHED", pins)
+        image_lines = [line for line in pins.splitlines() if line.startswith(("ACCEPTANCE_", "CODEQL_"))]
+        self.assertEqual(len(image_lines), 3)
+        for line in image_lines:
+            self.assertRegex(line, r"^[A-Z_]+_IMAGE=ghcr\.io/[a-z0-9/_.-]+@sha256:[a-f0-9]{64}$")
         source = PODMAN_TEST.read_text(encoding="utf-8")
         self.assertIn("require_published_ci_image_pins", source)
         self.assertIn("@sha256:[a-f0-9]{64}", source)
         self.assertIn('"$SCRIPT_DIR/verify-ci-image"', source)
         self.assertIn("build_project_inputs false false", source)
 
+    def test_local_signature_verification_uses_a_digest_pinned_cosign_fallback(self):
+        source = CI_IMAGE_VERIFIER.read_text(encoding="utf-8")
+        self.assertRegex(
+            source,
+            r"ghcr\.io/sigstore/cosign/cosign@sha256:[a-f0-9]{64}",
+        )
+        self.assertIn('if command -v cosign', source)
+        self.assertIn('"$engine" run --rm "$cosign_image"', source)
+
     def test_acceptance_runner_embeds_only_the_public_pebble_app_fixture(self):
         source = ACCEPTANCE_RUNNER_CONTAINERFILE.read_text(encoding="utf-8")
         self.assertIn("COPY build/podman/images/pebble-app-x86_64-debug.apk", source)
         for forbidden in ("locus.apk", "trackglance-bridge", ".pbw", ".p12", ".keystore"):
             self.assertNotIn(forbidden, source.lower())
+
+    def test_docker_cleanup_uses_the_published_runner_when_generator_is_absent(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        clean = source.split("clean() {", 1)[1].split("\n}\n\nmain()", 1)[0]
+        self.assertIn('acceptance_image_exists "$ACCEPTANCE_RUNNER_IMAGE"', clean)
+        self.assertIn('cleanup_image=$ACCEPTANCE_RUNNER_IMAGE', clean)
+        self.assertIn('docker run --rm --volume "$BUILD_ROOT:/target" "$cleanup_image"', clean)
+
+    def test_cleanup_does_not_mask_a_failed_artifact_deletion(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        clean = source.split("clean() {", 1)[1].split("\n}\n\nmain()", 1)[0]
+        self.assertIn('find "$BUILD_ROOT" -depth -delete || cleanup_status=$?', clean)
+        self.assertIn('return "$cleanup_status"', clean)
 
     def test_docker_context_excludes_everything_except_public_build_inputs(self):
         source = DOCKERIGNORE.read_text(encoding="utf-8")
@@ -154,6 +186,20 @@ class PublishedCiImageTest(unittest.TestCase):
         self.assertIn("TrackGlance Kotlin CodeQL toolchain", source)
         self.assertIn("command -v aapt2", source)
         self.assertNotIn("Containerfile.acceptance-runner", source)
+
+    def test_kotlin_codeql_traces_a_manual_gradle_build_in_the_pinned_image(self):
+        workflow = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        codeql_pin = next(
+            line.split("=", 1)[1]
+            for line in CI_IMAGE_PINS.read_text(encoding="utf-8").splitlines()
+            if line.startswith("CODEQL_KOTLIN_IMAGE=")
+        )
+        kotlin_job = workflow.split("  analyze-kotlin:", 1)[1]
+        self.assertIn(f"image: {codeql_pin}", kotlin_job)
+        self.assertIn("languages: java-kotlin", kotlin_job)
+        self.assertIn("build-mode: manual", kotlin_job)
+        self.assertIn(":android:app:assembleDebug", kotlin_job)
+        self.assertIn("category: /language:java-kotlin", kotlin_job)
 
     def test_image_invalidation_keys_cover_pins_and_relevant_inputs(self):
         source = CI_IMAGE_KEY.read_text(encoding="utf-8")
@@ -200,6 +246,59 @@ class PublishedCiImageTest(unittest.TestCase):
 
 
 class DeviceReadinessTest(unittest.TestCase):
+    def test_tap_text_targets_the_visible_part_of_a_clipped_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            fixture = temporary / "window.xml"
+            adb_log = temporary / "adb.log"
+            fixture.write_text(
+                textwrap.dedent(
+                    """\
+                    <hierarchy>
+                      <node bounds="[0,0][1080,2400]">
+                        <node class="android.widget.ScrollView" scrollable="true"
+                              bounds="[53,116][1027,2305]">
+                          <node bounds="[53,116][1027,1525]">
+                            <node clickable="true" bounds="[423,2261][658,2387]">
+                              <node text="Finished" bounds="[465,2297][605,2305]" />
+                            </node>
+                          </node>
+                        </node>
+                      </node>
+                    </hierarchy>
+                    """
+                ),
+                encoding="utf-8",
+            )
+            environment = {
+                **os.environ,
+                "ADB_LOG": str(adb_log),
+                "DEVICE_LIB": str(DEVICE_LIB),
+                "UI_FIXTURE": str(fixture),
+            }
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-euo",
+                    "pipefail",
+                    "-c",
+                    textwrap.dedent(
+                        """\
+                        source "$DEVICE_LIB"
+                        dump_ui() { cp "$UI_FIXTURE" /tmp/trackglance-window.xml; }
+                        adb_device() { printf '%s\\n' "$*" > "$ADB_LOG"; }
+                        tap_text Finished 2
+                        """
+                    ),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(adb_log.read_text().strip(), "shell input tap 540 2283")
+
     def test_tap_text_initializes_its_timeout_before_deadline_expansion(self):
         environment = {**os.environ, "DEVICE_LIB": str(DEVICE_LIB)}
         script = textwrap.dedent(
@@ -407,6 +506,21 @@ class CleanupScopeTest(unittest.TestCase):
 
 
 class StaticPreflightTest(unittest.TestCase):
+    def test_large_emulator_downloads_resume_and_retry_transport_failures(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        generator = source.split("build_emulator_image() {", 1)[1].split(
+            "\n}", 1
+        )[0]
+
+        self.assertEqual(generator.count("--retry-all-errors"), 2)
+        self.assertEqual(generator.count("--continue-at -"), 2)
+        system_checksum = 'echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip"'
+        system_download = 'curl --fail --location'
+        self.assertLess(
+            generator.index(system_checksum),
+            generator.index(system_download, generator.index(system_checksum)),
+        )
+
     def test_headless_acceptance_build_does_not_repeat_the_static_suite(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         build = source.split("build_acceptance_all() {", 1)[1].split("\n}", 1)[0]
@@ -713,6 +827,25 @@ class StaticPreflightTest(unittest.TestCase):
             bootstrap.index("wait_nonempty_status locus_profiles"),
             bootstrap.index("> /golden/.trackglance-bootstrap"),
         )
+
+    def test_bootstrap_closes_locus_and_waits_for_guest_shutdown_before_reuse(self):
+        source = PODMAN_TEST.read_text(encoding="utf-8")
+        bootstrap = source.split("bootstrap() {", 1)[1].split("\n}", 1)[0]
+        force_stop = "adb_device shell am force-stop menion.android.locus"
+        sync = "adb_device shell sync"
+        marker = "> /golden/.trackglance-bootstrap"
+        container_stop = "stop_active_android_gracefully"
+
+        self.assertLess(bootstrap.index(force_stop), bootstrap.index(sync))
+        self.assertLess(bootstrap.index(sync), bootstrap.index(marker))
+        self.assertLess(bootstrap.index(marker), bootstrap.index(container_stop))
+        self.assertNotIn("adb_device emu kill", bootstrap)
+
+        stop_helper = source.split("stop_active_android_gracefully() {", 1)[1].split(
+            "\n}", 1
+        )[0]
+        self.assertIn('stop --time 60 "$ACTIVE_ANDROID_CONTAINER"', stop_helper)
+        self.assertIn("{{.State.Status}}", stop_helper)
 
 
 class PrivateApkFingerprintTest(unittest.TestCase):

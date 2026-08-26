@@ -1,12 +1,16 @@
 package io.github.christianherget.trackglance.bridge.pebble
 
 import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallExecutor
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -114,9 +118,12 @@ class ResettableServiceConnectorTest {
 
     @Test
     fun cancelledConnectionAttemptIsResetBeforeTheNextSend() = runBlocking {
+        repeat(100) { assertCancelledConnectionAttemptIsReset() }
+    }
+
+    private suspend fun assertCancelledConnectionAttemptIsReset() = coroutineScope {
         val attempts = mutableListOf<FakeBindingAttempt>()
         val firstBindStarted = CompletableDeferred<Unit>()
-        val firstBindReturned = CompletableDeferred<Unit>()
         val workers = BoundedAbandonableCallExecutor(1, "binding-cancel-test")
         val connector =
             ResettableServiceConnector(
@@ -130,7 +137,6 @@ class ResettableServiceConnectorTest {
                                     } else {
                                         firstBindStarted.complete(Unit)
                                     }
-                                    firstBindReturned.complete(Unit)
                                     true
                                 }
                             )
@@ -143,7 +149,16 @@ class ResettableServiceConnectorTest {
         try {
             val first = async(start = CoroutineStart.UNDISPATCHED) { connector.getOrConnect() }
             firstBindStarted.await()
-            firstBindReturned.await()
+            withTimeout(5_000) {
+                while (true) {
+                    try {
+                        workers.run { Unit }
+                        break
+                    } catch (_: RejectedExecutionException) {
+                        yield()
+                    }
+                }
+            }
             first.cancelAndJoin()
             assertEquals(1, attempts.first().closeCount)
 

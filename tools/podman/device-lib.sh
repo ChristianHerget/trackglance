@@ -221,6 +221,28 @@ try:
 except Exception:
     raise SystemExit
 parents = {child: parent for parent in root.iter() for child in parent}
+
+def node_bounds(node):
+    values = [int(value) for value in re.findall(r'\d+', node.attrib.get('bounds',''))]
+    if len(values) != 4 or values[0] >= values[2] or values[1] >= values[3]:
+        return None
+    return values
+
+def intersect_bounds(first, second):
+    if first is None:
+        return second
+    if second is None:
+        return first
+    visible = [
+        max(first[0], second[0]),
+        max(first[1], second[1]),
+        min(first[2], second[2]),
+        min(first[3], second[3]),
+    ]
+    if visible[0] >= visible[2] or visible[1] >= visible[3]:
+        return None
+    return visible
+
 for node in root.iter('node'):
     text = (node.attrib.get('text','') + ' ' + node.attrib.get('content-desc','')).casefold()
     if needle in text:
@@ -229,9 +251,20 @@ for node in root.iter('node'):
             target = parents.get(target)
         if target is None:
             target = node
-        bounds = [int(value) for value in re.findall(r'\d+', target.attrib.get('bounds',''))]
-        if len(bounds) == 4:
-            print((bounds[0] + bounds[2]) // 2, (bounds[1] + bounds[3]) // 2)
+        # UiAutomator can expose a control's full layout bounds even when a scroll viewport clips
+        # it. Non-scrolling ancestors do not necessarily clip fixed-position WebView controls, so
+        # intersect only with actual scroll viewports.
+        visible_bounds = node_bounds(target)
+        ancestor = parents.get(target)
+        while ancestor is not None and visible_bounds is not None:
+            if ancestor.attrib.get('scrollable') == 'true':
+                visible_bounds = intersect_bounds(visible_bounds, node_bounds(ancestor))
+            ancestor = parents.get(ancestor)
+        if visible_bounds is not None:
+            print(
+                (visible_bounds[0] + visible_bounds[2]) // 2,
+                (visible_bounds[1] + visible_bounds[3]) // 2,
+            )
             break
 PY
 )
