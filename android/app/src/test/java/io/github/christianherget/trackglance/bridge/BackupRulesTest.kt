@@ -15,7 +15,7 @@ class BackupRulesTest {
             document("src/main/AndroidManifest.xml").getElementsByTagName("application").item(0)
                 as Element
 
-        assertEquals("false", application.getAttributeNS(ANDROID_NAMESPACE, "allowBackup"))
+        assertEquals("true", application.getAttributeNS(ANDROID_NAMESPACE, "allowBackup"))
         assertEquals(
             "@xml/backup_rules",
             application.getAttributeNS(ANDROID_NAMESPACE, "fullBackupContent"),

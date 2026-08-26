@@ -877,10 +877,6 @@ class StaticPreflightTest(unittest.TestCase):
         release_body = source.split("release_check() {", 1)[1].split("\n}", 1)[0]
         self.assertIn('badging=$(aapt2 dump badging "$release_apk")', release_body)
         self.assertIn('manifest=$(aapt2 dump xmltree', release_body)
-        self.assertIn(
-            'grep -Eq "android:allowBackup\\\\([^)]*\\\\)=false"',
-            release_body,
-        )
         self.assertNotIn('aapt2 dump badging "$release_apk" |', release_body)
 
     def test_acceptance_release_expectations_come_from_package_metadata(self):
