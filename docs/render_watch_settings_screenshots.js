@@ -46,7 +46,6 @@ async function main() {
   await page.locator('#generalCancel').click();
 
   await page.getByRole('button', { name: 'Edit activity Hiking' }).click();
-  await page.emulateMedia({ colorScheme: 'dark' });
   await page.screenshot({
     path: path.join(outputDirectory, 'watch_settings_profile.png'),
   });

@@ -197,6 +197,48 @@ textarea:focus-visible,
     text-decoration: underline;
 }
 
+.rst-content table.docutils caption,
+.rst-content .figure .caption,
+.rst-content figure figcaption {
+    background: var(--tg-background);
+    color: var(--tg-text);
+}
+
+.rst-content table.docutils caption .caption-text,
+.rst-content .figure .caption .caption-text,
+.rst-content figure figcaption .caption-text {
+    color: inherit;
+}
+
+.rst-content table.docutils caption .headerlink,
+.rst-content table.docutils caption .headerlink:visited,
+.rst-content .figure .caption .headerlink,
+.rst-content .figure .caption .headerlink:visited,
+.rst-content figure figcaption .headerlink,
+.rst-content figure figcaption .headerlink:visited {
+    color: var(--tg-primary);
+}
+
+@media (max-width: 600px) {
+    .rst-content .wy-table-responsive table.docutils:not(.field-list) {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .rst-content .wy-table-responsive table.docutils:not(.field-list) th,
+    .rst-content .wy-table-responsive table.docutils:not(.field-list) td {
+        padding: 6px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .rst-content .wy-table-responsive table.docutils:not(.field-list) td img {
+        display: block;
+        width: 100% !important;
+        height: auto;
+    }
+}
+
 .rst-content .admonition,
 .rst-content .topic,
 .rst-content .sidebar {

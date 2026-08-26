@@ -4,8 +4,8 @@ Android Bridge Settings
 The Android bridge connects the watchapp to Locus and reports whether each part of that connection
 is working.
 
-.. image:: _static/bridge_app_dark.png
-   :alt: TrackGlance Android Bridge status screen in dark mode with Pebble and Locus connected
+.. image:: _static/bridge_app_light.png
+   :alt: TrackGlance Android Bridge status screen in light mode with Pebble and Locus connected
    :align: center
    :width: 320px
 

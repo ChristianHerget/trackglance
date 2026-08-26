@@ -47,6 +47,13 @@ Android follows the system theme through `isSystemInDarkTheme()`. Web surfaces u
 `prefers-color-scheme`, with light as the fallback when the host does not expose a preference.
 TrackGlance uses its fixed brand palette and does not substitute Material You dynamic colors.
 
+Published phone-side screenshots use the light application theme so the Android Bridge and Watch
+Settings form one consistent sequence in both documentation themes. A dark screenshot is an
+intentional exception only when it demonstrates dark-mode behavior; its caption or surrounding
+text must explain that exception. Regenerate screenshots from the current release sources, and
+confirm that the Bridge version visible in the image matches the Sphinx, Android, and watchapp
+release versions before publication.
+
 ## Typography and layout
 
 Use the offline platform system-sans stack. Body text starts at 16px or the native platform
