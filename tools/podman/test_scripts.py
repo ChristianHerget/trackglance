@@ -132,6 +132,19 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             ),
             2,
         )
+        self.assertIn(
+            "language: [c-cpp, javascript-typescript, python, actions]",
+            source,
+        )
+        self.assertIn("languages: java-kotlin", source)
+        self.assertIn("build-mode: none", source)
+        self.assertIn("build-mode: manual", source)
+        self.assertEqual(source.count("queries: security-extended"), 2)
+        for category in (
+            "/language:${{ matrix.language }}",
+            "/language:java-kotlin",
+        ):
+            self.assertIn(f"category: {category}", source)
 
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
