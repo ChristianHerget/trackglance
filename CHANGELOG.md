@@ -7,6 +7,8 @@ release is published.
 
 - TrackGlance settings are no longer backed up to the cloud or transferred to another Android
   device.
+- Release builds now verify that dependencies cannot add network permissions, backup or cleartext
+  opt-ins, debug components, or unexpected exported Android components.
 
 ## 0.2.5 - 2026-08-26
 

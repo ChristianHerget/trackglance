@@ -1,0 +1,4 @@
+package: name='app.trackglance.bridge' versionCode='16' versionName='0.2.5'
+minSdkVersion:'24'
+targetSdkVersion:'36'
+uses-permission: name='app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
