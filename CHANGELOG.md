@@ -3,7 +3,7 @@
 User-visible TrackGlance changes are recorded here. Release dates replace **Unreleased** when a
 release is published.
 
-## 0.2.5 - Unreleased
+## 0.2.5 - 2026-08-26
 
 - Release notes now link to separate VirusTotal submissions for the signed Android APK and Pebble
   watch app. The links confirm successful submission and do not claim a clean scan verdict.
