@@ -3,6 +3,11 @@
 User-visible TrackGlance changes are recorded here. Release dates replace **Unreleased** when a
 release is published.
 
+## Unreleased
+
+- TrackGlance settings are no longer backed up to the cloud or transferred to another Android
+  device.
+
 ## 0.2.5 - 2026-08-26
 
 - Release notes now link to separate VirusTotal submissions for the signed Android APK and Pebble

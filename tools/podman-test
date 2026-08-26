@@ -894,6 +894,10 @@ release_check() {
     grep -Fq "versionName='\''$expected_version'\''" <<<"$badging"
     grep -Fq "minSdkVersion:'\''24'\''" <<<"$badging"
     manifest=$(aapt2 dump xmltree --file AndroidManifest.xml "$release_apk")
+    if ! grep -Eq "android:allowBackup\\([^)]*\\)=false" <<<"$manifest"; then
+      echo "Android backup is enabled in the release APK." >&2
+      exit 1
+    fi
     if grep -Fq DebugStatusProvider <<<"$manifest"; then
       echo "DebugStatusProvider leaked into the release APK." >&2
       exit 1
