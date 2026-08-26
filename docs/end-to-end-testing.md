@@ -531,7 +531,13 @@ translation, an ARM target, or a CoreApp source build containing the target ABI.
 
 ### Command state after bridge process restart
 
-The command deduplication journal, snapshot-ordering epochs, and profile-transfer serials are stored in-memory in the Android bridge process. If the Android process is forcefully killed or crashes, this state is lost. Upon restarting the process, the bridge establishes a new epoch baseline seeded from the system clock. Any command that was pending or retried while the bridge was down may be executed by the fresh bridge without deduplication. Ordinary refresh preferences remain eligible for Android cloud backup and device transfer.
+The command deduplication journal, snapshot-ordering epochs, and profile-transfer serials are
+stored in-memory in the Android bridge process. If the Android process is forcefully killed or
+crashes, this state is lost. Upon restarting the process, the bridge establishes a new epoch
+baseline seeded from the system clock. Any command that was pending or retried while the bridge
+was down may be executed by the fresh bridge without deduplication. The ordinary refresh
+preference remains only on the current device; Android cloud backup and device transfer are
+disabled for all TrackGlance data.
 
 ### ARCVM shows `PlaceholderActivity`
 
