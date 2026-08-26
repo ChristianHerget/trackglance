@@ -20,6 +20,7 @@ RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
+DEPENDENCY_REVIEW_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-review.yml"
 CI_IMAGE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-ci-images.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 BUILD_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.build"
@@ -108,6 +109,26 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
+    def test_dependency_review_is_one_pull_request_only_node24_check(self):
+        source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
+        expected_action = (
+            "actions/dependency-review-action@"
+            "a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0"
+        )
+        permissions = source.split("permissions:\n", 1)[1].split("\njobs:\n", 1)[0]
+        job = source.split("  review:\n", 1)[1]
+
+        self.assertIn("  pull_request:\n    branches: [main]", source)
+        for unwanted_event in ("push:", "schedule:", "workflow_dispatch:"):
+            self.assertNotIn(unwanted_event, source)
+        self.assertEqual(permissions.strip(), "contents: read")
+        self.assertNotIn("write", permissions)
+        self.assertEqual(source.count("uses:"), 1)
+        self.assertEqual(source.count(expected_action), 1)
+        self.assertIn("name: Dependency review", job)
+        self.assertIn("fail-on-severity: high", job)
+        self.assertIn("fail-on-scopes: runtime, development, unknown", job)
+
     def test_codeql_actions_use_one_reviewed_v4_full_sha(self):
         source = CODEQL_WORKFLOW.read_text(encoding="utf-8")
         expected_pin = (
