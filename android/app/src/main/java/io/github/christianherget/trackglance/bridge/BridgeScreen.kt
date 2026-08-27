@@ -55,6 +55,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.christianherget.trackglance.bridge.core.BridgeFailure
 import io.github.christianherget.trackglance.bridge.core.BridgeFailureKind
 import io.github.christianherget.trackglance.bridge.core.BridgeStatus
@@ -64,12 +65,37 @@ import io.github.christianherget.trackglance.bridge.core.RefreshMode
 import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.flow.StateFlow
 
 private enum class StatusTone {
     POSITIVE,
     NEUTRAL,
     WARNING,
     ERROR,
+}
+
+@Composable
+internal fun LifecycleAwareBridgeScreen(
+    statusFlow: StateFlow<BridgeStatus>,
+    diagnosticEntriesFlow: StateFlow<List<DiagnosticEntry>>,
+    refreshModeFlow: StateFlow<RefreshMode>,
+    versionName: String,
+    onRefreshModeSelected: (RefreshMode) -> Unit,
+    onClearDiagnostics: () -> Unit,
+    onOpenLegal: () -> Unit,
+) {
+    val status by statusFlow.collectAsStateWithLifecycle()
+    val diagnosticEntries by diagnosticEntriesFlow.collectAsStateWithLifecycle()
+    val refreshMode by refreshModeFlow.collectAsStateWithLifecycle()
+    BridgeScreen(
+        status = status,
+        diagnosticEntries = diagnosticEntries,
+        refreshMode = refreshMode,
+        versionName = versionName,
+        onRefreshModeSelected = onRefreshModeSelected,
+        onClearDiagnostics = onClearDiagnostics,
+        onOpenLegal = onOpenLegal,
+    )
 }
 
 @Composable

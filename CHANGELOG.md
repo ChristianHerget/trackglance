@@ -13,6 +13,8 @@ release is published.
   use one consistent light theme.
 - TrackGlance's local-only privacy model, on-device data retention, third-party boundaries, and
   release-artifact scanning are now documented in the manual and Pebble app-store description.
+- The Android Bridge now pauses screen-state collection while it is not visible and immediately
+  catches up with the latest status when reopened.
 
 ## 0.2.5 - 2026-08-26
 
