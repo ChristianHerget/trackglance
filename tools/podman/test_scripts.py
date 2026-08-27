@@ -110,6 +110,22 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
+    def test_validation_uses_protected_pull_requests_without_duplicate_main_pushes(self):
+        ci = CI_WORKFLOW.read_text(encoding="utf-8")
+        ci_events = ci.split("permissions:\n", 1)[0]
+        self.assertIn(
+            "  push:\n    tags: ['v*']\n  pull_request:\n    branches: [main]",
+            ci_events,
+        )
+        self.assertNotIn("branches: [main]", ci_events.split("  pull_request:\n", 1)[0])
+
+        codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        codeql_events = codeql.split("permissions:\n", 1)[0]
+        self.assertNotIn("  push:", codeql_events)
+        self.assertIn("  pull_request:\n    branches: [main]", codeql_events)
+        self.assertIn("  schedule:", codeql_events)
+        self.assertIn("  workflow_dispatch:", codeql_events)
+
     def test_dependency_review_is_one_pull_request_only_node24_check(self):
         source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
         expected_action = (
