@@ -5,6 +5,9 @@
             android:name=".BridgeScreenshotActivity"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <activity
+            android:name=".LifecycleCollectionTestActivity"
+            android:exported="false" />
         <provider
             android:name=".DebugStatusProvider"
             android:authorities="${applicationId}.debug-status"

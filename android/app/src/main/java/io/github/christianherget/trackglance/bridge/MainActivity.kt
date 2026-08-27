@@ -7,7 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
@@ -222,13 +221,10 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun DiagnosticsScreen() {
-        val status by BridgeState.status.collectAsState()
-        val diagnosticEntries by RecentDiagnostics.entries.collectAsState()
-        val refreshMode by refreshModePreference.selection.collectAsState()
-        BridgeScreen(
-            status = status,
-            diagnosticEntries = diagnosticEntries,
-            refreshMode = refreshMode,
+        LifecycleAwareBridgeScreen(
+            statusFlow = BridgeState.status,
+            diagnosticEntriesFlow = RecentDiagnostics.entries,
+            refreshModeFlow = refreshModePreference.selection,
             versionName = BuildConfig.VERSION_NAME,
             onRefreshModeSelected = { mode ->
                 refreshModePreference.select(mode)
