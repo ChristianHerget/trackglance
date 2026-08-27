@@ -1589,17 +1589,21 @@ static void accept_recording_context(DictionaryIterator *iterator) {
   const bool changed = !s_context_active || strcmp(id, s_current_locus_id) != 0;
   copy_text(s_current_locus_id, sizeof(s_current_locus_id), id);
   s_context_active = true;
-  if (changed) {
+  s_activity_ready = strcmp(s_current_locus_id, s_config_locus_id) == 0;
+  const WatchContextDecision decision =
+      watch_maintenance_context_decision(changed, s_activity_ready);
+  if (decision.reset_projection_ui) {
     s_selected = 0;
     s_context_started = current_second();
     s_profile_preparation_escalated = false;
   }
-  s_activity_ready = strcmp(s_current_locus_id, s_config_locus_id) == 0;
   if (s_activity_ready) s_profile_preparation_escalated = true;
   layout_slots();
   render();
-  request_runtime_config();
-  send_next();
+  if (decision.request_runtime_config) {
+    request_runtime_config();
+    send_next();
+  }
   schedule_maintenance();
 }
 

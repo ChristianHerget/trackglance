@@ -33,6 +33,7 @@ assert(source.includes('i18n_text(I18N_PREPARING_PROFILE)'));
 assert(source.includes('i18n_text(I18N_OPEN_WATCH_SETTINGS)'));
 assert(source.includes('s_context_started + 15'));
 assert(source.includes('s_last_runtime_config_request + 60'));
+assert(source.includes('watch_maintenance_context_decision(changed, s_activity_ready)'));
 assert(source.includes('switch_page(-1)') && source.includes('switch_page(1)'));
 assert(source.includes('(s_selected + direction + s_profile_count) % s_profile_count'));
 assert(source.includes(String.raw`"%s \xc2\xb7 %d/%d%s"`));

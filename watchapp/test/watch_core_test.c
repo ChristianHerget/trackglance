@@ -111,6 +111,18 @@ static void test_watch_maintenance_planner(void) {
   assert(!watch_maintenance_should_schedule_reconciliation(true, true, true));
   assert(!watch_maintenance_should_schedule_reconciliation(false, true, false));
   assert(!watch_maintenance_should_schedule_reconciliation(true, false, false));
+  WatchContextDecision context = watch_maintenance_context_decision(true, true);
+  assert(context.reset_projection_ui);
+  assert(context.request_runtime_config);
+  context = watch_maintenance_context_decision(true, false);
+  assert(context.reset_projection_ui);
+  assert(context.request_runtime_config);
+  context = watch_maintenance_context_decision(false, false);
+  assert(!context.reset_projection_ui);
+  assert(context.request_runtime_config);
+  context = watch_maintenance_context_decision(false, true);
+  assert(!context.reset_projection_ui);
+  assert(!context.request_runtime_config);
 
   WatchMaintenanceDeadlines deadlines = {0};
   deadlines.active = WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_NO_BRIDGE) |

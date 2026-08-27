@@ -11,6 +11,14 @@ bool watch_maintenance_should_schedule_reconciliation(bool context_active, bool 
   return context_active && has_profile_id && !request_pending;
 }
 
+WatchContextDecision watch_maintenance_context_decision(bool context_changed,
+                                                        bool projection_ready) {
+  return (WatchContextDecision){
+      .reset_projection_ui = context_changed,
+      .request_runtime_config = context_changed || !projection_ready,
+  };
+}
+
 WatchMaintenancePlan watch_maintenance_plan(const WatchMaintenanceDeadlines *deadlines,
                                             WatchMaintenanceClock now) {
   WatchMaintenancePlan plan = {0};

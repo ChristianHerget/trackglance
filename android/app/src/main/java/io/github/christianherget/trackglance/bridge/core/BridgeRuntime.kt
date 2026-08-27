@@ -58,6 +58,7 @@ internal constructor(
     private val admissionCurrent: (TrustAdmission) -> Boolean = { true },
 ) : AutoCloseable {
     private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
+    private val recordingContextDelivery = RecordingContextDeliveryTracker<AdmittedWatch>()
     private val lifecycleLock = Any()
     private val childJobs = mutableSetOf<Job>()
     private val heartRateGate = HeartRateSampleGate()
@@ -169,6 +170,7 @@ internal constructor(
                     if (!activeWatches.observed(target)) return false
                     false
                 }
+            if (markTransition) recordingContextDelivery.invalidateAll()
             BridgeState.update {
                 it.copy(watchAppOpen = true, lastError = if (markTransition) null else it.lastError)
             }
@@ -208,7 +210,8 @@ internal constructor(
         admission: TrustAdmission,
     ) {
         synchronized(lifecycleLock) {
-            activeWatches.closed(AdmittedWatch(watch, admission))
+            val target = AdmittedWatch(watch, admission)
+            if (activeWatches.closed(target)) recordingContextDelivery.invalidate(target)
             if (activeWatches.isEmpty()) {
                 updateJob?.cancel()
                 updateJob = null
@@ -223,6 +226,7 @@ internal constructor(
         }
         synchronized(lifecycleLock) {
             activeWatches.clear()
+            recordingContextDelivery.invalidateAll()
             childJobs.toList().forEach { it.cancel() }
             childJobs.clear()
             updateJob = null
@@ -464,6 +468,13 @@ internal constructor(
         snapshot: BridgeProtocol.Snapshot,
         targets: Collection<AdmittedWatch>,
     ): Boolean {
+        val target = targets.singleOrNull() ?: return false
+        if (
+            snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
+                snapshot.state != BridgeProtocol.RecordingState.PAUSED
+        ) {
+            recordingContextDelivery.invalidate(target)
+        }
         if (!sendToAdmittedTargets(PebbleMessages.snapshot(snapshot), targets)) return false
         if (
             snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
@@ -479,10 +490,15 @@ internal constructor(
             profile = resolveActiveProfile(snapshot)
         }
         if (profile == null) return true
-        return sendToAdmittedTargets(
-            PebbleMessages.recordingContext(snapshot.state, profile),
-            targets,
+        val attempt = recordingContextDelivery.begin(target, profile.id.toString()) ?: return true
+        if (
+            !sendToAdmittedTargets(
+                PebbleMessages.recordingContext(snapshot.state, profile),
+                targets,
+            )
         )
+            return false
+        return recordingContextDelivery.commit(attempt)
     }
 
     private fun resolveActiveProfile(
@@ -527,6 +543,15 @@ internal constructor(
         admission: TrustAdmission,
     ): Boolean {
         return refreshTargets(listOf(AdmittedWatch(watch, admission)))
+    }
+
+    suspend fun recoverSnapshot(
+        watch: WatchIdentifier,
+        admission: TrustAdmission,
+    ): Boolean {
+        val target = AdmittedWatch(watch, admission)
+        recordingContextDelivery.invalidate(target)
+        return deliverSnapshot(listOf(target), BridgeFailureKind.SNAPSHOT_DELIVERY_FAILED)
     }
 
     private suspend fun refreshTargets(targets: Collection<AdmittedWatch>): Boolean =
@@ -654,6 +679,7 @@ internal constructor(
 
     override fun close() {
         synchronized(lifecycleLock) {
+            recordingContextDelivery.invalidateAll()
             childJobs.toList().forEach { it.cancel() }
             childJobs.clear()
             updateJob = null

@@ -22,7 +22,7 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "test": "node test/config.test.js && node test/protocol_parity.test.js && node test/c_core.test.js && node test/watch_stack.test.js",
+    "test": "node test/config.test.js && node test/runtime_events.test.js && node test/protocol_parity.test.js && node test/c_core.test.js && node test/watch_stack.test.js",
     "lint": "eslint src/pkjs test eslint.config.js",
     "verify:pbw": "node test/pbw.test.js"
   },

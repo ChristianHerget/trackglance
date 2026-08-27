@@ -75,7 +75,12 @@ exist. The official Locus `UpdateContainer` documents `trackRecStats` only durin
 
 Type 10 carries state plus key 51 as a decimal ID and key 9 as current display name when Android can
 resolve the active name through its latest catalog. Context is separate so a 255-byte Locus name
-cannot push telemetry over 512 bytes. A new active ID resets page selection to page 1.
+cannot push telemetry over 512 bytes. Android sends context after the corresponding snapshot only
+when the active trusted watch has not acknowledged that resolved ID, the ID changed, lifecycle or
+trust state invalidated it, an explicit type-4 recovery was accepted, or an earlier context delivery
+failed. Recording/paused and display-name-only changes for the same ID remain snapshot-only. A new
+active ID resets page selection to page 1; an unchanged duplicate with an installed projection does
+not reset the page or request configuration.
 
 ## Locus catalog
 
@@ -108,9 +113,14 @@ applied, `8` invalid, and `9` storage failure. Legacy queued result `7` remains 
 applies a valid active projection immediately and obsolete full-config pending journals do not
 control the cache.
 
-Type 11 carries key 51 and the watch's cached fingerprints. PKJS sends a projection when the ID is
-known and either fingerprint differs. The watch requests this on context arrival and every 60
-seconds. Display names may repeat, but stable page IDs remain unique. Unnamed active slots are
+Type 11 carries key 51 and the watch's cached fingerprints. `(0, 0)` is the missing-projection
+sentinel. PKJS first records the requested active ID, then sends a projection only when the ID is
+known and the sentinel is present or either fingerprint differs; matching fingerprints suppress a
+transfer even after PKJS restart. The watch requests this for new/changed context, when the matching
+projection is missing, and at most once every 60 seconds after the last successfully queued request.
+A fresh catalog pushes the known active projection only when reconciliation changes the canonical
+fingerprints. A successful Watch Settings save continues to push the known active projection
+immediately. Display names may repeat, but stable page IDs remain unique. Unnamed active slots are
 projected as localized `Page N`, numbered among active pages, so fingerprints include watch locale.
 A refresh preserves the selected stable page ID if present, otherwise page 1.
 

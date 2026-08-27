@@ -216,7 +216,8 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         }
         return when (type) {
             BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire -> {
-                if (runtime.refresh(watch, admission)) ReceiveResult.Ack else ReceiveResult.Nack
+                if (runtime.recoverSnapshot(watch, admission)) ReceiveResult.Ack
+                else ReceiveResult.Nack
             }
             BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire -> {
                 if (runtime.sendRecordingProfiles(watch, admission)) {

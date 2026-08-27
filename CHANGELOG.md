@@ -6,6 +6,8 @@ release is published.
 ## Unreleased
 
 - Reduced idle watch wakeups by scheduling maintenance only when pending work reaches its deadline.
+- Reduced Bluetooth traffic during unchanged recordings by deduplicating recording context and
+  transferring watch configuration only when its fingerprints differ.
 
 ## 0.2.6 - 2026-08-27
 

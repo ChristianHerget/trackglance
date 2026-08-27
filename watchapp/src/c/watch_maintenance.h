@@ -33,11 +33,18 @@ typedef struct {
   uint32_t delay_ms;
 } WatchMaintenancePlan;
 
+typedef struct {
+  bool reset_projection_ui;
+  bool request_runtime_config;
+} WatchContextDecision;
+
 #define WATCH_MAINTENANCE_BIT(kind) (1u << (kind))
 
 bool watch_maintenance_reached(uint32_t now, uint32_t deadline);
 bool watch_maintenance_should_schedule_reconciliation(bool context_active, bool has_profile_id,
                                                       bool request_pending);
+WatchContextDecision watch_maintenance_context_decision(bool context_changed,
+                                                        bool projection_ready);
 WatchMaintenancePlan watch_maintenance_plan(const WatchMaintenanceDeadlines *deadlines,
                                             WatchMaintenanceClock now);
 
