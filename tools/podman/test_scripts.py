@@ -113,11 +113,9 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_validation_uses_protected_pull_requests_without_duplicate_main_pushes(self):
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
         ci_events = ci.split("permissions:\n", 1)[0]
-        self.assertIn(
-            "  push:\n    tags: ['v*']\n  pull_request:\n    branches: [main]",
-            ci_events,
-        )
-        self.assertNotIn("branches: [main]", ci_events.split("  pull_request:\n", 1)[0])
+        self.assertNotIn("  push:", ci_events)
+        self.assertIn("  pull_request:\n    branches: [main]", ci_events)
+        self.assertIn("  workflow_dispatch:", ci_events)
 
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
         codeql_events = codeql.split("permissions:\n", 1)[0]
@@ -187,7 +185,7 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("branches: [main]", source)
-        self.assertIn("tags: ['v*']", source)
+        self.assertNotIn("tags: ['v*']", source)
         self.assertIn("github.event_name == 'pull_request'", source)
         self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
         self.assertIn("tools/podman-test acceptance-suite", source)
