@@ -198,10 +198,15 @@ intentional and reviewed:
 The first resolution may use the network; a populated cache can subsequently run the lightweight
 Gradle tasks with `--offline`. CI mirrors this split: public static checks and documentation are
 separate. Every pull request also runs full KVM acceptance on an ephemeral GitHub-hosted Docker
-runner, downloads the pinned public Locus fixture, and bootstraps from scratch. The same test stages
-run locally with the private fixture through `./tools/podman-test acceptance-suite --locus-apks
+runner. The job verifies and pulls the signed, digest-pinned prebuilt GHCR runner and emulator,
+downloads the pinned public Locus fixture, creates fresh golden state, and tests the current
+TrackGlance build. Protected `main` relies on these required pull-request results instead of
+rerunning CI or CodeQL after the merge; tag CI, scheduled CodeQL, and manual dispatch remain
+available. The same test stages run locally with the private fixture through
+`./tools/podman-test acceptance-suite --locus-apks
 /home/christian/.local/share/trackglance-acceptance/locus-apks`; this warm path preserves caches and
-the validated golden state for fast feedback.
+the validated golden state for fast feedback. Use `--published --cleanup` to reproduce hosted
+provisioning locally, and reserve `--fresh --cleanup` for source-provisioning or image comparisons.
 
 The real Locus contract test is deliberately opt-in and non-mutating. It requires idle Locus,
 validates numeric recording-profile identities, and confirms that obsolete Start command `1` is

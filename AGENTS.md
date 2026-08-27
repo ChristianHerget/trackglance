@@ -65,12 +65,15 @@ into an image, repository, Actions artifact, or persistent cache:
 ./tools/podman-test acceptance-suite --locus-apks /absolute/private/path
 ```
 
-The required pull-request GitHub-hosted path uses Docker, downloads the official public fixture with
+The required pull-request GitHub-hosted path uses Docker and the signed, digest-pinned prebuilt
+acceptance runner and emulator from GHCR. It downloads the official public fixture with
 `tools/download-locus-apk` into `$RUNNER_TEMP`, validates every pin in
-`tools/locus-test-apk.properties`, performs headless bootstrap, and runs Android, Emery, and Gabbro
-acceptance once. Manual dispatch can select a second Emery/Gabbro pass as a soak test. The local
-`acceptance-suite` command reuses the validated golden state by default; `--fresh --cleanup` matches
-the hosted provisioning lifecycle but is intentionally slower and removes generated acceptance state.
+`tools/locus-test-apk.properties`, creates fresh golden state, builds the current TrackGlance
+artifacts, and runs Android, Emery, and Gabbro acceptance once. Manual dispatch can select a second
+Emery/Gabbro pass as a soak test or compare source and published provisioning. The local
+`acceptance-suite` command reuses the validated golden state by default. Use `--published --cleanup`
+to reproduce the required hosted provisioning path; reserve the slower `--fresh --cleanup` source
+build for CI-image changes and source-versus-published comparisons.
 
 Published CI images are immutable GHCR digest references from `tools/ci-images.env`. Update them
 only from the protected `Publish CI images` workflow, retain its provenance/SBOM attestations and
@@ -115,12 +118,17 @@ complement, but do not replace, QEMU.
 History uses short imperative subjects such as `Route resume through Locus start action`. Keep each
 commit focused and include tests with behavioral fixes. Pull requests should explain user-visible
 behavior, list verified commands and hardware/platforms, link relevant issues, and include watch
-photos or screenshots for layout changes. Before opening a pull request, run the full local acceptance
-suite with the hosted-equivalent lifecycle:
+photos or screenshots for layout changes. The protected pull-request workflow is the authoritative
+full acceptance gate and uses the published GHCR image set. Run focused local checks appropriate to
+the change before opening a pull request. For changes that affect Android/watch runtime behavior or
+the acceptance harness, a warm local suite provides useful end-to-end feedback:
 
 ```sh
-./tools/podman-test acceptance-suite --fresh --cleanup --locus-apks /absolute/private/path
+./tools/podman-test acceptance-suite --locus-apks /absolute/private/path
 ```
 
-Do not treat static checks, a prepared-emulator smoke test, or hosted CI as a substitute for this local
-prerequisite. Never commit SDK paths, generated builds, signing keys, or third-party CoreApp source.
+Use `--published --cleanup` only when reproducing the hosted lifecycle locally. Use
+`--fresh --cleanup` when changing acceptance provisioning or validating a replacement published
+image set. Do not duplicate full acceptance for documentation, workflow, or other changes that
+cannot affect runtime behavior. Never commit SDK paths, generated builds, signing keys, or
+third-party CoreApp source.
