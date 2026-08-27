@@ -59,6 +59,12 @@ def main():
     if args.version == current:
         raise SystemExit(f"version is already {current}")
 
+    changelog = root / "CHANGELOG.md"
+    changelog_content = changelog.read_text(encoding="utf-8")
+    changelog_marker = "## Unreleased"
+    if changelog_content.count(changelog_marker) != 1:
+        raise ValueError(f"expected one {changelog_marker} changelog section")
+
     android_path = root / "android/app/build.gradle.kts"
     android = android_path.read_text(encoding="utf-8")
     code = int(re.search(r"versionCode = ([0-9]+)", android).group(1))
@@ -90,13 +96,11 @@ def main():
         if relative.endswith("package-lock.json"):
             data["packages"][""]["version"] = args.version
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    changelog = root / "CHANGELOG.md"
-    content = changelog.read_text(encoding="utf-8")
-    marker = f"## {current} - Unreleased"
-    if marker in content:
-        content = content.replace(marker, f"## {current} - {date.today().isoformat()}", 1)
-    heading_end = content.index("\n\n") + 2
-    content = content[:heading_end] + f"## {args.version} - Unreleased\n\n- Describe user-visible changes.\n\n" + content[heading_end:]
+    content = changelog_content.replace(
+        changelog_marker,
+        f"## Unreleased\n\n## {args.version} - {date.today().isoformat()}",
+        1,
+    )
     changelog.write_text(content, encoding="utf-8")
     print(f"Bumped TrackGlance {current} -> {args.version}; Android versionCode {code} -> {code + 1}")
 

@@ -54,7 +54,17 @@ class BumpVersionTest(unittest.TestCase):
         self.assertIn(f"versionCode = {code + 1}", android)
         self.assertIn(f'versionName = "{next_version}"', android)
         self.assertNotIn(current.group(0), android)
-        self.assertIn(f"## {next_version} - Unreleased", (self.root / "CHANGELOG.md").read_text())
+        changelog = (self.root / "CHANGELOG.md").read_text()
+        self.assertIn(f"## Unreleased\n\n## {next_version}", changelog)
+        self.assertRegex(changelog, rf"## {re.escape(next_version)} - [0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}")
+        self.assertLess(changelog.index("## Unreleased"), changelog.index(f"## {next_version}"))
+
+    def test_rejects_changelog_without_unreleased_section(self):
+        changelog = self.root / "CHANGELOG.md"
+        changelog.write_text(changelog.read_text().replace("## Unreleased", "## Next"))
+        android_before = (self.root / "android/app/build.gradle.kts").read_text()
+        self.assertNotEqual(0, self.run_tool("9.9.8").returncode)
+        self.assertEqual(android_before, (self.root / "android/app/build.gradle.kts").read_text())
 
     def test_rejects_mismatched_current_sources(self):
         package = self.root / "watchapp/package.json"
