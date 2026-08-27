@@ -763,18 +763,16 @@ class StaticPreflightTest(unittest.TestCase):
 
     def test_emery_retries_the_streamed_heart_rate_during_locus_ingestion(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
-        recording = 'wait_status recording_state RECORDING 30'
         heart_rate = "relayctl heart-rate 123 --quality excellent"
         locus_foreground = "foreground_locus"
         self.assertIn(locus_foreground, e2e_stage)
         emery = e2e_stage.split('if [[ "$PEBBLE_PLATFORM" == "emery" ]]', 1)[1]
-        self.assertLess(emery.index(locus_foreground), emery.index('watch_button select'))
-        foregrounded = emery[emery.index(locus_foreground):]
+        step_flow = e2e_stage.split("run_step_acceptance() {", 1)[1].split("\n}", 1)[0]
         self.assertLess(
-            foregrounded.index("set_emulator_test_location"),
-            foregrounded.index('watch_button select'),
+            step_flow.index(locus_foreground),
+            step_flow.index("set_emulator_test_location"),
         )
-        self.assertLess(emery.index(recording), emery.index(heart_rate))
+        self.assertLess(emery.index("run_step_acceptance"), emery.index(heart_rate))
         self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
         self.assertIn("watch_heart_rate_deadline=$((SECONDS + 30))", e2e_stage)
         self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
@@ -782,6 +780,27 @@ class StaticPreflightTest(unittest.TestCase):
             e2e_stage.index('tap_text "Apps"'),
             e2e_stage.index('tap_text "TrackGlance"'),
         )
+
+    def test_emery_and_gabbro_exercise_deterministic_watch_steps(self):
+        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
+        step_flow = e2e_stage.split("run_step_acceptance() {", 1)[1].split("\n}", 1)[0]
+        for expected in (
+            "relayctl steps 1000",
+            "wait_status watch_steps 0",
+            "relayctl steps 1012",
+            "wait_status watch_steps 12",
+            "wait_status recording_state PAUSED",
+            "relayctl steps 5",
+            "wait_status watch_steps 17",
+            "wait_status watch_steps NULL",
+            'watch_screenshot "${PEBBLE_PLATFORM}-steps-unavailable"',
+            'watch_screenshot "${PEBBLE_PLATFORM}-steps-recovered"',
+        ):
+            self.assertIn(expected, step_flow)
+        branches = e2e_stage.split('if [[ "$PEBBLE_PLATFORM" == "emery" ]]', 1)[1]
+        emery, gabbro = branches.split("\nelse\n", 1)
+        self.assertIn("run_step_acceptance", emery)
+        self.assertIn("run_step_acceptance", gabbro)
 
     def test_static_path_does_not_require_acceptance_inputs(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")

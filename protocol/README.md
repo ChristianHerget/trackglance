@@ -1,7 +1,7 @@
-# Bridge protocol v4
+# Bridge protocol v5
 
-Protocol v4 is retained for release 0.2.6. The `0.2.6` APK and PBW must be upgraded together;
-receivers require both protocol `4` and exact release `0.2.6`. The watchapp UUID is
+The APK and PBW must be upgraded together; receivers require protocol `5` and the exact matching
+release, currently `0.2.6`. The watchapp UUID is
 `51c8d7cf-4cb2-4ef8-98c9-641706feb250`.
 
 Every AppMessage dictionary is smaller than the 512-byte inbox/outbox allocation. Strings are UTF-8
@@ -25,6 +25,7 @@ before calling Locus.
 | 9 | watch → PKJS | config result |
 | 10 | Android → watch | recording context |
 | 11 | watch → PKJS | runtime-config request/reconciliation |
+| 12 | watch → Android | best-effort Pebble Health step delta |
 
 ## Keys
 
@@ -55,6 +56,9 @@ before calling Locus.
 | 51 | decimal Locus recording-profile ID |
 | 52 | canonical-config fingerprint A (unsigned 32-bit FNV-1a) |
 | 53 | canonical-config fingerprint B (unsigned 32-bit CRC-32) |
+| 54 | cumulative recording steps in type 1; delta in type 12; `INT_MIN` means unavailable |
+| 55–56 | low/high unsigned halves of full Locus recording-start milliseconds |
+| 57 | step-delta sequence |
 
 ## Recording ownership and commands
 
@@ -72,6 +76,9 @@ command ID and the watch retains correlation for 120 seconds.
 A type-1 snapshot always contains the closed telemetry key set and no profile name. When stopped or
 unavailable, recording metrics are encoded as unavailable even if generic location/sensor fields
 exist. The official Locus `UpdateContainer` documents `trackRecStats` only during active recording.
+
+Type 4 carries the watch session ID in key 7. Android establishes that durable session authority
+before beginning snapshot recovery; a missing, invalid, or unauthorized session is NACKed.
 
 Type 10 carries state plus key 51 as a decimal ID and key 9 as current display name when Android can
 resolve the active name through its latest catalog. Context is separate so a 255-byte Locus name
@@ -101,7 +108,7 @@ PKJS stores the full canonical activity library under stable localStorage key `c
 stores only global settings and the latest activity projection. A projection is:
 
 ```text
-theme|watchHr|interval|locusId|fingerprintA|fingerprintB
+theme|watchHr|interval|locusId|fingerprintA|fingerprintB|watchSteps
 pageName|metric,metric,...|stablePageId
 ```
 
@@ -123,6 +130,28 @@ fingerprints. A successful Watch Settings save continues to push the known activ
 immediately. Display names may repeat, but stable page IDs remain unique. Unnamed active slots are
 projected as localized `Page N`, numbered among active pages, so fingerprints include watch locale.
 A refresh preserves the selected stable page ID if present, otherwise page 1.
+
+`watchSteps` is an activity-local, default-off source toggle. New or reset walking/hiking
+activities retain their first heuristic page and add an unnamed second page containing Steps.
+Existing activity layouts are preserved during migration.
+
+## Best-effort watch steps
+
+When enabled for the active recording activity, the watch samples Pebble Health's daily step total
+once per minute. A rising total emits the difference. A lower total is a Health reset and emits the
+new total. An unavailable value clears the watch baseline; later availability establishes a new
+baseline without reconstructing history. Sampling continues while paused. Closing or restarting
+the watch app, enabling the source during a recording, missing samples, and exhausted transport
+retries may omit steps by design; there is no history replay or application-level acknowledgement.
+
+Type 12 includes the standard protocol/release envelope, session ID, sequence, delta, and the
+recording identity from keys 55–56. Android accepts only the current trusted watch, current Locus
+recording identity, and a newer sequence in the same watch session. It sums accepted deltas
+by watch, trust generation, and recording identity and exposes the total through source-neutral
+type-1 key 54. Step updates enter the synchronized in-memory total before ACK and schedule bounded
+single-record persistence with Android `SharedPreferences.apply()`. Sudden process death may lose
+an unflushed tail and produce a best-effort undercount. This loopback can therefore be replaced by a
+future Locus-provided step value without changing the watch metric or snapshot wire shape.
 
 ## Transfer and delivery rules
 

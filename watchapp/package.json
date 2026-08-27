@@ -112,7 +112,11 @@
       "PACE_FORMAT": 50,
       "LOCUS_PROFILE_ID": 51,
       "CONFIG_FINGERPRINT_A": 52,
-      "CONFIG_FINGERPRINT_B": 53
+      "CONFIG_FINGERPRINT_B": 53,
+      "STEPS": 54,
+      "RECORDING_START_MILLIS_LOW": 55,
+      "RECORDING_START_MILLIS_HIGH": 56,
+      "STEP_SEQUENCE": 57
     },
     "companionApp": {
       "android": {

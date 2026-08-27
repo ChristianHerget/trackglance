@@ -38,7 +38,7 @@ bool ui_metric_snapshot_valid(const UiMetricSnapshot *s) {
       !nonnegative(s->average_pace) || !nonnegative(s->ascent) || !nonnegative(s->descent) ||
       !nonnegative(s->avg_hr) || !nonnegative(s->max_hr) || !nonnegative(s->current_hr) ||
       !nonnegative(s->avg_cadence) || !nonnegative(s->max_cadence) || !nonnegative(s->avg_power) ||
-      !nonnegative(s->max_power) || !nonnegative(s->energy))
+      !nonnegative(s->max_power) || !nonnegative(s->energy) || !nonnegative(s->steps))
     return false;
   const int32_t formats[] = {
       s->altitude_format,       s->distance_format,      s->moving_distance_format,
@@ -61,7 +61,7 @@ bool ui_metric_snapshot_valid(const UiMetricSnapshot *s) {
 }
 
 const char *ui_metric_label(int metric) {
-  if (metric < METRIC_ELAPSED || metric > METRIC_CURRENT_HR) return "";
+  if (metric < METRIC_ELAPSED || metric > METRIC_STEPS) return "";
   return i18n_text((I18nString)(I18N_METRIC_ELAPSED + metric - METRIC_ELAPSED));
 }
 
@@ -100,6 +100,8 @@ static int32_t metric_value(int metric, const UiMetricSnapshot *s) {
     return s->max_hr;
   case METRIC_CURRENT_HR:
     return s->current_hr;
+  case METRIC_STEPS:
+    return s->steps;
   case METRIC_AVG_CADENCE:
     return s->avg_cadence;
   case METRIC_MAX_CADENCE:
@@ -213,6 +215,8 @@ void ui_metric_format(char *output, size_t size, int metric, const UiMetricSnaps
     snprintf(output, size, "%ld rpm", (long)value);
   } else if (metric == METRIC_AVG_POWER || metric == METRIC_MAX_POWER) {
     snprintf(output, size, "%ld W", (long)value);
+  } else if (metric == METRIC_STEPS) {
+    snprintf(output, size, "%ld", (long)value);
   } else {
     snprintf(output, size, "—");
   }

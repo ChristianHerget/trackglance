@@ -1,7 +1,7 @@
 package io.github.christianherget.trackglance.bridge.protocol
 
 object BridgeProtocol {
-    const val VERSION = 4
+    const val VERSION = 5
     const val UNAVAILABLE = Int.MIN_VALUE
     const val MAX_PROFILE_NAME_LENGTH = 20
     const val MAX_PROFILE_NAME_BYTES = 80
@@ -79,6 +79,10 @@ object BridgeProtocol {
         const val LOCUS_PROFILE_ID = 51
         const val CONFIG_FINGERPRINT_A = 52
         const val CONFIG_FINGERPRINT_B = 53
+        const val STEPS = 54
+        const val RECORDING_START_MILLIS_LOW = 55
+        const val RECORDING_START_MILLIS_HIGH = 56
+        const val STEP_SEQUENCE = 57
     }
 
     enum class MessageType(val wire: Int) {
@@ -93,6 +97,7 @@ object BridgeProtocol {
         CONFIG_RESULT(9),
         RECORDING_CONTEXT(10),
         REQUEST_RUNTIME_CONFIG(11),
+        STEP_DELTA(12),
     }
 
     enum class RecordingState(val wire: Int) {
@@ -182,6 +187,7 @@ object BridgeProtocol {
         MAX_POWER(20),
         ENERGY(21),
         CURRENT_HEART_RATE(22),
+        STEPS(23),
     }
 
     fun validProfileName(name: String?): Boolean =
@@ -361,6 +367,10 @@ object BridgeProtocol {
         val averagePower: Int? = null,
         val maxPower: Int? = null,
         val energyJoules: Int? = null,
+        /** Source-neutral accumulated recording steps. */
+        val steps: Int? = null,
+        /** Full Locus recording identity; never inferred from the wall clock. */
+        val recordingStartMillis: Long? = null,
         val locusProfileName: String? = null,
         val unitPreferences: UnitPreferences = UnitPreferences.METRIC,
     )

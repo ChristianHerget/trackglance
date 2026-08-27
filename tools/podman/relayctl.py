@@ -18,12 +18,16 @@ def main() -> None:
     heart_rate = subparsers.add_parser("heart-rate")
     heart_rate.add_argument("bpm", type=int)
     heart_rate.add_argument("--quality", default="excellent")
+    steps = subparsers.add_parser("steps")
+    steps.add_argument("count", type=int)
     args = parser.parse_args()
     request = {"command": args.command.replace("-", "_")}
     if args.command == "button":
         request.update(button=args.button, duration_ms=args.duration_ms)
     elif args.command == "heart-rate":
         request.update(bpm=args.bpm, quality=args.quality)
+    elif args.command == "steps":
+        request.update(count=args.count)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(10)
         client.connect(args.socket)

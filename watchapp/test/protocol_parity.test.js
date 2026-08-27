@@ -25,7 +25,7 @@ function capture(text, expression, label) {
 }
 
 const keys = packageJson.pebble.messageKeys;
-assert.deepStrictEqual(Object.values(keys).sort((a,b) => a-b), Array.from({length:54},(_,i) => i));
+assert.deepStrictEqual(Object.values(keys).sort((a,b) => a-b), Array.from({length:58},(_,i) => i));
 const keyBlock = capture(kotlin, /object Key \{([\s\S]*?)\n    \}/, 'Kotlin keys');
 const kotlinKeys = {};
 for (const match of keyBlock.matchAll(/const val ([A-Z][A-Z0-9_]*) = (\d+)/g)) kotlinKeys[match[1]] = +match[2];
@@ -41,16 +41,18 @@ assert.strictEqual(pkjs.RELEASE, release);
 assert(androidBuild.includes(`versionName = "${release}"`));
 assert(watch.includes(`#define RELEASE_VERSION "${release}"`));
 assert(sphinx.includes(`version = '${release}'`) && sphinx.includes(`release = '${release}'`));
-assert(protocol.startsWith('# Bridge protocol v4'));
+assert(protocol.startsWith('# Bridge protocol v5'));
 assert(protocol.includes(`currently \`${release}\``));
 
-assert.strictEqual(pkjs.VERSION, 4);
-assert(kotlin.includes('const val VERSION = 4'));
-assert(watch.includes('#define PROTOCOL_VERSION 4'));
+assert.strictEqual(pkjs.VERSION, 5);
+assert(kotlin.includes('const val VERSION = 5'));
+assert(watch.includes('#define PROTOCOL_VERSION 5'));
 assert.strictEqual(pkjs.TYPES.recordingContext, 10);
 assert.strictEqual(pkjs.TYPES.requestRuntimeConfig, 11);
+assert.strictEqual(pkjs.TYPES.stepDelta, 12);
 assert(kotlin.includes('RECORDING_CONTEXT(10)') && kotlin.includes('REQUEST_RUNTIME_CONFIG(11)'));
 assert(watch.includes('MSG_RECORDING_CONTEXT = 10') && watch.includes('MSG_REQUEST_RUNTIME_CONFIG = 11'));
+assert(kotlin.includes('STEP_DELTA(12)') && watch.includes('MSG_STEP_DELTA = 12'));
 assert.strictEqual(pkjs.KEYS.locusId, keys.LOCUS_PROFILE_ID);
 assert.strictEqual(pkjs.KEYS.fingerprintA, keys.CONFIG_FINGERPRINT_A);
 assert.strictEqual(pkjs.KEYS.fingerprintB, keys.CONFIG_FINGERPRINT_B);
@@ -71,6 +73,8 @@ assert(protocol.includes('`id|name`'));
 assert(protocol.includes('one through four pages'));
 assert(protocol.includes('every 60'));
 assert(protocol.includes('failed catalog') || protocol.includes('Query failure'));
+assert(protocol.includes('Type 4 carries the watch session ID in key 7'));
+assert(protocol.includes('Sudden process death may lose'));
 
 for (const [name, value] of Object.entries({
   v:'PROTOCOL_VERSION', type:'MESSAGE_TYPE', result:'RESULT', index:'CHUNK_INDEX',

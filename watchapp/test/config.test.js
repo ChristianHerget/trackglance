@@ -1,11 +1,13 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const {JSDOM} = require('jsdom');
 const config = require('../src/pkjs/index.js');
 const packageVersion = require('../package.json').version;
 
-assert.strictEqual(config.VERSION, 4);
+assert.strictEqual(config.VERSION, 5);
 assert.strictEqual(config.RELEASE, packageVersion);
 assert.strictEqual(config.LIMIT.pages, 4);
 assert.strictEqual(config.KEYS.locusId, 51);
@@ -13,6 +15,7 @@ assert.strictEqual(config.KEYS.fingerprintA, 52);
 assert.strictEqual(config.KEYS.fingerprintB, 53);
 assert.strictEqual(config.TYPES.recordingContext, 10);
 assert.strictEqual(config.TYPES.requestRuntimeConfig, 11);
+assert.strictEqual(config.TYPES.stepDelta, 12);
 assert.strictEqual(config.projectionNeeded(0, 0, {a: 0, b: 0}), true);
 assert.strictEqual(config.projectionNeeded(12, 34, {a: 12, b: 34}), false);
 assert.strictEqual(config.projectionNeeded(12, 35, {a: 12, b: 34}), true);
@@ -46,7 +49,11 @@ assert.deepStrictEqual(config.activity(reconciled.config, '30').pages[0].metrics
 assert.deepStrictEqual(config.activity(reconciled.config, '40').pages[0].metrics, [1,3,5,6,10,22]);
 assert(reconciled.config.activities.every(activity => activity.pages.length === 4));
 assert(reconciled.config.activities.every(activity => activity.pages[0].name === null));
-assert(reconciled.config.activities.every(activity => activity.pages.slice(1).every(page => page.metrics.length === 0)));
+assert.deepStrictEqual(config.activity(reconciled.config, '10').pages[1].metrics, [23]);
+assert(reconciled.config.activities.every(activity => activity.watchStepsToLocus === false));
+config.activity(reconciled.config, '10').watchStepsToLocus = true;
+assert(config.projection(reconciled.config, '10', 'en').split('\n')[0].endsWith('|1'));
+config.activity(reconciled.config, '10').watchStepsToLocus = false;
 
 const german = config.reconcile(config.defaultsFor('de'), [{id:'1', name:'Wandern'}], 'de').config;
 assert.strictEqual(german.activities[0].pages[0].name, null);
@@ -67,7 +74,8 @@ assert.strictEqual(migrated.activities[0].pages[0].name, 'Trail');
 const schemaTwo = {schema:2,theme:'light',watchHrToLocus:true,heartRateIntervalSeconds:7,
   activities:[{locusId:'9',locusName:'Walk',pages:[{id:'kept',name:'Custom',metrics:[1,3]}]}]};
 const schemaThree = config.migrate(schemaTwo);
-assert.strictEqual(schemaThree.schema, 3);
+assert.strictEqual(schemaThree.schema, 4);
+assert.strictEqual(schemaThree.activities[0].watchStepsToLocus, false);
 assert.strictEqual(schemaThree.activities[0].pages.length, 4);
 assert.deepStrictEqual(schemaThree.activities[0].pages[0], {id:'kept',type:'metrics',name:'Custom',metrics:[1,3]});
 
@@ -93,6 +101,7 @@ assert(config.validate(unlimited));
 const editable = config.reconcile(config.defaultsFor('en'), catalog, 'en').config;
 const hiking = config.activity(editable, '10');
 assert.strictEqual(hiking.pages.length, 4);
+hiking.pages[1].metrics = [];
 assert(config.add(editable, '10', 1, 1));
 assert(config.add(editable, '10', 1, 3));
 assert(!config.add(editable, '10', 1, 3));
@@ -118,7 +127,7 @@ editable.theme = 'light'; config.resetGeneral(editable); assert.strictEqual(edit
 const wire = config.projection(editable, '10');
 assert(wire.startsWith('dark|0|5|10|'));
 assert(wire.split('\n').length <= 5);
-assert.strictEqual(wire.split('\n').length, 2, 'inactive slots are not projected');
+assert.strictEqual(wire.split('\n').length, 3, 'walking reset projects its metrics and Steps pages');
 assert(Buffer.byteLength(wire, 'utf8') <= config.LIMIT.configBytes);
 assert.deepStrictEqual(config.fingerprints(editable), config.fingerprints(config.parse(config.serialize(editable))));
 assert.notDeepStrictEqual(config.fingerprints(editable, 'en'), config.fingerprints(editable, 'de'));
@@ -174,6 +183,8 @@ serialValues.serial = '01';
 assert.strictEqual(serial.reserve(), null, 'corrupt transfer serial fails closed');
 
 const pageUrl = config.settingsPage(reconciled.config, catalog, 'en', 'fresh', null);
+assert(!fs.readFileSync(path.join(__dirname, '../src/pkjs/index.js'), 'utf8').includes('stepsEnhancement'),
+  'the activity editor owns the watch-step toggle without a runtime monkeypatch');
 const html = decodeURIComponent(pageUrl.slice(pageUrl.indexOf(',') + 1));
 const gabbroHtml = decodeURIComponent(config.settingsPage(
   reconciled.config, catalog, 'en', 'fresh', null, false,
@@ -199,6 +210,7 @@ assert(generalLink.compareDocumentPosition(activitiesHeading) & dom.window.Node.
   'General settings is a separate navigation row above Activities');
 assert(!html.includes('id="mapping"'), 'activity editor has no Locus mapping dropdown');
 dom.window.document.querySelector('.activity').click();
+assert.strictEqual(dom.window.document.querySelector('#watchSteps').checked, false);
 assert.strictEqual(dom.window.document.querySelectorAll('.page').length, 4);
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[0].textContent, '6/6');
 assert.strictEqual(dom.window.document.querySelectorAll('.badge')[1].textContent, '0/6');
@@ -389,6 +401,32 @@ dom.window.document.querySelector('#generalDone').click();
 dom.window.document.querySelector('#save').click();
 assert.strictEqual(JSON.parse(closedSettings).theme, 'light', 'final Save returns the combined draft once');
 
+let confirmActivityReset = false;
+const toggleDom = new JSDOM(html, {runScripts:'dangerously', beforeParse(window) {
+  window.confirm = () => confirmActivityReset;
+  window.alert = () => {};
+}});
+const firstToggleActivity = () => toggleDom.window.document.querySelectorAll('.activity')[0].click();
+const toggle = () => toggleDom.window.document.querySelector('#watchSteps');
+firstToggleActivity();
+toggle().checked = true;
+toggle().dispatchEvent(new toggleDom.window.Event('change', {bubbles:true}));
+toggleDom.window.document.querySelector('#activityCancel').click();
+firstToggleActivity();
+assert.strictEqual(toggle().checked, false, 'activity Cancel discards the watch-step toggle draft');
+
+toggle().checked = true;
+toggle().dispatchEvent(new toggleDom.window.Event('change', {bubbles:true}));
+toggleDom.window.document.querySelector('#activityDone').click();
+firstToggleActivity();
+assert.strictEqual(toggle().checked, true, 'activity Done commits the watch-step toggle draft');
+
+toggleDom.window.document.querySelector('#activityReset').click();
+assert.strictEqual(toggle().checked, true, 'cancelled activity reset leaves the toggle unchanged');
+confirmActivityReset = true;
+toggleDom.window.document.querySelector('#activityReset').click();
+assert.strictEqual(toggle().checked, false, 'confirmed activity reset disables watch steps');
+
 supportedLocales.forEach(language => {
   const localized = config.reconcile(config.defaultsFor(language), catalog, language).config;
   const localizedHtml = decodeURIComponent(config.settingsPage(
@@ -403,6 +441,6 @@ supportedLocales.forEach(language => {
   assert.strictEqual(localizedDom.window.document.querySelectorAll('.metric').length > 0, true);
 });
 
-assert(config.validHeartRateMessage({0:4,1:8,35:config.RELEASE,7:1,38:2,6:3,37:100}));
-assert(!config.validHeartRateMessage({0:4,1:8,35:'0.2.0',7:1,38:2,6:3,37:100}));
-assert.deepStrictEqual(config.configResultMessage({0:4,1:9,35:config.RELEASE,33:4,4:0}), {id:4,result:0});
+assert(config.validHeartRateMessage({0:5,1:8,35:config.RELEASE,7:1,38:2,6:3,37:100}));
+assert(!config.validHeartRateMessage({0:5,1:8,35:'0.2.0',7:1,38:2,6:3,37:100}));
+assert.deepStrictEqual(config.configResultMessage({0:5,1:9,35:config.RELEASE,33:4,4:0}), {id:4,result:0});
