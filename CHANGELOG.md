@@ -5,6 +5,8 @@ release is published.
 
 ## Unreleased
 
+- Reduced idle watch wakeups by scheduling maintenance only when pending work reaches its deadline.
+
 ## 0.2.6 - 2026-08-27
 
 - TrackGlance settings are no longer backed up to the cloud or transferred to another Android
