@@ -88,3 +88,26 @@ while pure metrics/config/state/persistence transformations run in the host C sa
 Unit selection, floating-point conversion, Locus medium-precision thresholds, rounding, slope
 trigonometry, pace, and energy conversion remain on Android. This keeps the watch protocol closed
 and the per-render watch work bounded to integer arithmetic and suffix lookup.
+
+## 10. Watch maintenance clock-correction policy
+
+**Status:** Proposed
+
+**Decision:** Retain the centralized maintenance planner and its single relative `AppTimer`.
+Actual watch-clock corrections may advance or delay short maintenance deadlines. This is an
+accepted limitation consistent with [Issue #47](https://github.com/ChristianHerget/trackglance/issues/47),
+not a release-blocking defect.
+
+- Continue using `time_ms()` epoch seconds for deadline calculation and one relative `AppTimer` for
+  sparse wakeups.
+- Rely only on the SDK's documented relative-timer contract; do not claim guaranteed FreeRTOS or
+  hardware monotonicity.
+- Do not introduce per-category timers, a synthetic monotonic clock, or `TickTimerService`.
+- Accept early or late UI transitions, sampling, transfer expiry, reconciliation, staleness, and
+  command-result timeouts after actual clock corrections.
+- The sharpest unlikely consequence is that a premature command timeout could encourage retrying an
+  operation that already executed.
+- Timezone and daylight-saving changes do not alter Unix epoch time.
+- Retain existing transport validation, recording-identity checks, subsequent-event recovery, and
+  watchapp restart as recovery mechanisms.
+- Reconsider per-owner timers only if real-world reports demonstrate meaningful failures.
