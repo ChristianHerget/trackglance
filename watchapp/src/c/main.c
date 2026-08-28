@@ -13,7 +13,7 @@
 #include "watch_step_state.h"
 
 #define PROTOCOL_VERSION 5
-#define RELEASE_VERSION "0.2.6"
+#define RELEASE_VERSION "0.2.7"
 #define MAX_SLOTS WATCH_MAX_SLOTS
 #define MAX_PROFILES WATCH_MAX_PROFILES
 #define NAME_SIZE WATCH_PROFILE_NAME_SIZE

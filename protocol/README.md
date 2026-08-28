@@ -1,7 +1,7 @@
 # Bridge protocol v5
 
 The APK and PBW must be upgraded together; receivers require protocol `5` and the exact matching
-release, currently `0.2.6`. The watchapp UUID is
+release, currently `0.2.7`. The watchapp UUID is
 `51c8d7cf-4cb2-4ef8-98c9-641706feb250`.
 
 Every AppMessage dictionary is smaller than the 512-byte inbox/outbox allocation. Strings are UTF-8
@@ -47,7 +47,7 @@ before calling Locus.
 | 32 | chunk data |
 | 33 | transfer ID |
 | 34 | reserved legacy Locus mode |
-| 35 | release version, currently `0.2.6` |
+| 35 | release version, currently `0.2.7` |
 | 36 | dictated waypoint name |
 | 37 | current heart rate |
 | 38 | heart-rate sequence |

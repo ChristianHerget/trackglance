@@ -5,6 +5,8 @@ release is published.
 
 ## Unreleased
 
+## 0.2.7 - 2026-08-28
+
 - Added optional per-activity Pebble Health steps with a best-effort one-minute bridge loopback;
   walking and hiking defaults include a dedicated Steps page.
 - Reduced idle watch wakeups by scheduling maintenance only when pending work reaches its deadline.
