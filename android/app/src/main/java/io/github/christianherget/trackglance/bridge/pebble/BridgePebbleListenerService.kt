@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@Suppress("TooManyFunctions")
 class BridgePebbleListenerService : BasePebbleListenerService() {
     private val companionPin by lazy {
         TrustedPebbleCompanionProvider.get(applicationContext)
@@ -170,6 +171,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             ReceiveResult.Nack
         }
 
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "ReturnCount")
     private suspend fun handleMessage(
         runtime: BridgeRuntime,
         watchappUUID: UUID,
@@ -184,12 +186,7 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         val appVersion = PebbleMessages.string(data, BridgeProtocol.Key.APP_VERSION)
         val type = PebbleMessages.signed32(data, BridgeProtocol.Key.MESSAGE_TYPE)
         if (version != BridgeProtocol.VERSION) return ReceiveResult.Nack
-        val acceptedType =
-            type == BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire ||
-                type == BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire ||
-                type == BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire ||
-                type == BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire ||
-                type == BridgeProtocol.MessageType.COMMAND.wire
+        val acceptedType = acceptedType(type)
         val admitted =
             runAdmittedInbound(admission, false) {
                 BridgeState.update {
@@ -216,7 +213,15 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
         }
         return when (type) {
             BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire -> {
-                if (runtime.refresh(watch, admission)) ReceiveResult.Ack else ReceiveResult.Nack
+                val accepted =
+                    SnapshotRequestHandler(
+                            establish = { session ->
+                                runtime.establishWatchSession(watch, session, admission)
+                            },
+                            recover = { runtime.recoverSnapshot(watch, admission) },
+                        )
+                        .handle(data)
+                if (accepted) ReceiveResult.Ack else ReceiveResult.Nack
             }
             BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire -> {
                 if (runtime.sendRecordingProfiles(watch, admission)) {
@@ -228,10 +233,46 @@ class BridgePebbleListenerService : BasePebbleListenerService() {
             BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire -> ReceiveResult.Ack
             BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire ->
                 handleHeartRate(runtime, data, watch, admission)
+            BridgeProtocol.MessageType.STEP_DELTA.wire ->
+                handleStepDelta(runtime, data, watch, admission)
             BridgeProtocol.MessageType.COMMAND.wire ->
                 handleCommand(runtime, data, watch, admission)
             else -> ReceiveResult.Nack
         }
+    }
+
+    private fun acceptedType(type: Int?): Boolean =
+        type == BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire ||
+            type == BridgeProtocol.MessageType.REQUEST_PROFILE_LIST.wire ||
+            type == BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG.wire ||
+            type == BridgeProtocol.MessageType.HEART_RATE_SAMPLE.wire ||
+            type == BridgeProtocol.MessageType.STEP_DELTA.wire ||
+            type == BridgeProtocol.MessageType.COMMAND.wire
+
+    @Suppress("ReturnCount")
+    private suspend fun handleStepDelta(
+        runtime: BridgeRuntime,
+        data: PebbleDictionary,
+        watch: WatchIdentifier,
+        admission: TrustAdmission,
+    ): ReceiveResult {
+        val session =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.SESSION_ID)
+                ?: return ReceiveResult.Nack
+        val sequence =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.STEP_SEQUENCE)
+                ?: return ReceiveResult.Nack
+        val delta =
+            PebbleMessages.signed32(data, BridgeProtocol.Key.STEPS) ?: return ReceiveResult.Nack
+        val low =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.RECORDING_START_MILLIS_LOW)
+                ?: return ReceiveResult.Nack
+        val high =
+            PebbleMessages.unsigned32(data, BridgeProtocol.Key.RECORDING_START_MILLIS_HIGH)
+                ?: return ReceiveResult.Nack
+        val start = (high shl Int.SIZE_BITS) or low
+        val accepted = runtime.handleStepDelta(watch, session, sequence, delta, start, admission)
+        return if (accepted) ReceiveResult.Ack else ReceiveResult.Nack
     }
 
     private fun handleHeartRate(

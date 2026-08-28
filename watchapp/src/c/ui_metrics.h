@@ -31,6 +31,7 @@ enum {
   METRIC_MAX_POWER = 20,
   METRIC_ENERGY = 21,
   METRIC_CURRENT_HR = 22,
+  METRIC_STEPS = 23,
 };
 
 typedef enum {
@@ -89,6 +90,9 @@ typedef struct {
   int32_t avg_power;
   int32_t max_power;
   int32_t energy;
+  int32_t steps;
+  uint32_t recording_start_low;
+  uint32_t recording_start_high;
   int32_t altitude_format;
   int32_t distance_format;
   int32_t moving_distance_format;

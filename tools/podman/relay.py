@@ -14,6 +14,7 @@ from pathlib import Path
 HEADER_SIGNATURE = 0xFEED
 FOOTER_SIGNATURE = 0xBEEF
 QEMU_PROTOCOL_BUTTON = 8
+QEMU_PROTOCOL_HEALTH_METRIC = 12
 QEMU_PROTOCOL_HEART_RATE = 13
 QEMU_PROTOCOL_PEBBLE = 1
 WATCH_VERSION_ENDPOINT = 16
@@ -24,6 +25,7 @@ SYNTHETIC_WATCH_SERIAL = b"QEMU0000001\0"
 WATCH_HARDWARE_BY_PLATFORM = {"emery": 18, "gabbro": 21}
 BUTTONS = {"back": 1, "up": 2, "select": 4, "down": 8}
 QUALITIES = {"off-wrist": -1, "worst": 0, "poor": 1, "acceptable": 2, "good": 3, "excellent": 4}
+QEMU_HEALTH_METRIC_STEPS = 0
 
 
 def qemu_frame(protocol: int, payload: bytes) -> bytes:
@@ -51,6 +53,15 @@ def heart_rate_frame(bpm: int, quality: str = "excellent") -> bytes:
     except KeyError as error:
         raise ValueError(f"unknown heart-rate quality: {quality}") from error
     return qemu_frame(QEMU_PROTOCOL_HEART_RATE, struct.pack(">Bb", bpm, encoded_quality))
+
+
+def steps_frame(count: int) -> bytes:
+    if not 0 <= count <= 0x7FFFFFFF:
+        raise ValueError("step count must be between 0 and 2147483647")
+    return qemu_frame(
+        QEMU_PROTOCOL_HEALTH_METRIC,
+        struct.pack(">Bi", QEMU_HEALTH_METRIC_STEPS, count),
+    )
 
 
 def patch_watch_version_serial(packet: bytes) -> tuple[bytes, bool]:
@@ -290,6 +301,10 @@ class Relay:
                 bpm = int(request["bpm"])
                 quality = str(request.get("quality", "excellent"))
                 await self.inject(heart_rate_frame(bpm, quality), f"heart-rate:{bpm}:{quality}")
+                response = {"ok": True}
+            elif command == "steps":
+                count = int(request["count"])
+                await self.inject(steps_frame(count), f"steps:{count}")
                 response = {"ok": True}
             else:
                 raise ValueError("unknown control command")

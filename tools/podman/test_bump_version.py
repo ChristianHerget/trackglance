@@ -73,6 +73,20 @@ class BumpVersionTest(unittest.TestCase):
         )
         self.assertNotEqual(0, self.run_tool("9.9.8").returncode)
 
+    def test_reports_missing_exact_backticked_protocol_marker(self):
+        protocol = self.root / "protocol/README.md"
+        protocol.write_text(
+            re.sub(
+                r"release, currently `([0-9]+\.[0-9]+\.[0-9]+)`\.",
+                r"release, currently \1.",
+                protocol.read_text(),
+                count=1,
+            )
+        )
+        result = self.run_tool("--check")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("missing protocol release marker", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

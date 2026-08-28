@@ -128,6 +128,7 @@ class LocusGateway(context: Context) : LocusBridgeGateway {
             averagePower = stats?.powerAverage?.takeIf { it > 0 },
             maxPower = stats?.powerMax?.takeIf { it > 0 },
             energyJoules = stats?.energy?.takeIf { it > 0 },
+            recordingStartMillis = stats?.startTime?.takeIf { it > 0 },
             locusProfileName = update.trackRecProfileName.takeIf { it.isNotBlank() },
             unitPreferences = unitPreferences.current(),
         )

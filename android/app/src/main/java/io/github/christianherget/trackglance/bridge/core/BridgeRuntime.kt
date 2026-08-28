@@ -30,6 +30,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@Suppress("LargeClass")
 class BridgeRuntime
 internal constructor(
     private val scope: CoroutineScope,
@@ -56,9 +57,13 @@ internal constructor(
         ) -> TrustLeaseResult<Unit>)? =
         null,
     private val admissionCurrent: (TrustAdmission) -> Boolean = { true },
+    private val stepAccumulator: StepAccumulator = StepAccumulator(),
+    private val watchSessionAuthority: WatchSessionAuthority = WatchSessionAuthority(),
 ) : AutoCloseable {
     private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
+    private val recordingContextDelivery = RecordingContextDeliveryTracker<AdmittedWatch>()
     private val lifecycleLock = Any()
+    private val watchesAwaitingSession = mutableSetOf<AdmittedWatch>()
     private val childJobs = mutableSetOf<Job>()
     private val heartRateGate = HeartRateSampleGate()
     private val heartRateSamples = Channel<HeartRateSample>(Channel.CONFLATED)
@@ -109,6 +114,35 @@ internal constructor(
         return true
     }
 
+    @Suppress("ReturnCount")
+    suspend fun handleStepDelta(
+        watch: WatchIdentifier,
+        sessionId: Long,
+        sequence: Long,
+        delta: Int,
+        recordingStartMillis: Long,
+        admission: TrustAdmission,
+    ): Boolean {
+        if (!admissionCurrent(admission) || recordingStartMillis <= 0) return false
+        val source = AdmittedWatch(watch, admission)
+        if (activeWatches.snapshot().singleOrNull() != source) return false
+        val sessionKey = WatchSessionAuthority.Key(watch.value, admission.generation)
+        if (!watchSessionAuthority.isCurrent(sessionKey, sessionId)) return false
+        val snapshot = readSnapshot(admission)
+        if (
+            snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
+                snapshot.state != BridgeProtocol.RecordingState.PAUSED
+        )
+            return false
+        if (snapshot.recordingStartMillis != recordingStartMillis) return false
+        val key = StepAccumulator.Key(watch.value, admission.generation, recordingStartMillis)
+        if (!stepAccumulator.accept(key, sessionId, sequence, delta)) return false
+        publishIfCurrent(admission) {
+            BridgeState.update { it.copy(lastWatchSteps = stepAccumulator.steps(key)) }
+        }
+        return true
+    }
+
     private suspend fun forwardHeartRate(sample: HeartRateSample) {
         val source = AdmittedWatch(sample.watch, sample.admission)
         if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
@@ -151,13 +185,38 @@ internal constructor(
     fun watchAppOpened(
         watch: WatchIdentifier,
         admission: TrustAdmission,
-    ): Boolean = observeWatch(AdmittedWatch(watch, admission), markTransition = true)
+    ): Boolean {
+        val target = AdmittedWatch(watch, admission)
+        synchronized(lifecycleLock) { watchesAwaitingSession += target }
+        return observeWatch(target, markTransition = true)
+    }
 
     /** Recovers active-watch state when the process restarted while the watchapp stayed open. */
     fun watchObserved(
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ): Boolean = observeWatch(AdmittedWatch(watch, admission), markTransition = false)
+
+    /** Establishes session authority only at a trusted lifecycle/control-message boundary. */
+    @Suppress("ReturnCount")
+    fun establishWatchSession(
+        watch: WatchIdentifier,
+        sessionId: Long,
+        admission: TrustAdmission,
+    ): Boolean {
+        if (!admissionCurrent(admission)) return false
+        val target = AdmittedWatch(watch, admission)
+        if (activeWatches.snapshot().singleOrNull() != target) return false
+        val key = WatchSessionAuthority.Key(watch.value, admission.generation)
+        synchronized(lifecycleLock) {
+            if (watchesAwaitingSession.remove(target)) {
+                return watchSessionAuthority.establish(key, sessionId)
+            }
+        }
+        // Process recreation may miss the app-open callback, but must never replace persisted
+        // authority merely because another packet arrived.
+        return watchSessionAuthority.establishIfMissing(key, sessionId)
+    }
 
     private fun observeWatch(target: AdmittedWatch, markTransition: Boolean): Boolean {
         synchronized(lifecycleLock) {
@@ -169,6 +228,7 @@ internal constructor(
                     if (!activeWatches.observed(target)) return false
                     false
                 }
+            if (markTransition) recordingContextDelivery.invalidateAll()
             BridgeState.update {
                 it.copy(watchAppOpen = true, lastError = if (markTransition) null else it.lastError)
             }
@@ -208,7 +268,9 @@ internal constructor(
         admission: TrustAdmission,
     ) {
         synchronized(lifecycleLock) {
-            activeWatches.closed(AdmittedWatch(watch, admission))
+            val target = AdmittedWatch(watch, admission)
+            if (activeWatches.closed(target)) recordingContextDelivery.invalidate(target)
+            watchesAwaitingSession.remove(target)
             if (activeWatches.isEmpty()) {
                 updateJob?.cancel()
                 updateJob = null
@@ -223,6 +285,8 @@ internal constructor(
         }
         synchronized(lifecycleLock) {
             activeWatches.clear()
+            watchesAwaitingSession.clear()
+            recordingContextDelivery.invalidateAll()
             childJobs.toList().forEach { it.cancel() }
             childJobs.clear()
             updateJob = null
@@ -464,6 +528,13 @@ internal constructor(
         snapshot: BridgeProtocol.Snapshot,
         targets: Collection<AdmittedWatch>,
     ): Boolean {
+        val target = targets.singleOrNull() ?: return false
+        if (
+            snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
+                snapshot.state != BridgeProtocol.RecordingState.PAUSED
+        ) {
+            recordingContextDelivery.invalidate(target)
+        }
         if (!sendToAdmittedTargets(PebbleMessages.snapshot(snapshot), targets)) return false
         if (
             snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
@@ -479,10 +550,15 @@ internal constructor(
             profile = resolveActiveProfile(snapshot)
         }
         if (profile == null) return true
-        return sendToAdmittedTargets(
-            PebbleMessages.recordingContext(snapshot.state, profile),
-            targets,
+        val attempt = recordingContextDelivery.begin(target, profile.id.toString()) ?: return true
+        if (
+            !sendToAdmittedTargets(
+                PebbleMessages.recordingContext(snapshot.state, profile),
+                targets,
+            )
         )
+            return false
+        return recordingContextDelivery.commit(attempt)
     }
 
     private fun resolveActiveProfile(
@@ -529,6 +605,15 @@ internal constructor(
         return refreshTargets(listOf(AdmittedWatch(watch, admission)))
     }
 
+    suspend fun recoverSnapshot(
+        watch: WatchIdentifier,
+        admission: TrustAdmission,
+    ): Boolean {
+        val target = AdmittedWatch(watch, admission)
+        recordingContextDelivery.invalidate(target)
+        return deliverSnapshot(listOf(target), BridgeFailureKind.SNAPSHOT_DELIVERY_FAILED)
+    }
+
     private suspend fun refreshTargets(targets: Collection<AdmittedWatch>): Boolean =
         deliverSnapshot(targets, BridgeFailureKind.SNAPSHOT_DELIVERY_FAILED)
 
@@ -546,10 +631,35 @@ internal constructor(
         return delivered
     }
 
+    @Suppress("ComplexCondition")
     private suspend fun readSnapshot(admission: TrustAdmission? = null): BridgeProtocol.Snapshot =
         try {
             val now = wallMillis()
             withContext(ioDispatcher) { locus.readSnapshot(now) }
+                .let { snapshot ->
+                    val watch = activeWatches.snapshot().singleOrNull()
+                    val start = snapshot.recordingStartMillis
+                    val active =
+                        snapshot.state == BridgeProtocol.RecordingState.RECORDING ||
+                            snapshot.state == BridgeProtocol.RecordingState.PAUSED
+                    if (
+                        watch == null ||
+                            admission == null ||
+                            watch.admission != admission ||
+                            start == null ||
+                            !active
+                    ) {
+                        snapshot
+                    } else {
+                        val key =
+                            StepAccumulator.Key(
+                                watch.watch.value,
+                                watch.admission.generation,
+                                start,
+                            )
+                        snapshot.copy(steps = snapshot.steps ?: stepAccumulator.steps(key))
+                    }
+                }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -654,6 +764,7 @@ internal constructor(
 
     override fun close() {
         synchronized(lifecycleLock) {
+            recordingContextDelivery.invalidateAll()
             childJobs.toList().forEach { it.cancel() }
             childJobs.clear()
             updateJob = null
@@ -703,6 +814,9 @@ internal constructor(
                     TrustedPebbleCompanionProvider.withOutboundAdmission(context, admission, block)
                 },
                 admissionCurrent = TrustedPebbleCompanionProvider::isAdmissionCurrent,
+                stepAccumulator = StepAccumulator(StepAccumulator.PreferencesStorage(context)),
+                watchSessionAuthority =
+                    WatchSessionAuthority(WatchSessionAuthority.PreferencesStorage(context)),
             )
     }
 }

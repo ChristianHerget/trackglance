@@ -22,7 +22,7 @@ const commonFlags = [
 ];
 
 try {
-  const productionSources = ['watch_config.c', 'watch_state.c', 'persistent_blob.c', 'i18n.c', 'ui_metrics.c'];
+  const productionSources = ['watch_config.c', 'watch_state.c', 'watch_maintenance.c', 'watch_maintenance_timer.c', 'watch_outbound_retry.c', 'watch_step_state.c', 'persistent_blob.c', 'i18n.c', 'ui_metrics.c'];
   const objects = [];
   productionSources.forEach(source => {
     const object = path.join(temporary, `${source}.o`);

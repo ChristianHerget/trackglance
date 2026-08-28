@@ -21,7 +21,7 @@ cp "$source_dir/androidApp/src/google-services-dummy.json" "$source_dir/androidA
 printf 'sdk.dir=%s\nLOCAL_RELEASE_BUILD=true\n' "$ANDROID_SDK_ROOT" > "$source_dir/local.properties"
 (
   cd "$source_dir"
-  ./gradlew --no-daemon :androidApp:assembleDebug
+  ./gradlew --no-daemon --quiet --warning-mode=none :androidApp:assembleDebug
 )
 core_apk=$(find "$source_dir/androidApp/build/outputs/apk/debug" -maxdepth 1 -type f -name '*.apk' -print -quit)
 test -n "$core_apk"

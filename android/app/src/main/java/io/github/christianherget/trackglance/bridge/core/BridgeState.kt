@@ -19,6 +19,7 @@ data class BridgeStatus(
     val lastProfileRequestEpochMillis: Long? = null,
     val lastUpdateEpochMillis: Long? = null,
     val lastWatchHeartRate: Int? = null,
+    val lastWatchSteps: Int? = null,
     val lastHeartRateForwardedEpochMillis: Long? = null,
     val currentLocusHeartRate: Int? = null,
     val lastCommand: BridgeProtocol.Command? = null,

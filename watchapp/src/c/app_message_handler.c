@@ -111,6 +111,11 @@ bool app_message_snapshot(DictionaryIterator *iterator, UiMetricSnapshot *output
       !app_message_int32(iterator, MESSAGE_KEY_AVERAGE_POWER, &snapshot.avg_power) ||
       !app_message_int32(iterator, MESSAGE_KEY_MAX_POWER, &snapshot.max_power) ||
       !app_message_int32(iterator, MESSAGE_KEY_ENERGY_VALUE, &snapshot.energy) ||
+      !app_message_int32(iterator, MESSAGE_KEY_STEPS, &snapshot.steps) ||
+      !app_message_uint32(iterator, MESSAGE_KEY_RECORDING_START_MILLIS_LOW,
+                          &snapshot.recording_start_low) ||
+      !app_message_uint32(iterator, MESSAGE_KEY_RECORDING_START_MILLIS_HIGH,
+                          &snapshot.recording_start_high) ||
       !app_message_int32(iterator, MESSAGE_KEY_ALTITUDE_FORMAT, &snapshot.altitude_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_DISTANCE_FORMAT, &snapshot.distance_format) ||
       !app_message_int32(iterator, MESSAGE_KEY_MOVING_DISTANCE_FORMAT,

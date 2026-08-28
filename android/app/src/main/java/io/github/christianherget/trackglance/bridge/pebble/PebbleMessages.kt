@@ -79,6 +79,11 @@ object PebbleMessages {
                 BridgeProtocol.Key.CURRENT_PACE_SECONDS.toUInt() to i(display.currentPaceSeconds),
                 BridgeProtocol.Key.AVERAGE_PACE_SECONDS.toUInt() to i(display.averagePaceSeconds),
                 BridgeProtocol.Key.PACE_FORMAT.toUInt() to b(display.paceFormat.wire),
+                BridgeProtocol.Key.STEPS.toUInt() to i(nonNegativeInt(sample.steps)),
+                BridgeProtocol.Key.RECORDING_START_MILLIS_LOW.toUInt() to
+                    u((sample.recordingStartMillis ?: 0L) and 0xffff_ffffL),
+                BridgeProtocol.Key.RECORDING_START_MILLIS_HIGH.toUInt() to
+                    u((sample.recordingStartMillis ?: 0L) ushr 32),
             )
         return base
     }

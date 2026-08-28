@@ -74,6 +74,7 @@
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_PROFILE_LIST$7</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_RUNTIME_CONFIG$11</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.REQUEST_SNAPSHOT$4</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.MessageType.STEP_DELTA$12</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.ALTITUDE$10</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.ASCENT$11</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.AVERAGE_CADENCE$17</ID>
@@ -92,6 +93,7 @@
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MAX_SPEED$7</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.MOVING_DISTANCE$4</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.SLOPE$14</ID>
+    <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.STEPS$23</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.TOTAL_DISTANCE$3</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.Metric.VERTICAL_SPEED$13</ID>
     <ID>MagicNumber:BridgeProtocol.kt:BridgeProtocol.RecordingState.UNAVAILABLE$3</ID>

@@ -6,9 +6,13 @@
 #include "ui_metrics.h"
 #include "watch_build_hash.auto.h"
 #include "watch_config.h"
+#include "watch_maintenance.h"
+#include "watch_maintenance_timer.h"
+#include "watch_outbound_retry.h"
 #include "watch_state.h"
+#include "watch_step_state.h"
 
-#define PROTOCOL_VERSION 4
+#define PROTOCOL_VERSION 5
 #define RELEASE_VERSION "0.2.6"
 #define MAX_SLOTS WATCH_MAX_SLOTS
 #define MAX_PROFILES WATCH_MAX_PROFILES
@@ -55,6 +59,7 @@ enum {
   MSG_CONFIG_RESULT = 9,
   MSG_RECORDING_CONTEXT = 10,
   MSG_REQUEST_RUNTIME_CONFIG = 11,
+  MSG_STEP_DELTA = 12,
 };
 
 enum {
@@ -111,6 +116,7 @@ typedef enum {
   OUTBOUND_CONTROL,
   OUTBOUND_RELAY,
   OUTBOUND_HEART_RATE,
+  OUTBOUND_STEPS,
 } OutboundKind;
 
 static const PersistentBlob s_config_blob = {
@@ -174,6 +180,7 @@ static Snapshot s_snapshot = {
     .avg_power = UNAVAILABLE,
     .max_power = UNAVAILABLE,
     .energy = UNAVAILABLE,
+    .steps = UNAVAILABLE,
     .altitude_format = FORMAT_M_0,
     .distance_format = FORMAT_M_0,
     .moving_distance_format = FORMAT_M_0,
@@ -191,8 +198,10 @@ static int s_profile_count;
 static int s_selected;
 static bool s_dark = true;
 static bool s_snapshot_received;
-static uint16_t s_snapshot_age;
-static uint32_t s_uptime_seconds;
+static uint32_t s_launch_second;
+static uint32_t s_snapshot_second;
+static bool s_no_bridge_escalated;
+static bool s_snapshot_stale_processed;
 static char s_current_locus_id[LOCUS_ID_SIZE];
 static char s_config_locus_id[LOCUS_ID_SIZE];
 static uint32_t s_config_fingerprint_a;
@@ -200,12 +209,14 @@ static uint32_t s_config_fingerprint_b;
 static bool s_activity_ready;
 static bool s_context_active;
 static uint32_t s_context_started;
+static bool s_profile_preparation_escalated;
 static uint32_t s_last_runtime_config_request;
+static bool s_runtime_config_pending;
 
 static char s_header_text[64] = "Connecting...";
 static char s_notice[48];
 static char s_value_text[MAX_SLOTS][24];
-static time_t s_notice_until;
+static uint32_t s_notice_until;
 
 static char s_chunks[CONFIG_SIZE];
 static char s_config_work[CONFIG_SIZE];
@@ -232,7 +243,7 @@ static uint32_t s_session_id;
 
 static bool s_outbox_busy;
 static OutboundKind s_inflight_kind;
-static uint8_t s_send_attempts[OUTBOUND_HEART_RATE + 1];
+static uint8_t s_send_attempts[OUTBOUND_STEPS + 1];
 static AppTimer *s_retry_timer;
 static size_t s_relay_offset;
 static size_t s_relay_send_end;
@@ -243,6 +254,7 @@ static int s_relay_result = RESULT_FAILED;
 static bool s_request_profiles_after_relay;
 
 static bool s_watch_hr_to_locus;
+static bool s_watch_steps_to_locus;
 static bool s_health_subscribed;
 static bool s_health_notice_shown;
 static bool s_hr_pending;
@@ -256,10 +268,13 @@ static uint32_t s_hr_send_sequence;
 static uint32_t s_hr_send_epoch;
 static int32_t s_pending_hr;
 static int32_t s_hr_send_value;
+static WatchStepState s_step_state;
 #if defined(PBL_PLATFORM_EMERY)
 static AppTimer *s_health_timeout;
-static uint32_t s_last_hr_sent_uptime;
+static uint32_t s_last_hr_sent_second;
 #endif
+
+static WatchMaintenanceTimer s_maintenance_timer;
 
 #if defined(PBL_MICROPHONE)
 static DictationSession *s_dictation_session;
@@ -272,6 +287,37 @@ static void apply_theme(void);
 static void layout_slots(void);
 static void update_health_subscription(void);
 static void send_next(void);
+static void schedule_maintenance(void);
+static bool update_step_state(uint32_t now);
+static bool sample_steps(uint32_t now);
+
+static WatchMaintenanceClock current_clock(void) {
+  time_t seconds;
+  uint16_t milliseconds;
+  time_ms(&seconds, &milliseconds);
+  return (WatchMaintenanceClock){.seconds = (uint32_t)seconds, .milliseconds = milliseconds};
+}
+
+static uint32_t current_second(void) {
+  return current_clock().seconds;
+}
+
+static void *register_maintenance_timer(void *context, uint32_t delay_ms,
+                                        WatchMaintenanceTimerCallback callback,
+                                        void *callback_context) {
+  (void)context;
+  return app_timer_register(delay_ms, callback, callback_context);
+}
+
+static bool reschedule_maintenance_timer(void *context, void *timer, uint32_t delay_ms) {
+  (void)context;
+  return app_timer_reschedule(timer, delay_ms);
+}
+
+static void cancel_maintenance_timer(void *context, void *timer) {
+  (void)context;
+  app_timer_cancel(timer);
+}
 
 static void copy_text(char *destination, size_t size, const char *source) {
   if (!destination || !size) return;
@@ -280,9 +326,9 @@ static void copy_text(char *destination, size_t size, const char *source) {
 
 static void show_notice(const char *message, int seconds) {
   copy_text(s_notice, sizeof(s_notice), message);
-  const time_t now = time(NULL);
-  s_notice_until = now + seconds;
+  s_notice_until = current_second() + (uint32_t)seconds;
   render();
+  schedule_maintenance();
 }
 
 static void default_profiles(void) {
@@ -291,6 +337,7 @@ static void default_profiles(void) {
   s_selected = 0;
   s_profile_count = 1;
   s_watch_hr_to_locus = false;
+  s_watch_steps_to_locus = false;
   s_heart_rate_interval = 5;
 
   copy_text(s_profiles[0].name, sizeof(s_profiles[0].name), i18n_text(I18N_DEFAULT));
@@ -323,14 +370,17 @@ static void install_config(const WatchConfig *config) {
   s_selected = config->selected;
   s_dark = config->dark;
   s_watch_hr_to_locus = config->watch_hr_to_locus;
+  s_watch_steps_to_locus = config->watch_steps_to_locus;
   s_heart_rate_interval = config->heart_rate_interval;
   copy_text(s_config_locus_id, sizeof(s_config_locus_id), config->locus_id);
   s_config_fingerprint_a = config->fingerprint_a;
   s_config_fingerprint_b = config->fingerprint_b;
   s_activity_ready = s_context_active && strcmp(s_current_locus_id, s_config_locus_id) == 0;
+  if (s_activity_ready) s_profile_preparation_escalated = true;
   layout_slots();
   apply_theme();
   update_health_subscription();
+  update_step_state(current_second());
   render();
 }
 
@@ -458,13 +508,14 @@ static void layout_slots(void) {
 
 static void render(void) {
   if (!s_header || s_selected < 0 || s_selected >= s_profile_count) return;
-  const time_t now = time(NULL);
-  const bool stale = s_snapshot_received && s_snapshot_age > SNAPSHOT_STALE_SECONDS;
+  const uint32_t now = current_second();
+  const bool stale = s_snapshot_received &&
+                     watch_maintenance_reached(now, s_snapshot_second + SNAPSHOT_STALE_SECONDS + 1);
   const char *state = s_snapshot.state == STATE_RECORDING ? i18n_text(I18N_RECORDING)
                       : s_snapshot.state == STATE_PAUSED  ? i18n_text(I18N_PAUSED)
                       : s_snapshot.state == STATE_STOPPED ? i18n_text(I18N_STOPPED)
                                                           : i18n_text(I18N_NO_LOCUS);
-  const bool showing_notice = now < s_notice_until;
+  const bool showing_notice = s_notice_until && !watch_maintenance_reached(now, s_notice_until);
   const bool active = s_context_active && s_activity_ready &&
                       (s_snapshot.state == STATE_RECORDING || s_snapshot.state == STATE_PAUSED);
   if (!s_snapshot_received && !showing_notice) {
@@ -482,14 +533,17 @@ static void render(void) {
 
   const char *instruction = NULL;
   if (!s_snapshot_received) {
-    instruction = s_uptime_seconds >= 10 ? i18n_text(I18N_NO_BRIDGE_RESPONSE) : NULL;
+    instruction = watch_maintenance_reached(now, s_launch_second + 10)
+                      ? i18n_text(I18N_NO_BRIDGE_RESPONSE)
+                      : NULL;
   } else if (s_snapshot.state == STATE_STOPPED) {
     instruction = i18n_text(I18N_START_IN_LOCUS);
   } else if (s_snapshot.state == STATE_UNAVAILABLE) {
     instruction = i18n_text(I18N_LOCUS_UNAVAILABLE_INSTRUCTION);
   } else if (!s_activity_ready) {
-    instruction = s_uptime_seconds - s_context_started >= 15 ? i18n_text(I18N_OPEN_WATCH_SETTINGS)
-                                                             : i18n_text(I18N_PREPARING_PROFILE);
+    instruction = watch_maintenance_reached(now, s_context_started + 15)
+                      ? i18n_text(I18N_OPEN_WATCH_SETTINGS)
+                      : i18n_text(I18N_PREPARING_PROFILE);
   }
   if (s_instruction) {
     text_layer_set_text(s_instruction, instruction ? instruction : "");
@@ -598,19 +652,16 @@ static void command_record_mark_delivered(uint32_t command_id) {
   CommandRecord *record = command_record_find(command_id);
   if (!record) return;
   record->awaiting_result = true;
-  record->result_deadline = s_uptime_seconds + COMMAND_RESULT_TIMEOUT_SECONDS;
+  record->result_deadline = current_second() + COMMAND_RESULT_TIMEOUT_SECONDS;
+  schedule_maintenance();
 }
 
-static bool deadline_reached(uint32_t now, uint32_t deadline) {
-  return (int32_t)(now - deadline) >= 0;
-}
-
-static bool expire_command_records(void) {
+static bool expire_command_records(uint32_t now) {
   bool expired = false;
   for (int i = 0; i < COMMAND_RECORD_COUNT; i++) {
     CommandRecord *record = &s_command_records[i];
     if (record->used && record->awaiting_result &&
-        deadline_reached(s_uptime_seconds, record->result_deadline)) {
+        watch_maintenance_reached(now, record->result_deadline)) {
       memset(record, 0, sizeof(*record));
       expired = true;
     }
@@ -659,6 +710,8 @@ static AppMessageResult send_control_packet(const ControlMessage *message) {
                           s_activity_ready ? s_config_fingerprint_a : 0) == DICT_OK &&
         dict_write_uint32(iterator, MESSAGE_KEY_CONFIG_FINGERPRINT_B,
                           s_activity_ready ? s_config_fingerprint_b : 0) == DICT_OK;
+  } else if (valid && message->type == MSG_REQUEST_SNAPSHOT) {
+    valid = dict_write_uint32(iterator, MESSAGE_KEY_SESSION_ID, s_session_id) == DICT_OK;
   }
   if (!valid) return APP_MSG_BUFFER_OVERFLOW;
   return app_message_outbox_send();
@@ -723,9 +776,29 @@ static AppMessageResult send_heart_rate_packet(void) {
   return app_message_outbox_send();
 }
 
+static AppMessageResult send_step_packet(void) {
+  const WatchStepPacket *packet = watch_step_state_prepare(&s_step_state);
+  if (!packet) return APP_MSG_INVALID_STATE;
+  DictionaryIterator *iterator = NULL;
+  AppMessageResult result = app_message_outbox_begin(&iterator);
+  if (result != APP_MSG_OK) return result;
+  const bool valid =
+      write_common(iterator, MSG_STEP_DELTA) &&
+      dict_write_uint32(iterator, MESSAGE_KEY_SESSION_ID, s_session_id) == DICT_OK &&
+      dict_write_uint32(iterator, MESSAGE_KEY_STEP_SEQUENCE, packet->sequence) == DICT_OK &&
+      dict_write_int32(iterator, MESSAGE_KEY_STEPS, packet->delta) == DICT_OK &&
+      dict_write_uint32(iterator, MESSAGE_KEY_RECORDING_START_MILLIS_LOW,
+                        packet->recording.recording_start_low) == DICT_OK &&
+      dict_write_uint32(iterator, MESSAGE_KEY_RECORDING_START_MILLIS_HIGH,
+                        packet->recording.recording_start_high) == DICT_OK;
+  if (!valid) return APP_MSG_BUFFER_OVERFLOW;
+  return app_message_outbox_send();
+}
+
 static void retry_send(void *context) {
   s_retry_timer = NULL;
   send_next();
+  schedule_maintenance();
 }
 
 static void finish_relay(void);
@@ -742,11 +815,13 @@ static void drop_outbound(OutboundKind kind) {
   } else if (kind == OUTBOUND_HEART_RATE) {
     if (s_hr_pending && s_hr_generation == s_hr_send_generation) s_hr_pending = false;
     s_hr_prepared = false;
+  } else if (kind == OUTBOUND_STEPS) {
+    watch_step_state_finish_prepared(&s_step_state);
   }
 }
 
 static void handle_send_failure(OutboundKind kind, AppMessageResult reason) {
-  if (kind <= OUTBOUND_NONE || kind > OUTBOUND_HEART_RATE) return;
+  if (kind <= OUTBOUND_NONE || kind > OUTBOUND_STEPS) return;
   uint8_t *attempts = &s_send_attempts[kind];
   APP_LOG(APP_LOG_LEVEL_WARNING, "AppMessage failure kind=%d reason=%d attempt=%d", (int)kind,
           (int)reason, (int)*attempts + 1);
@@ -757,9 +832,7 @@ static void handle_send_failure(OutboundKind kind, AppMessageResult reason) {
     send_next();
     return;
   }
-  (*attempts)++;
-  if (*attempts >= MAX_SEND_ATTEMPTS) {
-    *attempts = 0;
+  if (watch_outbound_retry_failed(attempts, MAX_SEND_ATTEMPTS)) {
     drop_outbound(kind);
     send_next();
     return;
@@ -769,7 +842,7 @@ static void handle_send_failure(OutboundKind kind, AppMessageResult reason) {
   s_retry_timer = app_timer_register(delay, retry_send, NULL);
   if (!s_retry_timer) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Could not allocate AppMessage retry timer");
-    *attempts = 0;
+    watch_outbound_retry_reset(attempts);
     drop_outbound(kind);
     send_next();
   }
@@ -787,6 +860,9 @@ static void send_next(void) {
   } else if (s_hr_pending || s_hr_prepared) {
     s_inflight_kind = OUTBOUND_HEART_RATE;
     result = send_heart_rate_packet();
+  } else if (watch_step_state_has_outbound(&s_step_state)) {
+    s_inflight_kind = OUTBOUND_STEPS;
+    result = send_step_packet();
   } else {
     s_inflight_kind = OUTBOUND_NONE;
     return;
@@ -812,9 +888,20 @@ static void enqueue_deferred_profile_request(void) {
   }
   if (control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL)) {
     s_request_profiles_after_relay = false;
-  } else {
-    show_notice(i18n_text(I18N_MESSAGE_QUEUE_FULL), 4);
   }
+}
+
+static void service_pending_control_work_at(uint32_t now) {
+  enqueue_deferred_profile_request();
+  if (!s_request_profiles_after_relay && s_runtime_config_pending && s_context_active &&
+      s_current_locus_id[0] && control_enqueue(MSG_REQUEST_RUNTIME_CONFIG, 0, 0, NULL)) {
+    s_runtime_config_pending = false;
+    s_last_runtime_config_request = now;
+  }
+}
+
+static void service_pending_control_work(void) {
+  service_pending_control_work_at(current_second());
 }
 
 static void finish_relay(void) {
@@ -834,8 +921,8 @@ static void outbox_sent(DictionaryIterator *iterator, void *context) {
   const OutboundKind completed = s_inflight_kind;
   s_outbox_busy = false;
   s_inflight_kind = OUTBOUND_NONE;
-  if (completed > OUTBOUND_NONE && completed <= OUTBOUND_HEART_RATE) {
-    s_send_attempts[completed] = 0;
+  if (completed > OUTBOUND_NONE && completed <= OUTBOUND_STEPS) {
+    watch_outbound_retry_reset(&s_send_attempts[completed]);
   }
   if (completed == OUTBOUND_CONTROL) {
     ControlMessage *message = control_head();
@@ -850,12 +937,18 @@ static void outbox_sent(DictionaryIterator *iterator, void *context) {
   } else if (completed == OUTBOUND_HEART_RATE) {
     if (s_hr_pending && s_hr_generation == s_hr_send_generation) s_hr_pending = false;
     s_hr_prepared = false;
+  } else if (completed == OUTBOUND_STEPS) {
+    watch_step_state_finish_prepared(&s_step_state);
   }
+  service_pending_control_work();
   send_next();
+  schedule_maintenance();
 }
 
 static void outbox_failed(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
   handle_send_failure(s_inflight_kind, reason);
+  service_pending_control_work();
+  schedule_maintenance();
 }
 
 static void inbox_dropped(AppMessageResult reason, void *context) {
@@ -962,7 +1055,7 @@ static void accept_profile_chunk(DictionaryIterator *iterator) {
   }
   const WatchProfileTransferOutcome outcome =
       watch_profile_transfer_accept(&s_profile_transfer, s_profile_chunks, sizeof(s_profile_chunks),
-                                    id, index, count, result, data, length, s_uptime_seconds);
+                                    id, index, count, result, data, length, current_second());
   if (outcome == WATCH_PROFILE_TRANSFER_COMPLETE) {
     complete_profile_transfer();
     send_next();
@@ -979,13 +1072,14 @@ static void reset_config_transfer(void) {
   s_chunks[0] = '\0';
   s_transfer_fingerprint_a = 0;
   s_transfer_fingerprint_b = 0;
+  service_pending_control_work();
 }
 
 static bool begin_config_transfer(void) {
-  if (s_control_count >= CONTROL_QUEUE_SIZE) return false;
   reset_config_transfer();
+  if (s_control_count >= CONTROL_QUEUE_SIZE) return false;
   s_config_result_slot_reserved = true;
-  s_transfer_last_activity = s_uptime_seconds;
+  s_transfer_last_activity = current_second();
   return true;
 }
 
@@ -1034,7 +1128,7 @@ static void accept_config_chunk(DictionaryIterator *iterator) {
     reset_config_transfer();
     return;
   }
-  s_transfer_last_activity = s_uptime_seconds;
+  s_transfer_last_activity = current_second();
   if (outcome == WATCH_TRANSFER_DUPLICATE || outcome == WATCH_TRANSFER_ACCEPTED) {
     return;
   }
@@ -1367,13 +1461,15 @@ static void health_timeout(void *context) {
 
 static void health_event(HealthEventType event, void *context) {
   if (event != HealthEventHeartRateUpdate || !s_health_subscribed) return;
+  const uint32_t now = current_second();
   const int32_t bpm = health_service_peek_current_value(HealthMetricHeartRateRawBPM);
   if (bpm < 25 || bpm > 250 ||
-      (s_last_hr_sent_valid && s_uptime_seconds - s_last_hr_sent_uptime < s_heart_rate_interval)) {
+      (s_last_hr_sent_valid &&
+       !watch_maintenance_reached(now, s_last_hr_sent_second + s_heart_rate_interval))) {
     return;
   }
   s_last_hr_sent_valid = true;
-  s_last_hr_sent_uptime = s_uptime_seconds;
+  s_last_hr_sent_second = now;
   s_pending_hr = bpm;
   s_hr_generation++;
   s_hr_pending = true;
@@ -1382,6 +1478,7 @@ static void health_event(HealthEventType event, void *context) {
     s_health_timeout = NULL;
   }
   send_next();
+  schedule_maintenance();
 }
 #endif
 
@@ -1403,13 +1500,14 @@ static void stop_health(void) {
   s_last_hr_sent_valid = false;
 }
 
-static bool fresh_recording_snapshot(void) {
-  return s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS &&
+static bool fresh_recording_snapshot_at(uint32_t now) {
+  return s_snapshot_received &&
+         !watch_maintenance_reached(now, s_snapshot_second + SNAPSHOT_STALE_SECONDS + 1) &&
          s_snapshot.state == STATE_RECORDING;
 }
 
-static void update_health_subscription(void) {
-  const bool wanted = s_watch_hr_to_locus && fresh_recording_snapshot();
+static void update_health_subscription_at(uint32_t now) {
+  const bool wanted = s_watch_hr_to_locus && fresh_recording_snapshot_at(now);
   if (!wanted) {
     stop_health();
     return;
@@ -1438,6 +1536,57 @@ static void update_health_subscription(void) {
   }
 }
 
+static void update_health_subscription(void) {
+  update_health_subscription_at(current_second());
+}
+
+static bool sample_steps(uint32_t now) {
+  bool accessible = false;
+  int64_t total = -1;
+#if defined(PBL_HEALTH)
+  const time_t end = time(NULL);
+  accessible = health_service_metric_accessible(HealthMetricStepCount, time_start_of_today(), end) &
+               HealthServiceAccessibilityMaskAvailable;
+  if (accessible) {
+    total = health_service_sum_today(HealthMetricStepCount);
+  }
+#endif
+  const WatchStepEffects effects =
+      watch_step_state_health_read(&s_step_state, accessible, total, now, UNAVAILABLE);
+  if (effects.render && !watch_step_state_available(&s_step_state)) {
+    s_snapshot.steps = UNAVAILABLE;
+  }
+  send_next();
+  return effects.render;
+}
+
+static bool update_step_state(uint32_t now) {
+  const bool active = s_snapshot_received &&
+                      (s_snapshot.state == STATE_RECORDING || s_snapshot.state == STATE_PAUSED);
+  const WatchStepEffects effects =
+      watch_step_state_update(&s_step_state, s_watch_steps_to_locus, s_activity_ready, active,
+                              s_snapshot_received && !s_snapshot_stale_processed,
+                              (WatchStepRecording){
+                                  .recording_start_low = s_snapshot.recording_start_low,
+                                  .recording_start_high = s_snapshot.recording_start_high,
+                              },
+                              s_outbox_busy && s_inflight_kind == OUTBOUND_STEPS);
+  if (effects.discarded_prepared && s_send_attempts[OUTBOUND_STEPS]) {
+    if (s_retry_timer) {
+      app_timer_cancel(s_retry_timer);
+      s_retry_timer = NULL;
+    }
+    watch_outbound_retry_reset(&s_send_attempts[OUTBOUND_STEPS]);
+  }
+  bool render_needed = effects.render;
+  if (effects.render && !watch_step_state_available(&s_step_state)) {
+    s_snapshot.steps = UNAVAILABLE;
+  }
+  if (effects.sample_now) render_needed = sample_steps(now) || render_needed;
+  send_next();
+  return render_needed;
+}
+
 static void accept_snapshot(DictionaryIterator *iterator) {
   Snapshot candidate;
   if (!app_message_snapshot(iterator, &candidate)) {
@@ -1450,43 +1599,56 @@ static void accept_snapshot(DictionaryIterator *iterator) {
     return;
   }
   const int old_state = s_snapshot.state;
+  const uint32_t now = current_second();
   s_snapshot = candidate;
   s_snapshot_received = true;
-  s_snapshot_age = 0;
+  s_no_bridge_escalated = true;
+  s_snapshot_stale_processed = false;
+  s_snapshot_second = now;
   if (s_snapshot.state == STATE_STOPPED || s_snapshot.state == STATE_UNAVAILABLE) {
     s_health_notice_shown = false;
     s_context_active = false;
     s_activity_ready = false;
     s_selected = 0;
     s_context_started = 0;
+    s_profile_preparation_escalated = true;
   } else if (!s_context_active) {
     s_context_active = true;
-    s_context_started = s_uptime_seconds;
+    s_context_started = now;
+    s_profile_preparation_escalated = false;
   }
-  update_health_subscription();
+  update_step_state(now);
+  update_health_subscription_at(now);
   if (old_state != s_snapshot.state && s_controls_window &&
       window_stack_contains_window(s_controls_window)) {
     rebuild_menu();
   }
   render();
+  schedule_maintenance();
 }
 
-static void request_runtime_config(void) {
+static void request_runtime_config_at(uint32_t now) {
   if (!s_current_locus_id[0]) return;
   if (control_enqueue(MSG_REQUEST_RUNTIME_CONFIG, 0, 0, NULL)) {
-    s_last_runtime_config_request = s_uptime_seconds;
-    send_next();
+    s_runtime_config_pending = false;
+    s_last_runtime_config_request = now;
+  } else {
+    s_runtime_config_pending = true;
   }
 }
 
 static void accept_recording_context(DictionaryIterator *iterator) {
+  const uint32_t now = current_second();
   int32_t state = STATE_UNAVAILABLE;
   if (!app_message_int32(iterator, MESSAGE_KEY_RECORDING_STATE, &state) ||
       (state != STATE_RECORDING && state != STATE_PAUSED)) {
     if (state == STATE_STOPPED || state == STATE_UNAVAILABLE) {
       s_context_active = false;
       s_activity_ready = false;
+      s_runtime_config_pending = false;
+      s_profile_preparation_escalated = true;
       s_selected = 0;
+      update_step_state(now);
       render();
     }
     return;
@@ -1502,21 +1664,34 @@ static void accept_recording_context(DictionaryIterator *iterator) {
       !id_length || !name_length || !watch_locus_profile_valid(id, name)) {
     s_context_active = true;
     s_activity_ready = false;
-    if (!s_context_started) s_context_started = s_uptime_seconds;
+    if (!s_context_started) {
+      s_context_started = now;
+      s_profile_preparation_escalated = false;
+    }
+    update_step_state(now);
     render();
     return;
   }
   const bool changed = !s_context_active || strcmp(id, s_current_locus_id) != 0;
   copy_text(s_current_locus_id, sizeof(s_current_locus_id), id);
   s_context_active = true;
-  if (changed) {
-    s_selected = 0;
-    s_context_started = s_uptime_seconds;
-  }
   s_activity_ready = strcmp(s_current_locus_id, s_config_locus_id) == 0;
+  const WatchContextDecision decision =
+      watch_maintenance_context_decision(changed, s_activity_ready);
+  if (decision.reset_projection_ui) {
+    s_selected = 0;
+    s_context_started = now;
+    s_profile_preparation_escalated = false;
+  }
+  if (s_activity_ready) s_profile_preparation_escalated = true;
   layout_slots();
+  if (decision.request_runtime_config) {
+    request_runtime_config_at(now);
+  }
+  update_step_state(now);
   render();
-  request_runtime_config();
+  send_next();
+  schedule_maintenance();
 }
 
 static void accept_command_result(DictionaryIterator *iterator) {
@@ -1547,8 +1722,9 @@ static void accept_command_result(DictionaryIterator *iterator) {
     show_notice(i18n_text(I18N_COMMAND_ACCEPTED), 4);
   } else {
     snprintf(s_notice, sizeof(s_notice), "%s (%ld)", i18n_text(I18N_COMMAND_FAILED), (long)result);
-    s_notice_until = time(NULL) + 4;
+    s_notice_until = current_second() + 4;
     render();
+    schedule_maintenance();
   }
 }
 
@@ -1580,7 +1756,9 @@ static void inbox(DictionaryIterator *iterator, void *context) {
     } else if (s_profile_transfer.id >= 0 || s_profile_pending_ready) {
       s_request_profiles_after_relay = true;
     } else {
-      control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL);
+      if (!control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL)) {
+        s_request_profiles_after_relay = true;
+      }
       send_next();
     }
   } else if (type == MSG_SNAPSHOT) {
@@ -1590,44 +1768,134 @@ static void inbox(DictionaryIterator *iterator, void *context) {
   } else if (type == MSG_COMMAND_RESULT) {
     accept_command_result(iterator);
   }
+  schedule_maintenance();
 }
 
-static void tick(struct tm *tick_time, TimeUnits units) {
-  const bool was_fresh = s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS;
-  const bool notice_expired = s_notice_until && time(NULL) >= s_notice_until;
-  const bool was_waiting_short =
-      s_context_active && !s_activity_ready && s_uptime_seconds - s_context_started < 15;
-  if (notice_expired) s_notice_until = 0;
-  s_uptime_seconds++;
-  if (s_config_transfer.id >= 0 &&
-      s_uptime_seconds - s_transfer_last_activity >= CONFIG_TRANSFER_TIMEOUT_SECONDS) {
+static void maintenance_add(WatchMaintenanceDeadlines *deadlines, WatchMaintenanceKind kind,
+                            uint32_t deadline) {
+  deadlines->active |= WATCH_MAINTENANCE_BIT(kind);
+  deadlines->deadlines[kind] = deadline;
+}
+
+static WatchMaintenanceDeadlines maintenance_deadlines(void) {
+  WatchMaintenanceDeadlines deadlines = {0};
+  if (s_notice_until) maintenance_add(&deadlines, WATCH_MAINTENANCE_NOTICE, s_notice_until);
+  if (s_config_transfer.id >= 0) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_CONFIG_TRANSFER,
+                    s_transfer_last_activity + CONFIG_TRANSFER_TIMEOUT_SECONDS);
+  }
+  if (s_profile_transfer.id >= 0) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_PROFILE_TRANSFER,
+                    s_profile_transfer.last_activity + PROFILE_TRANSFER_TIMEOUT_SECONDS);
+  }
+  bool command_deadline = false;
+  for (int i = 0; i < COMMAND_RECORD_COUNT; i++) {
+    const CommandRecord *record = &s_command_records[i];
+    if (!record->used || !record->awaiting_result) continue;
+    if (!command_deadline ||
+        (int32_t)(record->result_deadline - deadlines.deadlines[WATCH_MAINTENANCE_COMMAND]) < 0) {
+      deadlines.deadlines[WATCH_MAINTENANCE_COMMAND] = record->result_deadline;
+      command_deadline = true;
+    }
+  }
+  if (command_deadline) deadlines.active |= WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_COMMAND);
+  if (s_snapshot_received && !s_snapshot_stale_processed) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_STALE,
+                    s_snapshot_second + SNAPSHOT_STALE_SECONDS + 1);
+  }
+  if (!s_snapshot_received && !s_no_bridge_escalated) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_NO_BRIDGE, s_launch_second + 10);
+  }
+  if (s_context_active && !s_activity_ready && !s_profile_preparation_escalated) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_PROFILE_PREPARATION, s_context_started + 15);
+  }
+  if (watch_maintenance_should_schedule_reconciliation(
+          s_context_active, s_current_locus_id[0] != '\0', s_runtime_config_pending)) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_RECONCILIATION,
+                    s_last_runtime_config_request + 60);
+  }
+  uint32_t step_deadline = 0;
+  if (watch_step_state_sample_deadline(&s_step_state, &step_deadline)) {
+    maintenance_add(&deadlines, WATCH_MAINTENANCE_STEPS, step_deadline);
+  }
+  return deadlines;
+}
+
+static void process_maintenance(WatchMaintenancePlan plan, uint32_t now) {
+  bool needs_render = false;
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_NOTICE)) {
+    s_notice_until = 0;
+    needs_render = true;
+  }
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_CONFIG_TRANSFER)) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Discarding expired configuration transfer");
     reset_config_transfer();
   }
-  if (s_profile_transfer.id >= 0 &&
-      s_uptime_seconds - s_profile_transfer.last_activity >= PROFILE_TRANSFER_TIMEOUT_SECONDS) {
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_PROFILE_TRANSFER)) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "Discarding expired profile-list transfer");
     reset_profile_transfer();
   }
-  if (expire_command_records()) {
-    show_notice(i18n_text(I18N_COMMAND_RESPONSE_TIMEOUT), 4);
+  if ((plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_COMMAND)) &&
+      expire_command_records(now)) {
+    copy_text(s_notice, sizeof(s_notice), i18n_text(I18N_COMMAND_RESPONSE_TIMEOUT));
+    s_notice_until = now + 4;
+    needs_render = true;
   }
-  if (s_snapshot_received && s_snapshot_age < UINT16_MAX) {
-    s_snapshot_age++;
-    if (s_snapshot_age == SNAPSHOT_STALE_SECONDS + 1) update_health_subscription();
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_STALE)) {
+    s_snapshot_stale_processed = true;
+    needs_render = update_step_state(now) || needs_render;
+    update_health_subscription_at(now);
+    needs_render = true;
   }
-  enqueue_deferred_profile_request();
-  if (s_context_active && s_current_locus_id[0] &&
-      s_uptime_seconds - s_last_runtime_config_request >= 60) {
-    request_runtime_config();
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_STEPS)) {
+    needs_render = sample_steps(now) || needs_render;
   }
-  const bool now_fresh = s_snapshot_received && s_snapshot_age <= SNAPSHOT_STALE_SECONDS;
-  const bool waiting_short =
-      s_context_active && !s_activity_ready && s_uptime_seconds - s_context_started < 15;
-  if (notice_expired || was_fresh != now_fresh || was_waiting_short != waiting_short ||
-      (!s_snapshot_received && s_uptime_seconds == 10))
-    render();
+  if (plan.due & (WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_NO_BRIDGE) |
+                  WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_PROFILE_PREPARATION))) {
+    if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_NO_BRIDGE)) {
+      s_no_bridge_escalated = true;
+    }
+    if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_PROFILE_PREPARATION)) {
+      s_profile_preparation_escalated = true;
+    }
+    needs_render = true;
+  }
+  service_pending_control_work_at(now);
+  if (plan.due & WATCH_MAINTENANCE_BIT(WATCH_MAINTENANCE_RECONCILIATION)) {
+    request_runtime_config_at(now);
+  }
+  if (needs_render) render();
   send_next();
+}
+
+static void maintenance_callback(void *context) {
+  (void)context;
+  const WatchMaintenanceClock now = current_clock();
+  const WatchMaintenanceDeadlines deadlines = maintenance_deadlines();
+  const WatchMaintenancePlan plan = watch_maintenance_plan(&deadlines, now);
+  process_maintenance(plan, now.seconds);
+  const WatchMaintenanceDeadlines next_deadlines = maintenance_deadlines();
+  const WatchMaintenancePlan next_plan = watch_maintenance_plan(&next_deadlines, now);
+  const bool has_deadline = next_plan.due || next_plan.has_next;
+  const uint32_t deadline = next_plan.due ? now.seconds : next_plan.next_deadline;
+  const uint32_t delay = next_plan.due ? 1 : next_plan.delay_ms;
+  if (!watch_maintenance_timer_schedule(&s_maintenance_timer, has_deadline, deadline, delay) &&
+      has_deadline) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Could not allocate maintenance timer");
+  }
+}
+
+static void schedule_maintenance(void) {
+  const WatchMaintenanceClock now = current_clock();
+  const WatchMaintenanceDeadlines deadlines = maintenance_deadlines();
+  const WatchMaintenancePlan plan = watch_maintenance_plan(&deadlines, now);
+  const bool has_deadline = plan.due || plan.has_next;
+  const uint32_t deadline = plan.due ? now.seconds : plan.next_deadline;
+  const uint32_t delay = plan.due ? 1 : plan.delay_ms;
+  if (!watch_maintenance_timer_schedule(&s_maintenance_timer, has_deadline, deadline, delay) &&
+      has_deadline) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Could not allocate maintenance timer");
+  }
 }
 
 static bool create_windows(void) {
@@ -1677,6 +1945,14 @@ static uint32_t create_session_id(void) {
 
 static bool init(void) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "%s", LOCUS_WATCH_BUILD_SHA256_MARKER);
+  watch_maintenance_timer_initialize(&s_maintenance_timer,
+                                     (WatchMaintenanceTimerOperations){
+                                         .register_timer = register_maintenance_timer,
+                                         .reschedule_timer = reschedule_maintenance_timer,
+                                         .cancel_timer = cancel_maintenance_timer,
+                                     },
+                                     NULL, maintenance_callback, NULL);
+  watch_step_state_initialize(&s_step_state);
   watch_config_transfer_initialize(&s_config_transfer);
   watch_profile_transfer_initialize(&s_profile_transfer);
   i18n_set_locale(i18n_locale(i18n_get_system_locale()));
@@ -1693,6 +1969,7 @@ static bool init(void) {
   }
   s_session_id = create_session_id();
   s_next_command_id = 1;
+  s_launch_second = current_second();
   APP_LOG(APP_LOG_LEVEL_INFO, "Persistent capacity: %lu", (unsigned long)persist_get_max_size());
 
   if (!create_windows()) return false;
@@ -1704,15 +1981,15 @@ static bool init(void) {
   if (open_result != APP_MSG_OK) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "AppMessage open failed: %d", (int)open_result);
     copy_text(s_notice, sizeof(s_notice), i18n_text(I18N_MESSAGING_UNAVAILABLE));
-    s_notice_until = time(NULL) + 30;
+    s_notice_until = current_second() + 30;
   }
-  tick_timer_service_subscribe(SECOND_UNIT, tick);
   window_stack_push(s_main_window, true);
   if (open_result == APP_MSG_OK) {
     control_enqueue(MSG_REQUEST_SNAPSHOT, 0, 0, NULL);
     control_enqueue(MSG_REQUEST_PROFILE_LIST, 0, 0, NULL);
     send_next();
   }
+  schedule_maintenance();
   return true;
 }
 
@@ -1724,7 +2001,7 @@ static void destroy_window(Window **window) {
 
 static void deinit(void) {
   stop_health();
-  tick_timer_service_unsubscribe();
+  watch_maintenance_timer_cancel(&s_maintenance_timer);
   if (s_retry_timer) {
     app_timer_cancel(s_retry_timer);
     s_retry_timer = NULL;

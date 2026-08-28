@@ -174,7 +174,7 @@ static bool parse_metrics(char *value, WatchProfile *profile) {
   while ((metric = next_token(&cursor, ','))) {
     if (profile->count >= WATCH_MAX_SLOTS) return false;
     uint32_t id = 0;
-    if (!parse_uint(metric, &id) || id < 1 || id > 22) return false;
+    if (!parse_uint(metric, &id) || id < 1 || id > 23) return false;
     for (uint8_t i = 0; i < profile->count; i++) {
       if (profile->metrics[i] == id) return false;
     }
@@ -224,6 +224,7 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
   char *locus_id = next_token(&header_cursor, '|');
   char *fingerprint_a_text = next_token(&header_cursor, '|');
   char *fingerprint_b_text = next_token(&header_cursor, '|');
+  char *watch_steps_text = next_token(&header_cursor, '|');
   if (!theme || !watch_hr_text || !interval_text || !locus_id || !fingerprint_a_text ||
       !fingerprint_b_text || header_cursor ||
       (strcmp(theme, "dark") != 0 && strcmp(theme, "light") != 0)) {
@@ -240,6 +241,10 @@ bool watch_config_parse(char *data, const char *active_id, WatchConfig *output) 
   output->fingerprint_b = fingerprint_b;
   output->dark = strcmp(theme, "dark") == 0;
   output->heart_rate_interval = 5;
+  uint32_t watch_steps = 0;
+  if (watch_steps_text && (!parse_uint(watch_steps_text, &watch_steps) || watch_steps > 1))
+    return false;
+  output->watch_steps_to_locus = watch_steps == 1;
   if (watch_hr_text) {
     uint32_t watch_hr = 0;
     if (!parse_uint(watch_hr_text, &watch_hr) || watch_hr > 1) return false;

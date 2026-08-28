@@ -32,6 +32,7 @@ typedef struct {
   int selected;
   bool dark;
   bool watch_hr_to_locus;
+  bool watch_steps_to_locus;
   uint8_t heart_rate_interval;
   char locus_id[WATCH_LOCUS_ID_SIZE];
   uint32_t fingerprint_a;

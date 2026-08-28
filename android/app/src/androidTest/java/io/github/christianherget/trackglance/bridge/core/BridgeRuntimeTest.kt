@@ -7,10 +7,12 @@ import io.github.christianherget.trackglance.bridge.pebble.PebbleDictionarySende
 import io.github.christianherget.trackglance.bridge.pebble.PebbleMessages
 import io.github.christianherget.trackglance.bridge.pebble.ReliablePebbleTransport
 import io.github.christianherget.trackglance.bridge.pebble.SerializedCoreSessionLeases
+import io.github.christianherget.trackglance.bridge.pebble.SnapshotRequestHandler
 import io.github.christianherget.trackglance.bridge.pebble.TrustAdmission
 import io.github.christianherget.trackglance.bridge.pebble.TrustLeaseResult
 import io.github.christianherget.trackglance.bridge.protocol.BridgeProtocol
 import io.rebble.pebblekit2.common.model.PebbleDictionary
+import io.rebble.pebblekit2.common.model.PebbleDictionaryItem
 import io.rebble.pebblekit2.common.model.TransmissionResult
 import io.rebble.pebblekit2.common.model.WatchIdentifier
 import java.util.concurrent.CopyOnWriteArrayList
@@ -51,6 +53,35 @@ class BridgeRuntimeTest {
             assertTrue(BridgeState.status.value.watchAppOpen)
             runtime.watchAppClosed(watchB)
             assertFalse(BridgeState.status.value.watchAppOpen)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun replacementRequiresContextAndLateOldWatchCloseDoesNotInvalidateReplacement() = runBlocking {
+        val sender = RecordingSender()
+        val locus =
+            FakeLocus(
+                profiles = listOf(BridgeProtocol.RecordingProfile(42, "Trail run")),
+                activeProfileName = "Trail run",
+            )
+        val runtime = runtime(sender = sender, locus = locus)
+        val watchA = WatchIdentifier("watch-a")
+        val watchB = WatchIdentifier("watch-b")
+        try {
+            runtime.watchAppOpened(watchA)
+            assertTrue(sender.types().contains(BridgeProtocol.MessageType.RECORDING_CONTEXT.wire))
+
+            sender.calls.clear()
+            runtime.watchAppOpened(watchB)
+            assertTrue(sender.types().contains(BridgeProtocol.MessageType.RECORDING_CONTEXT.wire))
+            assertTrue(sender.calls.all { it.watches == listOf(watchB) })
+
+            runtime.watchAppClosed(watchA)
+            sender.calls.clear()
+            assertTrue(runtime.refresh(listOf(watchB)))
+            assertEquals(listOf(BridgeProtocol.MessageType.SNAPSHOT.wire), sender.types())
         } finally {
             runtime.close()
         }
@@ -819,7 +850,145 @@ class BridgeRuntimeTest {
             sender.calls.clear()
             assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
             assertEquals(1, locus.profileQueries)
-            assertEquals(2, sender.calls.size)
+            assertEquals(1, sender.calls.size)
+            assertEquals(
+                BridgeProtocol.MessageType.SNAPSHOT.wire,
+                PebbleMessages.signed32(
+                    sender.calls.single().dictionary,
+                    BridgeProtocol.Key.MESSAGE_TYPE,
+                ),
+            )
+
+            sender.calls.clear()
+            assertTrue(runtime.recoverSnapshot(WatchIdentifier("watch"), TEST_ADMISSION))
+            assertEquals(
+                listOf(
+                    BridgeProtocol.MessageType.SNAPSHOT.wire,
+                    BridgeProtocol.MessageType.RECORDING_CONTEXT.wire,
+                ),
+                sender.calls.map {
+                    PebbleMessages.signed32(it.dictionary, BridgeProtocol.Key.MESSAGE_TYPE)
+                },
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun failedContextDeliveryRemainsPendingAfterSnapshotSuccess() = runBlocking {
+        val sender = FailFirstContextSender()
+        val locus =
+            FakeLocus(
+                profiles = listOf(BridgeProtocol.RecordingProfile(42, "Trail run")),
+                activeProfileName = "Trail run",
+            )
+        val runtime = runtime(sender, locus)
+        try {
+            assertFalse(runtime.refresh(listOf(WatchIdentifier("watch"))))
+            assertEquals(
+                listOf(
+                    BridgeProtocol.MessageType.SNAPSHOT.wire,
+                    BridgeProtocol.MessageType.PROFILE_LIST_CHUNK.wire,
+                    BridgeProtocol.MessageType.RECORDING_CONTEXT.wire,
+                ),
+                sender.types,
+            )
+
+            sender.types.clear()
+            assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+            assertEquals(
+                listOf(
+                    BridgeProtocol.MessageType.SNAPSHOT.wire,
+                    BridgeProtocol.MessageType.RECORDING_CONTEXT.wire,
+                ),
+                sender.types,
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun pauseResumeAndNameOnlyChangesRemainSnapshotOnlyButProfileIdChangeResendsContext() =
+        runBlocking {
+            val sender = RecordingSender()
+            val locus =
+                FakeLocus(
+                    profiles =
+                        listOf(
+                            BridgeProtocol.RecordingProfile(42, "Trail run"),
+                            BridgeProtocol.RecordingProfile(43, "Road run"),
+                        ),
+                    activeProfileName = "Trail run",
+                )
+            val runtime = runtime(sender, locus)
+            try {
+                assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+
+                sender.calls.clear()
+                locus.state = BridgeProtocol.RecordingState.PAUSED
+                assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+                assertEquals(listOf(BridgeProtocol.MessageType.SNAPSHOT.wire), sender.types())
+
+                sender.calls.clear()
+                locus.activeProfileName = "Trail renamed"
+                locus.profiles =
+                    listOf(
+                        BridgeProtocol.RecordingProfile(42, "Trail renamed"),
+                        BridgeProtocol.RecordingProfile(43, "Road run"),
+                    )
+                assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+                assertEquals(
+                    listOf(
+                        BridgeProtocol.MessageType.SNAPSHOT.wire,
+                        BridgeProtocol.MessageType.PROFILE_LIST_CHUNK.wire,
+                    ),
+                    sender.types(),
+                )
+
+                sender.calls.clear()
+                locus.activeProfileName = "Road run"
+                assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+                assertEquals(
+                    listOf(
+                        BridgeProtocol.MessageType.SNAPSHOT.wire,
+                        BridgeProtocol.MessageType.RECORDING_CONTEXT.wire,
+                    ),
+                    sender.types(),
+                )
+            } finally {
+                runtime.close()
+            }
+        }
+
+    @Test
+    fun stoppedSnapshotInvalidatesContextBeforeSnapshotDeliveryFailure() = runBlocking {
+        val sender = FailStoppedSnapshotSender()
+        val locus =
+            FakeLocus(
+                profiles = listOf(BridgeProtocol.RecordingProfile(42, "Trail run")),
+                activeProfileName = "Trail run",
+            )
+        val runtime = runtime(sender, locus)
+        try {
+            assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+            sender.types.clear()
+
+            locus.state = BridgeProtocol.RecordingState.STOPPED
+            sender.failNextSnapshot = true
+            assertFalse(runtime.refresh(listOf(WatchIdentifier("watch"))))
+
+            locus.state = BridgeProtocol.RecordingState.RECORDING
+            sender.types.clear()
+            assertTrue(runtime.refresh(listOf(WatchIdentifier("watch"))))
+            assertEquals(
+                listOf(
+                    BridgeProtocol.MessageType.SNAPSHOT.wire,
+                    BridgeProtocol.MessageType.RECORDING_CONTEXT.wire,
+                ),
+                sender.types,
+            )
         } finally {
             runtime.close()
         }
@@ -888,6 +1057,188 @@ class BridgeRuntimeTest {
     }
 
     @Test
+    fun type4AuthorityThenType12ReturnsSourceNeutralAccumulatedSteps() = runBlocking {
+        val sender = RecordingSender()
+        val locus = StepLocus()
+        val runtime = runtime(sender = sender, locus = locus)
+        val watch = WatchIdentifier("step-watch")
+        try {
+            runtime.watchAppOpened(watch, TEST_ADMISSION)
+            sender.calls.clear()
+            val request =
+                mapOf(
+                    BridgeProtocol.Key.VERSION.toUInt() to
+                        PebbleDictionaryItem.Int32(BridgeProtocol.VERSION),
+                    BridgeProtocol.Key.MESSAGE_TYPE.toUInt() to
+                        PebbleDictionaryItem.Int32(
+                            BridgeProtocol.MessageType.REQUEST_SNAPSHOT.wire
+                        ),
+                    BridgeProtocol.Key.SESSION_ID.toUInt() to PebbleDictionaryItem.UInt32(27u),
+                )
+            assertTrue(
+                SnapshotRequestHandler(
+                        establish = { runtime.establishWatchSession(watch, it, TEST_ADMISSION) },
+                        recover = { runtime.recoverSnapshot(watch, TEST_ADMISSION) },
+                    )
+                    .handle(request)
+            )
+            assertEquals(
+                listOf(BridgeProtocol.MessageType.SNAPSHOT.wire),
+                sender.types(),
+            )
+
+            sender.calls.clear()
+            assertTrue(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    12,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            assertEquals(12, BridgeState.status.value.lastWatchSteps)
+            assertTrue(runtime.refresh(watch, TEST_ADMISSION))
+            assertEquals(
+                12,
+                PebbleMessages.signed32(
+                    sender.calls.last().dictionary,
+                    BridgeProtocol.Key.STEPS,
+                ),
+            )
+
+            assertTrue(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    1,
+                    BridgeProtocol.UNAVAILABLE,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            assertEquals(null, BridgeState.status.value.lastWatchSteps)
+            sender.calls.clear()
+            assertTrue(runtime.refresh(watch, TEST_ADMISSION))
+            assertEquals(
+                BridgeProtocol.UNAVAILABLE,
+                PebbleMessages.signed32(
+                    sender.calls.last().dictionary,
+                    BridgeProtocol.Key.STEPS,
+                ),
+            )
+
+            assertTrue(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    2,
+                    0,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            sender.calls.clear()
+            assertTrue(runtime.refresh(watch, TEST_ADMISSION))
+            assertEquals(
+                12,
+                PebbleMessages.signed32(
+                    sender.calls.last().dictionary,
+                    BridgeProtocol.Key.STEPS,
+                ),
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun stepIngressRejectsWrongAuthorityIdentityTrustRecordingAndReplay() = runBlocking {
+        val locus = StepLocus()
+        val runtime = runtime(sender = RecordingSender(), locus = locus)
+        val watch = WatchIdentifier("step-watch")
+        try {
+            runtime.watchAppOpened(watch, TEST_ADMISSION)
+            assertTrue(runtime.establishWatchSession(watch, 27, TEST_ADMISSION))
+            assertFalse(
+                runtime.handleStepDelta(
+                    watch,
+                    28,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            assertFalse(
+                runtime.handleStepDelta(
+                    WatchIdentifier("other"),
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            assertFalse(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TrustAdmission(1),
+                )
+            )
+            assertFalse(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis + 1,
+                    TEST_ADMISSION,
+                )
+            )
+            locus.state = BridgeProtocol.RecordingState.STOPPED
+            assertFalse(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            locus.state = BridgeProtocol.RecordingState.PAUSED
+            assertTrue(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+            assertFalse(
+                runtime.handleStepDelta(
+                    watch,
+                    27,
+                    0,
+                    1,
+                    locus.recordingStartMillis,
+                    TEST_ADMISSION,
+                )
+            )
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
     fun rejectedProfileQueryDoesNotConsumeATransferIdentifier() = runBlocking {
         val sender = RecordingSender()
         val locus =
@@ -936,6 +1287,8 @@ class BridgeRuntimeTest {
             ) -> TrustLeaseResult<Unit>)? =
             null,
         admissionCurrent: (TrustAdmission) -> Boolean = { true },
+        stepAccumulator: StepAccumulator = StepAccumulator(),
+        watchSessionAuthority: WatchSessionAuthority = WatchSessionAuthority(),
     ): BridgeRuntime =
         BridgeRuntime(
             scope = scope,
@@ -960,13 +1313,43 @@ class BridgeRuntimeTest {
                     },
             trustedPublicationGate = trustedPublicationGate,
             admissionCurrent = admissionCurrent,
+            stepAccumulator = stepAccumulator,
+            watchSessionAuthority = watchSessionAuthority,
         )
+
+    private class StepLocus : LocusBridgeGateway {
+        val recordingStartMillis = 123_456L
+        var state = BridgeProtocol.RecordingState.RECORDING
+
+        override fun readSnapshot(nowMillis: Long) =
+            BridgeProtocol.Snapshot(
+                state = state,
+                sampledAtEpochSeconds = nowMillis / 1_000,
+                recordingStartMillis =
+                    recordingStartMillis.takeIf {
+                        state == BridgeProtocol.RecordingState.RECORDING ||
+                            state == BridgeProtocol.RecordingState.PAUSED
+                    },
+                steps = null,
+            )
+
+        override fun sendHeartRate(bpm: Int) = false
+
+        override fun recordingProfiles() =
+            RecordingProfilesResult.Success(emptyList<BridgeProtocol.RecordingProfile>())
+
+        override fun execute(
+            command: BridgeProtocol.Command,
+            profileName: String?,
+            waypointName: String?,
+        ) = BridgeProtocol.Result.FAILED
+    }
 
     private class FakeLocus(
         private var heartRateFailures: Int = 0,
         var profiles: List<BridgeProtocol.RecordingProfile> =
             listOf(BridgeProtocol.RecordingProfile(1, "Hiking")),
-        private val activeProfileName: String? = null,
+        var activeProfileName: String? = null,
         private val profileFailure: String? = null,
         private val throwProfileQuery: Boolean = false,
     ) : LocusBridgeGateway {
@@ -974,7 +1357,7 @@ class BridgeRuntimeTest {
         var heartRateCalls = 0
         var profileQueries = 0
         private var currentHeartRate: Int? = null
-        private var state = BridgeProtocol.RecordingState.RECORDING
+        var state = BridgeProtocol.RecordingState.RECORDING
 
         override fun readSnapshot(nowMillis: Long): BridgeProtocol.Snapshot =
             BridgeProtocol.Snapshot(
@@ -1306,6 +1689,10 @@ class BridgeRuntimeTest {
 
         val calls = CopyOnWriteArrayList<Call>()
 
+        fun types(): List<Int> = calls.map {
+            requireNotNull(PebbleMessages.signed32(it.dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
+        }
+
         override suspend fun send(
             dictionary: PebbleDictionary,
             watch: WatchIdentifier,
@@ -1313,6 +1700,50 @@ class BridgeRuntimeTest {
         ): TransmissionResult {
             calls += Call(dictionary, listOf(watch))
             if (yieldDuringSend) yield()
+            return TransmissionResult.Success
+        }
+
+        override fun close() = Unit
+    }
+
+    private class FailFirstContextSender : PebbleDictionarySender {
+        val types = CopyOnWriteArrayList<Int>()
+        private var failed = false
+
+        override suspend fun send(
+            dictionary: PebbleDictionary,
+            watch: WatchIdentifier,
+            admission: TrustAdmission,
+        ): TransmissionResult? {
+            val type =
+                requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
+            types += type
+            if (type == BridgeProtocol.MessageType.RECORDING_CONTEXT.wire && !failed) {
+                failed = true
+                return null
+            }
+            return TransmissionResult.Success
+        }
+
+        override fun close() = Unit
+    }
+
+    private class FailStoppedSnapshotSender : PebbleDictionarySender {
+        val types = CopyOnWriteArrayList<Int>()
+        var failNextSnapshot = false
+
+        override suspend fun send(
+            dictionary: PebbleDictionary,
+            watch: WatchIdentifier,
+            admission: TrustAdmission,
+        ): TransmissionResult? {
+            val type =
+                requireNotNull(PebbleMessages.signed32(dictionary, BridgeProtocol.Key.MESSAGE_TYPE))
+            types += type
+            if (type == BridgeProtocol.MessageType.SNAPSHOT.wire && failNextSnapshot) {
+                failNextSnapshot = false
+                return null
+            }
             return TransmissionResult.Success
         }
 

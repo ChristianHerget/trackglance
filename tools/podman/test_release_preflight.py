@@ -23,7 +23,7 @@ class ReleasePreflightTest(unittest.TestCase):
             "watchapp/src/c/main.c": '#define RELEASE_VERSION "0.2.2"\n',
             "watchapp/src/pkjs/index.js": "  var RELEASE = '0.2.2';\n",
             "docs/sphinx/conf.py": "version = '0.2.2'\n",
-            "protocol/README.md": "Protocol v4 is retained for release 0.2.2.\n",
+            "protocol/README.md": "The APK and PBW must be upgraded together; receivers require protocol 5 and the exact matching\nrelease, currently `0.2.2`.\n",
         }
         for name, content in files.items():
             path = self.repo / name
@@ -60,6 +60,17 @@ class ReleasePreflightTest(unittest.TestCase):
     def test_rejects_version_mismatch(self):
         self.git("tag", "v0.2.3")
         self.assertNotEqual(0, self.preflight("v0.2.3").returncode)
+
+    def test_reports_missing_exact_protocol_marker(self):
+        protocol = self.repo / "protocol/README.md"
+        protocol.write_text(protocol.read_text().replace("`0.2.2`", "0.2.2"))
+        self.git("add", "protocol/README.md")
+        self.git("commit", "-m", "break protocol marker")
+        self.git("push", "origin", "main")
+        self.git("tag", "v0.2.2")
+        result = self.preflight("v0.2.2")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Missing protocol release marker", result.stderr)
 
     def test_rejects_tag_commit_not_on_main(self):
         self.git("checkout", "-b", "side")

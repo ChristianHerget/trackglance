@@ -10,6 +10,9 @@ from datetime import date
 
 
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+PROTOCOL_RELEASE = re.compile(
+    r"release, currently `([0-9]+\.[0-9]+\.[0-9]+)`\.",
+)
 
 
 def replace_once(path, pattern, replacement):
@@ -26,6 +29,12 @@ def values(root):
     pkjs = (root / "watchapp/src/pkjs/index.js").read_text(encoding="utf-8")
     sphinx = (root / "docs/sphinx/conf.py").read_text(encoding="utf-8")
     protocol = (root / "protocol/README.md").read_text(encoding="utf-8")
+    protocol_match = PROTOCOL_RELEASE.search(protocol)
+    if protocol_match is None:
+        raise ValueError(
+            "missing protocol release marker: expected "
+            "'release, currently `MAJOR.MINOR.PATCH`.'"
+        )
     return {
         "android": re.search(r'versionName = "([^"]+)"', android).group(1),
         "package": json.loads((root / "watchapp/package.json").read_text())["version"],
@@ -33,7 +42,7 @@ def values(root):
         "watch": re.search(r'#define RELEASE_VERSION "([^"]+)"', watch).group(1),
         "pkjs": re.search(r"var RELEASE = '([^']+)'", pkjs).group(1),
         "docs": re.search(r"^version = '([^']+)'", sphinx, re.MULTILINE).group(1),
-        "protocol": re.search(r"retained for release ([0-9]+\.[0-9]+\.[0-9]+)", protocol).group(1),
+        "protocol": protocol_match.group(1),
     }
 
 
@@ -79,7 +88,16 @@ def main():
             (re.escape(f"version = '{current}'"), f"version = '{args.version}'"),
             (re.escape(f"release = '{current}'"), f"release = '{args.version}'"),
         ],
-        "protocol/README.md": [(re.escape(current), args.version)] * 4,
+        "protocol/README.md": [
+            (
+                re.escape(f"release, currently `{current}`."),
+                f"release, currently `{args.version}`.",
+            ),
+            (
+                re.escape(f"| 35 | release version, currently `{current}` |"),
+                f"| 35 | release version, currently `{args.version}` |",
+            ),
+        ],
         "RELEASE.md": [(re.escape(f"# TrackGlance {current}"), f"# TrackGlance {args.version}")],
         "appstore/listing.json": [(re.escape(f'"version": "{current}"'), f'"version": "{args.version}"')],
         "docs/end-to-end-testing.md": [(re.escape(f"| Bridge and watchapp | {current} |"), f"| Bridge and watchapp | {args.version} |")],

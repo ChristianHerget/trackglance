@@ -16,6 +16,7 @@ from relay import (
     patch_watch_version_platform,
     patch_watch_version_serial,
     qemu_frame,
+    steps_frame,
 )
 
 
@@ -27,11 +28,18 @@ class FrameTest(unittest.TestCase):
     def test_heart_rate_frame_matches_pebble_qemu_wire_format(self):
         self.assertEqual(heart_rate_frame(123).hex(), "feed000d00027b04beef")
 
+    def test_step_frame_matches_pebble_qemu_health_metric_wire_format(self):
+        self.assertEqual(steps_frame(123).hex(), "feed000c0005000000007bbeef")
+
     def test_invalid_frame_values_fail_closed(self):
         with self.assertRaises(ValueError):
             qemu_frame(65536, b"")
         with self.assertRaises(ValueError):
             heart_rate_frame(256)
+        with self.assertRaises(ValueError):
+            steps_frame(-1)
+        with self.assertRaises(ValueError):
+            steps_frame(0x80000000)
 
     def watch_version_packet(self, serial: bytes = b"\0" * 12) -> bytes:
         payload = bytearray(134)

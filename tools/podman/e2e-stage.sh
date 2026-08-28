@@ -69,6 +69,8 @@ wait_status watch_app_open true 90
 wait_status watch_version "$RELEASE_WATCH_VERSION" 45
 profiles=$(wait_nonempty_status locus_profiles 45)
 printf 'Locus reported profiles: %s\n' "$(awk -F'|' '{print NF}' <<<"$profiles")"
+recording_profile=$(cut -d'|' -f2 <<<"$profiles")
+test -n "$recording_profile"
 watch_screenshot "${PEBBLE_PLATFORM}-dashboard"
 
 adb_device shell am start -W -a android.intent.action.VIEW \
@@ -105,6 +107,10 @@ if (( ! settings_loaded )); then
   exit 1
 fi
 
+tap_text "$recording_profile" 30
+tap_text "Use watch steps for this activity" 30
+tap_text "Done" 30
+
 tap_text "General settings" 30
 general_loaded=0
 general_deadline=$((SECONDS + 30))
@@ -121,6 +127,65 @@ if (( ! general_loaded )); then
   exit 1
 fi
 
+open_trackglance_settings() {
+  adb_device shell am start -W -a android.intent.action.VIEW \
+    -d pebble://navbar/apps -n coredevices.coreapp/.MainActivity >/dev/null
+  tap_text "Apps" 15
+  tap_text "TrackGlance" 30
+  tap_text "Settings" 30
+  local deadline=$((SECONDS + 30))
+  while (( SECONDS < deadline )); do
+    dump_ui
+    grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml && return 0
+    sleep 0.5
+  done
+  echo "${PEBBLE_PLATFORM} settings did not reopen" >&2
+  return 1
+}
+
+toggle_watch_steps_source() {
+  open_trackglance_settings
+  tap_text "$recording_profile" 30
+  tap_text "Use watch steps for this activity" 30
+  tap_text "Done" 30
+  tap_text "Save" 30
+  adb_device shell am start -W \
+    -a locus.api.android.INTENT_ITEM_MAIN_FUNCTION \
+    -n "$bridge_activity" >/dev/null
+  wait_status watch_app_open true 30
+}
+
+run_step_acceptance() {
+  foreground_locus
+  set_emulator_test_location
+  relayctl steps 1000 >/dev/null
+  watch_screenshot "${PEBBLE_PLATFORM}-menu-stopped"
+  local start_result
+  start_result=$(adb_device shell content call --uri "$STATUS_URI" \
+    --method acceptance-start-recording --arg "$recording_profile")
+  grep -Fq 'result=requested' <<<"$start_result"
+  wait_status recording_state RECORDING 30
+  wait_nonempty_status active_profile 15 >/dev/null
+  wait_status watch_steps 0 30
+
+  relayctl steps 1012 >/dev/null
+  wait_status watch_steps 12 80
+
+  watch_button select
+  sleep 1
+  watch_button select
+  wait_status recording_state PAUSED 30
+  relayctl steps 5 >/dev/null
+  wait_status watch_steps 17 80
+
+  toggle_watch_steps_source
+  wait_status watch_steps NULL 30
+  watch_screenshot "${PEBBLE_PLATFORM}-steps-unavailable"
+  toggle_watch_steps_source
+  wait_status watch_steps 17 30
+  watch_screenshot "${PEBBLE_PLATFORM}-steps-recovered"
+}
+
 if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
   tap_text "Send watch heart rate to Locus" 30
   tap_text "Done" 30
@@ -130,22 +195,11 @@ if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
     -n "$bridge_activity" >/dev/null
   wait_status watch_app_open true 30
 
-  # Starting a stopped recording remains a Locus-side action; watch Select intentionally has no
-  # stopped action. Use the debug-only, shell-protected provider to invoke the public Locus API so
-  # coachmarks and layout changes cannot make acceptance setup flaky. Subsequent pause/resume,
-  # waypoint, and stop commands still originate on the watch.
-  foreground_locus
-  # Refresh the console fix immediately before recording. The emulator retains it until Locus registers
-  # its real GPS listener; unlike a shell test provider, Locus accepts this as GPS input.
-  set_emulator_test_location
-  watch_screenshot emery-menu-stopped
-  recording_profile=$(cut -d'|' -f2 <<<"$profiles")
-  test -n "$recording_profile"
-  acceptance_start_result=$(adb_device shell content call --uri "$STATUS_URI" \
-    --method acceptance-start-recording --arg "$recording_profile")
-  grep -Fq 'result=requested' <<<"$acceptance_start_result"
+  run_step_acceptance
+  watch_button select
+  sleep 1
+  watch_button select
   wait_status recording_state RECORDING 30
-  wait_nonempty_status active_profile 15 >/dev/null
 
   watch_heart_rate_deadline=$((SECONDS + 30))
   while [[ "$(status_value watch_heart_rate || true)" != 123 ]]; do
@@ -161,17 +215,6 @@ if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
     relayctl heart-rate 123 --quality excellent >/dev/null
   done
   wait_status locus_heart_rate 123 3
-
-  watch_button select
-  # QEMU accepts injected buttons faster than the watchapp can construct and display its menu.
-  # Leave the same human-scale gap a real watch supplies before selecting the first action.
-  sleep 1
-  watch_button select
-  wait_status recording_state PAUSED 30
-  watch_button select
-  sleep 1
-  watch_button select
-  wait_status recording_state RECORDING 30
 
   watch_button select
   sleep 1
@@ -210,6 +253,7 @@ else
     -a locus.api.android.INTENT_ITEM_MAIN_FUNCTION \
     -n "$bridge_activity" >/dev/null
   wait_status watch_app_open true 30
+  run_step_acceptance
   watch_button select
   watch_screenshot gabbro-menu
   relayctl heart-rate 123 --quality excellent >/dev/null
@@ -220,6 +264,17 @@ else
     exit 1
   fi
   watch_button back
+  watch_button select
+  sleep 1
+  watch_button select
+  wait_status recording_state RECORDING 30
+  watch_button select
+  sleep 1
+  watch_button down
+  watch_button select
+  sleep 1
+  watch_button select
+  wait_status recording_state STOPPED 30
 fi
 
 android_screenshot "${PEBBLE_PLATFORM}-final-android"
