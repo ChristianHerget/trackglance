@@ -29,8 +29,8 @@ android {
         applicationId = "app.trackglance.bridge"
         minSdk = 24
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.2.6"
+        versionCode = 18
+        versionName = "0.2.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
