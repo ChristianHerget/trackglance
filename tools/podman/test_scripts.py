@@ -556,6 +556,13 @@ class DeviceReadinessTest(unittest.TestCase):
             android.index("/root/.emulator_console_auth_token"),
             android.index("connectedDebugAndroidTest"),
         )
+        self.assertIn('rm -rf "$results"', android)
+        self.assertIn("gradle_status=$?", android)
+        self.assertLess(android.index('rm -rf "$results"'), android.index("connectedDebugAndroidTest"))
+        self.assertLess(
+            android.index("connectedDebugAndroidTest"),
+            android.index("assert-instrumentation-results.py"),
+        )
 
     def test_locus_acceptance_permissions_include_the_device_idle_allowlist(self):
         source = DEVICE_LIB.read_text(encoding="utf-8")
