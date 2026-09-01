@@ -63,6 +63,8 @@ Commands:
   static                         Run every public check inside the development container
   documentation                  Validate committed documentation in the development container
   release-check                  Assemble release and enforce the compiled APK security policy
+  release-artifacts [--published]
+                                 Build and validate only distributable APK, PBW, and documentation
   android --locus-apks DIR       Run every instrumentation test, including Locus
   acceptance --locus-apks DIR    Run Emery acceptance and Gabbro smoke automation
   acceptance-suite [OPTIONS]     Run Android plus Emery/Gabbro acceptance from warm or fresh state
@@ -574,6 +576,17 @@ prepare_published_acceptance_images() {
     --volume "$BUILD_ROOT/images:/export" "$BUILD_IMAGE" \
     cp /opt/trackglance/pebble-app-x86_64-debug.apk /export/pebble-app-x86_64-debug.apk
   build_project_inputs false false
+}
+
+prepare_published_release_runner() {
+  select_static_engine
+  [[ "$ACCEPTANCE_RUNNER_IMAGE" =~ ^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[a-f0-9]{64}$ ]] \
+    || die "ACCEPTANCE_RUNNER_IMAGE is not an immutable published image pin."
+  : "${GH_TOKEN:?GH_TOKEN is required for published image attestation verification}"
+  DEV_CONTAINER_ENGINE=$STATIC_ENGINE \
+    "$SCRIPT_DIR/verify-ci-image" "$ACCEPTANCE_RUNNER_IMAGE" "$CI_IMAGE_SIGNER_WORKFLOW"
+  "$STATIC_ENGINE" pull "$ACCEPTANCE_RUNNER_IMAGE"
+  BUILD_IMAGE=$ACCEPTANCE_RUNNER_IMAGE
 }
 
 require_images() {
@@ -1104,6 +1117,27 @@ release_check() {
   '
 }
 
+release_artifacts() {
+  local published=${1:-false} started
+  [[ -n "${ANDROID_RELEASE_KEYSTORE_PATH:-}" ]] \
+    || die "ANDROID_RELEASE_KEYSTORE_PATH is required for release-artifacts."
+  [[ -n "${ANDROID_RELEASE_KEYSTORE_PASSWORD:-}" ]] \
+    || die "ANDROID_RELEASE_KEYSTORE_PASSWORD is required for release-artifacts."
+  if [[ "$published" == true ]]; then
+    started=$SECONDS
+    prepare_published_release_runner
+    [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] \
+      || echo "- Published runner verification and pull: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+  else
+    doctor_static
+    static_image_exists || build_static_image
+  fi
+  started=$SECONDS
+  run_static_container bash /workspace/tools/podman/release-artifacts.sh
+  [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] \
+    || echo "- APK, PBW, and documentation compilation: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+}
+
 development_command() {
   [[ $# -gt 0 ]] || die "dev requires a command"
   doctor_static
@@ -1443,6 +1477,15 @@ main() {
     static) [[ $# -eq 0 ]] || die "static takes no options"; static_tests ;;
     documentation) [[ $# -eq 0 ]] || die "documentation takes no options"; documentation_tests ;;
     release-check) [[ $# -eq 0 ]] || die "release-check takes no options"; release_check ;;
+    release-artifacts)
+      if [[ $# -eq 0 ]]; then
+        release_artifacts false
+      elif [[ $# -eq 1 && "$1" == --published ]]; then
+        release_artifacts true
+      else
+        die "release-artifacts accepts only --published"
+      fi
+      ;;
     android) parse_locus_apk_options "$@"; run_android_tests "$LOCUS_INPUT_DIR" ;;
     acceptance|e2e) parse_locus_apk_options "$@"; e2e_tests "$LOCUS_INPUT_DIR" ;;
     acceptance-suite) acceptance_suite "$@" ;;

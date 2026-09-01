@@ -80,6 +80,16 @@ class ReleasePreflightTest(unittest.TestCase):
         self.git("tag", "v0.2.2")
         self.assertNotEqual(0, self.preflight("v0.2.2").returncode)
 
+    def test_rejects_older_commit_even_when_it_is_an_ancestor_of_main(self):
+        self.git("tag", "v0.2.2")
+        (self.repo / "later").write_text("later")
+        self.git("add", "later")
+        self.git("commit", "-m", "later main commit")
+        self.git("push", "origin", "main")
+        result = self.preflight("v0.2.2")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("not the current origin/main commit", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,7 @@ E2E_STAGE = ROOT / "tools" / "podman" / "e2e-stage.sh"
 RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_MANIFEST_POLICY = ROOT / "tools" / "podman" / "check_release_manifest.py"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+PUBLISH_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 DEPENDENCY_REVIEW_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-review.yml"
@@ -39,20 +40,17 @@ VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
 class ReleaseWorkflowTest(unittest.TestCase):
-    def test_public_signing_assets_are_checksummed_before_private_key_removal(self):
+    def test_private_key_is_always_removed_before_public_processing(self):
         source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-        stage = source.split("- name: Stage public assets and remove private key", 1)[1]
-        certificate = stage.index("cp trackglance-release-certificate.pem build/release-assets/")
-        fingerprint = stage.index("cp trackglance-release-certificate.sha256 build/release-assets/")
-        checksums = stage.index("sha256sum ./* > SHA256SUMS")
-        private_key_removal = stage.index("rm -f build/release-private/trackglance-release.p12")
-
-        self.assertLess(certificate, checksums)
-        self.assertLess(fingerprint, checksums)
-        self.assertLess(checksums, private_key_removal)
+        cleanup = source.index("- name: Remove private signing key")
+        stage = source.index("- name: Stage public assets")
+        submission = source.index("- name: Submit APK and PBW to VirusTotal")
+        self.assertIn("if: always()", source[cleanup:stage])
+        self.assertLess(cleanup, stage)
+        self.assertLess(stage, submission)
 
     def test_pages_actions_use_the_node24_compatible_major_versions(self):
-        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        source = PUBLISH_RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
             "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0",
             source,
@@ -68,7 +66,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_virustotal_submission_is_pinned_protected_and_rate_limited(self):
         source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
-        build_draft = source.split("  build-draft:", 1)[1].split("\n  deploy-pages:", 1)[0]
+        build_draft = source.split("  build-draft:", 1)[1]
         submission = build_draft.split(
             "- name: Submit APK and PBW to VirusTotal", 1
         )[1].split("- name: Validate VirusTotal reports", 1)[0]
@@ -88,9 +86,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_virustotal_failure_blocks_draft_creation(self):
         source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         build_draft = source.split("  build-draft:", 1)[1].split("\n  deploy-pages:", 1)[0]
-        private_key_removal = build_draft.index(
-            "rm -f build/release-private/trackglance-release.p12"
-        )
+        private_key_removal = build_draft.index("- name: Remove private signing key")
         submission = build_draft.index("- name: Submit APK and PBW to VirusTotal")
         validation = build_draft.index(
             "- name: Validate VirusTotal reports and add submission badges"
@@ -110,16 +106,43 @@ class ReleaseWorkflowTest(unittest.TestCase):
             build_draft,
         )
         self.assertNotIn("continue-on-error", build_draft)
-        self.assertNotIn("if: always()", build_draft)
+        self.assertIn("if: always()", build_draft)
+
+    def test_draft_build_is_artifact_only_attested_and_checks_tag_twice(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(source.count('tools/release-preflight "${GITHUB_REF_NAME}"'), 2)
+        self.assertIn("tools/release-certification", source)
+        self.assertIn("tools/podman-test release-artifacts --published", source)
+        self.assertEqual(source.count("actions/attest-build-provenance@"), 3)
+        for forbidden in ("podman-test static", "podman-test documentation", "acceptance-suite"):
+            self.assertNotIn(forbidden, source)
+        self.assertGreater(
+            source.index("- name: Create or refresh draft release"),
+            source.index("- name: Record release timings"),
+        )
+
+    def test_publication_reverifies_after_pages_review(self):
+        source = PUBLISH_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", source)
+        self.assertNotIn("inputs:", source)
+        self.assertEqual(source.count("gh attestation verify"), 2)
+        self.assertEqual(source.count("--deny-self-hosted-runners"), 2)
+        self.assertEqual(source.count("--source-digest"), 2)
+        self.assertIn("environment: release", source)
+        publish = source.split("  publish:", 1)[1]
+        self.assertIn("sha256sum --check --strict SHA256SUMS", publish)
+        self.assertLess(publish.index("gh attestation verify"), publish.index("--draft=false"))
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
-    def test_validation_uses_protected_pull_requests_without_duplicate_main_pushes(self):
+    def test_validation_uses_protected_pull_requests_and_certifies_main_pushes(self):
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
         ci_events = ci.split("permissions:\n", 1)[0]
-        self.assertNotIn("  push:", ci_events)
+        self.assertIn("  push:\n    branches: [main]", ci_events)
         self.assertIn("  pull_request:\n    branches: [main]", ci_events)
         self.assertIn("  workflow_dispatch:", ci_events)
+        self.assertNotIn("if: github.event_name", ci)
+        self.assertIn("ci-${{ github.event_name }}-${{ github.workflow }}-${{ github.ref }}", ci)
 
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
         codeql_events = codeql.split("permissions:\n", 1)[0]
@@ -190,7 +213,8 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("branches: [main]", source)
         self.assertNotIn("tags: ['v*']", source)
-        self.assertIn("github.event_name == 'pull_request'", source)
+        self.assertIn("  acceptance-hosted:\n    name: Hosted full-stack acceptance", source)
+        self.assertNotIn("if: github.event_name", source)
         self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
         self.assertIn("tools/podman-test acceptance-suite", source)
         self.assertIn('source) run_suite Source --fresh', source)

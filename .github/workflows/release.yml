@@ -14,24 +14,27 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - run: tools/release-preflight "${GITHUB_REF_NAME}"
-
-  build-draft:
-    needs: preflight
-    runs-on: ubuntu-24.04
-    environment: release
     permissions:
-      contents: write
-      pages: write
-      id-token: write
+      actions: read
+      contents: read
+    outputs:
+      certification-run-id: ${{ steps.certification.outputs.run_id }}
+      certification-run-url: ${{ steps.certification.outputs.run_url }}
+      source-commit: ${{ steps.certification.outputs.source_commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Require tag at current main HEAD
+        run: tools/release-preflight "${GITHUB_REF_NAME}"
+      - name: Require exact-SHA main-push certification
+        id: certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          started=$SECONDS
+          tools/release-certification "${GITHUB_REF_NAME}"
+          echo "- Exact-SHA certification wait: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse to alter a published release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -39,24 +42,48 @@ jobs:
           if state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null); then
             test "$state" = true || { echo "Release is already published." >&2; exit 1; }
           fi
+
+  build-draft:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Start release timing
+        run: echo "RELEASE_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Install the pinned image signature verifier
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
       - name: Decode signing identity
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
-          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
         run: |
           umask 077
           mkdir -p build/release-private
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > build/release-private/trackglance-release.p12
-      - name: Build and validate signed release
+      - name: Verify toolchain and build distributable artifacts
         env:
           DEV_CONTAINER_ENGINE: docker
+          GH_TOKEN: ${{ github.token }}
           ANDROID_RELEASE_KEYSTORE_PATH: ${{ github.workspace }}/build/release-private/trackglance-release.p12
           ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
         run: |
-          tools/podman-test static
-          tools/podman-test documentation
-          tools/podman-test release-check
-      - name: Stage public assets and remove private key
+          started=$SECONDS
+          tools/podman-test release-artifacts --published
+          echo "- Toolchain verification and artifact compilation: $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove private signing key
+        if: always()
+        run: |
+          find build/release-private -type f -delete 2>/dev/null || true
+          rmdir build/release-private 2>/dev/null || true
+      - name: Stage public assets
         run: |
           version=${GITHUB_REF_NAME#v}
           mkdir -p build/release-assets
@@ -64,11 +91,42 @@ jobs:
           cp watchapp/build/watchapp.pbw "build/release-assets/trackglance-watch-$version.pbw"
           cp trackglance-release-certificate.pem build/release-assets/
           cp trackglance-release-certificate.sha256 build/release-assets/
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -czf "build/release-assets/trackglance-docs-$version.tar.gz" -C docs/sphinx/_build/html .
           (cd build/release-assets && sha256sum ./* > SHA256SUMS)
-          rm -f build/release-private/trackglance-release.p12
-          rmdir build/release-private
+      - name: Attest APK provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: build/release-assets/*.apk
+      - name: Attest PBW provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: build/release-assets/*.pbw
+      - name: Attest documentation provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: build/release-assets/trackglance-docs-*.tar.gz
       - name: Generate release notes
-        run: tools/release-notes "${GITHUB_REF_NAME#v}" > build/release-notes.md
+        env:
+          CERTIFICATION_RUN_ID: ${{ needs.preflight.outputs.certification-run-id }}
+          CERTIFICATION_RUN_URL: ${{ needs.preflight.outputs.certification-run-url }}
+          SOURCE_COMMIT: ${{ needs.preflight.outputs.source-commit }}
+        run: |
+          tools/release-notes "${GITHUB_REF_NAME#v}" > build/release-notes.md
+          cat >> build/release-notes.md <<EOF
+
+          Source commit: \`$SOURCE_COMMIT\`
+
+          Certification: [$CERTIFICATION_RUN_ID]($CERTIFICATION_RUN_URL)
+
+          Draft build: [$GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
+
+          Verify a downloaded artifact with:
+
+          \`gh attestation verify ARTIFACT --repo $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/release.yml --source-ref $GITHUB_REF --source-digest $SOURCE_COMMIT --deny-self-hosted-runners\`
+          EOF
+      - name: Start VirusTotal timing
+        run: echo "VIRUSTOTAL_STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - name: Submit APK and PBW to VirusTotal
         id: virustotal
         uses: crazy-max/ghaction-virustotal@936d8c5c00afe97d3d9a1af26d017cfdf26800a2 # v5.0.0
@@ -83,6 +141,13 @@ jobs:
         env:
           VIRUSTOTAL_ANALYSIS: ${{ steps.virustotal.outputs.analysis }}
         run: tools/append-virustotal-badges "${GITHUB_REF_NAME#v}" build/release-notes.md
+      - name: Recheck tag at current main HEAD
+        run: tools/release-preflight "${GITHUB_REF_NAME}"
+      - name: Record release timings
+        run: |
+          now=$(date +%s)
+          echo "- VirusTotal submission and validation: $((now - VIRUSTOTAL_STARTED))s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Protected artifact job total: $((now - RELEASE_JOB_STARTED))s" >> "$GITHUB_STEP_SUMMARY"
       - name: Create or refresh draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -93,35 +158,3 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "TrackGlance ${GITHUB_REF_NAME#v}" --notes-file build/release-notes.md
           fi
           gh release upload "$GITHUB_REF_NAME" ./build/release-assets/* --clobber
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: docs/sphinx/_build/html
-
-  deploy-pages:
-    needs: build-draft
-    runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: Deploy documentation
-        id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
-
-  publish:
-    needs: deploy-pages
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Publish draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
-          gh release edit "$GITHUB_REF_NAME" --draft=false

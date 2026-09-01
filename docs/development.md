@@ -39,8 +39,10 @@ analyses.
 
 ## Release environment prerequisites
 
-The tag-triggered release job uses the protected GitHub `release` environment. Before creating a
-release tag, confirm that the environment contains the Android signing secrets and a working
+Every push to `main` runs the complete `CI` suite on the exact squash commit. Before tagging,
+confirm its three jobs succeeded, fetch `main`, and create `vMAJOR.MINOR.PATCH` at that exact HEAD.
+The tag-triggered draft job waits for that exact-SHA certification before entering the protected
+GitHub `release` environment. Confirm that the environment contains the signing secrets and a working
 `VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
 argument or log:
 
@@ -48,10 +50,25 @@ argument or log:
 gh secret set VIRUSTOTAL_API_KEY --env release --repo ChristianHerget/trackglance
 ```
 
-The release job submits the staged signed APK and PBW after deleting the private signing key. Both
+The release job verifies the published runner and invokes only
+`./tools/podman-test release-artifacts --published`. It builds the signed APK, generated PBW, and
+Sphinx documentation archive without rerunning general tests or acceptance. It submits the staged
+APK and PBW after deleting the private signing key. Both
 uploads and their analysis links must succeed before a draft is created. The links identify
 successful submissions only: the workflow does not wait for analysis or gate publication on later
 malicious or suspicious detections.
+
+The result remains a draft. Review the phone build and durable documentation asset, then dispatch
+publication using the tag itself as the workflow ref (there is deliberately no tag input):
+
+```sh
+gh workflow run publish-release.yml --ref v0.2.8
+```
+
+Publication verifies the draft, deploys its documentation through the protected `github-pages`
+environment, then waits at the protected `release` environment. Review the live site before
+approving. The final job downloads and verifies the candidate again before publishing it. It does
+not compare the reviewed tag with a later `main` HEAD.
 
 ## Private Locus acceptance fixture
 
@@ -197,12 +214,11 @@ intentional and reviewed:
 
 The first resolution may use the network; a populated cache can subsequently run the lightweight
 Gradle tasks with `--offline`. CI mirrors this split: public static checks and documentation are
-separate. Every pull request also runs full KVM acceptance on an ephemeral GitHub-hosted Docker
+separate. Every pull request and every push to `main` also runs full KVM acceptance on an ephemeral GitHub-hosted Docker
 runner. The job verifies and pulls the signed, digest-pinned prebuilt GHCR runner and emulator,
 downloads the pinned public Locus fixture, creates fresh golden state, and tests the current
-TrackGlance build. Protected `main` relies on these required pull-request results instead of
-rerunning CI or CodeQL after the merge; tag CI, scheduled CodeQL, and manual dispatch remain
-available. The same test stages run locally with the private fixture through
+TrackGlance build. The exact `main` push run certifies a tag build; CodeQL and dependency review
+remain protected pull-request gates and are not duplicated after merge. The same test stages run locally with the private fixture through
 `./tools/podman-test acceptance-suite --locus-apks
 /home/christian/.local/share/trackglance-acceptance/locus-apks`; this warm path preserves caches and
 the validated golden state for fast feedback. Use `--published --cleanup` to reproduce hosted

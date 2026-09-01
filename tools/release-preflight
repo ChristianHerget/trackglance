@@ -17,8 +17,8 @@ protocol_version=$(sed -nE 's/.*release, currently `([0-9]+\.[0-9]+\.[0-9]+)`\..
 }
 values=(
   "$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' android/app/build.gradle.kts)"
-  "$(node -p "require('./watchapp/package.json').version")"
-  "$(node -p "require('./watchapp/package-lock.json').version")"
+  "$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' watchapp/package.json | head -n1)"
+  "$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' watchapp/package-lock.json | head -n1)"
   "$(sed -nE 's/^#define RELEASE_VERSION "([^"]+)"/\1/p' watchapp/src/c/main.c)"
   "$(sed -nE "s/^  var RELEASE = '([^']+)';/\1/p" watchapp/src/pkjs/index.js)"
   "$(sed -nE "s/^version = '([^']+)'/\1/p" docs/sphinx/conf.py)"
@@ -33,8 +33,9 @@ done
 
 git fetch --quiet origin main
 commit=$(git rev-list -n 1 "$tag^{commit}")
-git merge-base --is-ancestor "$commit" origin/main || {
-  echo "Tag commit is not an ancestor of origin/main." >&2
+main_commit=$(git rev-parse 'origin/main^{commit}')
+[[ "$commit" == "$main_commit" ]] || {
+  echo "Tag commit $commit is not the current origin/main commit $main_commit." >&2
   exit 1
 }
 echo "Release preflight passed for $tag at $commit."

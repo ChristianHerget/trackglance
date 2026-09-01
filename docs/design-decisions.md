@@ -111,3 +111,28 @@ not a release-blocking defect.
 - Retain existing transport validation, recording-identity checks, subsequent-event recovery, and
   watchapp restart as recovery mechanisms.
 - Reconsider per-owner timers only if real-world reports demonstrate meaningful failures.
+
+## 11. Release certification and artifact-only builds
+
+**Decision:** A distributable build is authorized by the successful `CI` push workflow for the
+exact squash-merged commit, rather than by repeating general tests in the signing job. Every push
+to `main` runs static/release checks, committed-documentation validation, and hosted Android,
+Emery, and Gabbro acceptance. A release tag must equal the current `main` HEAD both before access
+to signing secrets and immediately before the draft is changed.
+
+The protected tag build verifies the signed and attested, digest-pinned acceptance runner and uses
+it only as an immutable build toolchain. It freshly builds and validates the signed APK, generated
+PBW, and an offline documentation archive, attests those three artifacts, and leaves a draft.
+General unit, lint, Android-test, and acceptance entry points are deliberately absent from this
+job; Android's release-internal `lintVital` remains part of `assembleRelease`.
+
+Publication is a separate tag-ref manual workflow. It verifies the draft checksums and exact
+workflow/source/runner provenance, deploys the archived documentation for review, pauses at the
+protected `release` environment, then downloads and verifies everything again before publishing.
+It does not require the older reviewed tag to remain the current `main` HEAD. Published releases
+are not mutated; a correction requires a new patch release.
+
+**Rationale:** This binds artifacts to tested post-merge source while keeping signing access short
+and compilation-only. A durable documentation asset makes the deployed manual independently
+reviewable, and explicit publication removes the fragile automatic publish chain without weakening
+artifact identity or human approval.
