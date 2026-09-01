@@ -113,7 +113,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(source.count('tools/release-preflight "${GITHUB_REF_NAME}"'), 2)
         self.assertIn("tools/release-certification", source)
         self.assertIn("tools/podman-test release-artifacts --published", source)
-        self.assertEqual(source.count("actions/attest-build-provenance@"), 3)
+        self.assertEqual(source.count("actions/attest@"), 3)
+        self.assertNotIn("actions/attest-build-provenance@", source)
         for forbidden in ("podman-test static", "podman-test documentation", "acceptance-suite"):
             self.assertNotIn(forbidden, source)
         self.assertGreater(
@@ -388,8 +389,10 @@ class PublishedCiImageTest(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", source)
         self.assertIn("cosign sign --yes", source)
         self.assertIn("Refusing to overwrite published image tag", source)
-        self.assertEqual(source.count("actions/attest-build-provenance@"), 3)
-        self.assertEqual(source.count("actions/attest-sbom@"), 3)
+        self.assertEqual(source.count("actions/attest@"), 6)
+        self.assertNotIn("actions/attest-build-provenance@", source)
+        self.assertNotIn("actions/attest-sbom@", source)
+        self.assertEqual(source.count("sbom-path:"), 3)
         self.assertIn("Reject forbidden image content", source)
 
 

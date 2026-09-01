@@ -144,39 +144,39 @@ jobs:
           output-file: build/codeql-kotlin.spdx.json
           upload-artifact: false
       - name: Attest acceptance runner provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.ACCEPTANCE_RUNNER_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.runner_digest }}
           push-to-registry: true
       - name: Attest acceptance runner SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.ACCEPTANCE_RUNNER_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.runner_digest }}
           sbom-path: build/acceptance-runner.spdx.json
           push-to-registry: true
       - name: Attest acceptance emulator provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.ACCEPTANCE_EMULATOR_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.emulator_digest }}
           push-to-registry: true
       - name: Attest acceptance emulator SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.ACCEPTANCE_EMULATOR_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.emulator_digest }}
           sbom-path: build/acceptance-emulator.spdx.json
           push-to-registry: true
       - name: Attest Kotlin CodeQL provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.CODEQL_KOTLIN_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.codeql_digest }}
           push-to-registry: true
       - name: Attest Kotlin CodeQL SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.CODEQL_KOTLIN_REPOSITORY }}
           subject-digest: ${{ steps.build.outputs.codeql_digest }}
