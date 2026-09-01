@@ -1,0 +1,99 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  review-documentation:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: read
+      contents: read
+      id-token: write
+      pages: write
+    outputs:
+      source-commit: ${{ steps.candidate.outputs.source_commit }}
+      docs-digest: ${{ steps.candidate.outputs.docs_digest }}
+    steps:
+      - name: Download and verify draft candidate
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)
+          mkdir candidate
+          gh release download "$GITHUB_REF_NAME" --dir candidate
+          (cd candidate && sha256sum --check --strict SHA256SUMS)
+          for asset in candidate/*.apk candidate/*.pbw candidate/trackglance-docs-*.tar.gz; do
+            gh attestation verify "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --source-digest "$commit" \
+              --deny-self-hosted-runners
+          done
+          docs=$(find candidate -maxdepth 1 -name 'trackglance-docs-*.tar.gz' -print -quit)
+          test -n "$docs"
+          mkdir site
+          tar -xzf "$docs" -C site
+          echo "source_commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "docs_digest=$(sha256sum "$docs" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy-pages:
+    needs: review-documentation
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy documentation for review
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+  publish:
+    needs: [review-documentation, deploy-pages]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      attestations: read
+      contents: write
+      id-token: write
+    steps:
+      - name: Redownload, reverify, and publish reviewed draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ needs.review-documentation.outputs.source-commit }}
+          DEPLOYED_DOCS_DIGEST: ${{ needs.review-documentation.outputs.docs-digest }}
+        run: |
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)" = "$SOURCE_COMMIT"
+          mkdir candidate
+          gh release download "$GITHUB_REF_NAME" --dir candidate
+          (cd candidate && sha256sum --check --strict SHA256SUMS)
+          for asset in candidate/*.apk candidate/*.pbw candidate/trackglance-docs-*.tar.gz; do
+            gh attestation verify "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" \
+              --source-digest "$SOURCE_COMMIT" \
+              --deny-self-hosted-runners
+          done
+          docs=$(find candidate -maxdepth 1 -name 'trackglance-docs-*.tar.gz' -print -quit)
+          test "$(sha256sum "$docs" | cut -d' ' -f1)" = "$DEPLOYED_DOCS_DIGEST"
+          gh release edit "$GITHUB_REF_NAME" --draft=false
