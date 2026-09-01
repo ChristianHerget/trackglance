@@ -160,6 +160,8 @@ val verifyDocumentation =
         commandLine("bash", "docs/build_html.sh")
         inputs.file(layout.projectDirectory.file("docs/build_html.sh"))
         inputs.file(layout.projectDirectory.file("docs/requirements.txt"))
+        inputs.file(layout.projectDirectory.file("docs/validate_bridge_screenshots.py"))
+        inputs.file(layout.projectDirectory.file("docs/validate_locus_screenshots.py"))
         inputs.files(
             fileTree(layout.projectDirectory.dir("docs/sphinx")) {
                 include("**/*.rst")

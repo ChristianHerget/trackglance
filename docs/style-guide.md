@@ -32,10 +32,10 @@ the text and contrast can adapt to its surface.
 The Locus Map function picker and panel are an exception to the full-color mark rules. They use
 `artwork/locus_function_icon.svg`, a dedicated monochrome derivative with transparent padding,
 the organic pebble outline, two simplified map lines, and the location pin. It may appear at Locus
-panel sizes below 20px. A neutral contrast keyline keeps the dark-slate light-mode glyph visible on
-Locus's dark map buttons and the off-white dark-mode glyph visible in lists; the colors reverse with
-the system night configuration. Do not use this functional glyph as the Android launcher icon or as
-a general replacement for the primary mark.
+panel sizes below 20px. A neutral contrast keyline keeps the bright off-white glyph visible in lists
+and on Locus's dark map buttons. This treatment is used in both system themes because Locus may
+place the icon on a dark surface in either theme. Do not use this functional glyph as the Android
+launcher icon or as a general replacement for the primary mark.
 
 ## Color and themes
 

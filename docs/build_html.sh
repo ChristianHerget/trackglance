@@ -10,6 +10,7 @@ REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
 PYTHON="${PYTHON:-python3}"
 
 "$PYTHON" "$SCRIPT_DIR/validate_bridge_screenshots.py" "$SOURCE_DIR/_static"
+"$PYTHON" "$SCRIPT_DIR/validate_locus_screenshots.py" "$SOURCE_DIR/_static"
 
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
   echo "Error: '$PYTHON' is required to build the documentation." >&2
