@@ -1,0 +1,15 @@
+diff --git a/js/example/vite.config.js b/js/example/vite.config.js
+index 858663d..51cc515 100644
+--- a/js/example/vite.config.js
++++ b/js/example/vite.config.js
+@@ -75,6 +75,10 @@ export default defineConfig(({ command }) => {
+             });
+           }
+         },
++        '/lab-api': {
++          target: 'http://127.0.0.1:8081',
++          changeOrigin: true,
++        },
+         '/api': {
+           target: 'http://127.0.0.1:8080',
+           changeOrigin: true,

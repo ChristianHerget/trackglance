@@ -38,6 +38,10 @@ SOCKET_DIR=
 LOCUS_INPUT_DIR=
 ACCEPTANCE_DIAGNOSTICS_ROOT="$PROJECT_DIR/build/acceptance-diagnostics"
 SUITE_CLEANUP_ON_EXIT=false
+MANUAL_ARTIFACTS=
+MANUAL_GOLDEN_MARKER=
+MANUAL_PLATFORM=
+MANUAL_COLLECTED=false
 PULL_POLICY=missing
 STATIC_ENGINE=
 ACCEPTANCE_ENGINE=
@@ -55,6 +59,7 @@ Commands:
   build [--refresh]              Build pinned images; refresh explicitly pulls pinned inputs
   build-acceptance              Build only images and artifacts required by headless acceptance
   bootstrap --locus-apks DIR     Create the onboarded API 32 golden state
+  manual --platform PLATFORM     Start a disposable Android/Pebble manual-test lab
   static                         Run every public check inside the development container
   documentation                  Validate committed documentation in the development container
   release-check                  Assemble release and enforce the compiled APK security policy
@@ -65,6 +70,7 @@ Commands:
   clean                          Remove this workflow's generated state and images
 
 LOCUS_APKS_DIR may be used instead of --locus-apks.
+PLATFORM for manual must be emery or gabbro; only 127.0.0.1:5173 is published.
 Use acceptance-suite --published to provision from the verified, digest-pinned GHCR image set.
 EOF
 }
@@ -76,6 +82,7 @@ die() {
 
 cleanup_active() {
   set +e
+  collect_manual_artifacts
   if [[ "$ACCEPTANCE_ENGINE" == docker ]]; then
     local container index
     for ((index=${#ACTIVE_CONTAINERS[@]} - 1; index >= 0; index--)); do
@@ -98,6 +105,13 @@ cleanup_active() {
     find "$SOCKET_DIR" -mindepth 1 -delete >/dev/null 2>&1
     rmdir "$SOCKET_DIR" >/dev/null 2>&1
   fi
+  if [[ -n "$MANUAL_GOLDEN_MARKER" && -n "$ACCEPTANCE_ENGINE" ]]; then
+    local current_golden_marker
+    current_golden_marker=$(golden_marker 2>/dev/null)
+    if [[ "$current_golden_marker" != "$MANUAL_GOLDEN_MARKER" ]]; then
+      echo "Error: Manual-lab cleanup could not verify the original golden-state marker." >&2
+    fi
+  fi
   ACTIVE_POD=
   ACTIVE_ANDROID_CONTAINER=
   ACTIVE_PUBLISH_WEBRTC=false
@@ -107,6 +121,10 @@ cleanup_active() {
   ACTIVE_RUNTIME_VOLUME=
   SERVICE_PID=
   SOCKET_DIR=
+  MANUAL_ARTIFACTS=
+  MANUAL_GOLDEN_MARKER=
+  MANUAL_PLATFORM=
+  MANUAL_COLLECTED=false
   if [[ "$SUITE_CLEANUP_ON_EXIT" == true ]]; then
     stage_acceptance_diagnostics
     SUITE_CLEANUP_ON_EXIT=false
@@ -145,6 +163,12 @@ acceptance_image_exists() {
   else
     docker image inspect "$1" >/dev/null 2>&1
   fi
+}
+
+acceptance_image_label() {
+  local image=$1 label=$2
+  select_acceptance_engine
+  "$ACCEPTANCE_ENGINE" image inspect --format "{{ index .Config.Labels \"$label\" }}" "$image" 2>/dev/null
 }
 
 acceptance_volume_exists() {
@@ -565,6 +589,14 @@ require_images() {
     || die "Missing PBW; run ./tools/podman-test build first."
 }
 
+require_manual_images() {
+  require_images
+  acceptance_image_exists "$WEB_IMAGE" \
+    || die "Missing manual WebRTC image $WEB_IMAGE; run ./tools/podman-test build first."
+  [[ "$(acceptance_image_label "$WEB_IMAGE" io.trackglance.manual-lab)" == 1 ]] \
+    || die "The WebRTC image predates manual-lab support; run ./tools/podman-test build first."
+}
+
 parse_locus_apk_options() {
   LOCUS_INPUT_DIR=${LOCUS_APKS_DIR:-}
   while [[ $# -gt 0 ]]; do
@@ -580,6 +612,31 @@ parse_locus_apk_options() {
   [[ -n "$LOCUS_INPUT_DIR" ]] || die "Use --locus-apks DIR or LOCUS_APKS_DIR."
   LOCUS_INPUT_DIR=$(realpath "$LOCUS_INPUT_DIR")
   [[ -d "$LOCUS_INPUT_DIR" ]] || die "The Locus APK directory does not exist."
+}
+
+parse_manual_options() {
+  MANUAL_PLATFORM=
+  local -a locus_options=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --platform)
+        [[ $# -ge 2 ]] || die "--platform requires emery or gabbro"
+        [[ -z "$MANUAL_PLATFORM" ]] || die "--platform may be specified only once"
+        MANUAL_PLATFORM=$2
+        shift 2
+        ;;
+      --locus-apks)
+        [[ $# -ge 2 ]] || die "--locus-apks requires a directory"
+        [[ ${#locus_options[@]} -eq 0 ]] || die "--locus-apks may be specified only once"
+        locus_options=(--locus-apks "$2")
+        shift 2
+        ;;
+      *) die "Unknown manual option: $1" ;;
+    esac
+  done
+  [[ "$MANUAL_PLATFORM" == emery || "$MANUAL_PLATFORM" == gabbro ]] \
+    || die "manual requires --platform emery or --platform gabbro"
+  parse_locus_apk_options "${locus_options[@]}"
 }
 
 private_locus_fingerprint() {
@@ -827,6 +884,138 @@ new_run() {
   RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-${stage}-$$"
   RUN_ARTIFACTS="$BUILD_ROOT/$RUN_ID"
   mkdir -p "$RUN_ARTIFACTS"
+}
+
+collect_manual_artifacts() {
+  [[ -n "$MANUAL_ARTIFACTS" && "$MANUAL_COLLECTED" == false ]] || return 0
+  MANUAL_COLLECTED=true
+  mkdir -p "$MANUAL_ARTIFACTS"
+  local suffix container
+  if [[ -n "$ACTIVE_POD" && -n "$ACCEPTANCE_ENGINE" ]]; then
+    for suffix in android watch manual web; do
+      container="${ACTIVE_POD}-${suffix}"
+      timeout 15 "$ACCEPTANCE_ENGINE" logs --tail 4000 "$container" 2>&1 \
+        | tail -c 5242880 > "$MANUAL_ARTIFACTS/${suffix}-container.log" || true
+    done
+  fi
+  if [[ -n "$ACTIVE_RUNTIME_VOLUME" && -n "$ACTIVE_POD" ]]; then
+    runner_in_pod "$MANUAL_ARTIFACTS" bash -euo pipefail -c '
+      source /workspace/tools/podman/device-lib.sh
+      adb_device_timeout 20 logcat -d -t 20000 > /artifacts/android-logcat.txt || true
+      adb_device_timeout 10 shell content query --uri "$STATUS_URI" > /artifacts/final-status.txt || true
+      dump_ui || true
+      [[ ! -s /tmp/trackglance-window.xml ]] \
+        || cp /tmp/trackglance-window.xml /artifacts/final-ui.xml
+      for file in /artifacts/pebble-*.serial.log /artifacts/relay-*.jsonl; do
+        [[ -f "$file" ]] || continue
+        tail -c 5242880 "$file" > "$file.bounded"
+        mv "$file.bounded" "$file"
+      done
+    ' >/dev/null 2>&1 || true
+  fi
+}
+
+start_manual_watch() {
+  local platform=$1
+  local -a security network
+  mapfile -t security < <(acceptance_security_args)
+  mapfile -t network < <(active_network_args)
+  acceptance_engine run --detach "${network[@]}" --name "${ACTIVE_POD}-watch" \
+    "${security[@]}" \
+    --env "PEBBLE_PLATFORM=$platform" --env "PEBBLE_SDK_VERSION=$PEBBLE_SDK_VERSION" \
+    --volume "$PROJECT_DIR:/workspace" \
+    --volume "$ACTIVE_WATCH_VOLUME:/pebble-state" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
+    --volume "$MANUAL_ARTIFACTS:/artifacts" \
+    --entrypoint /workspace/tools/podman/watch-qemu-entrypoint.sh \
+    "$BUILD_IMAGE" >/dev/null
+  register_active_container "${ACTIVE_POD}-watch"
+}
+
+start_manual_controller() {
+  local platform=$1
+  local -a security network
+  mapfile -t security < <(acceptance_security_args)
+  mapfile -t network < <(active_network_args)
+  acceptance_engine run --detach "${network[@]}" --name "${ACTIVE_POD}-manual" \
+    "${security[@]}" \
+    --env "PEBBLE_PLATFORM=$platform" \
+    --volume "$PROJECT_DIR:/workspace" \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
+    --volume "$MANUAL_ARTIFACTS:/artifacts" \
+    --workdir /workspace \
+    --entrypoint bash \
+    "$BUILD_IMAGE" /workspace/tools/podman/manual-stage.sh >/dev/null
+  register_active_container "${ACTIVE_POD}-manual"
+}
+
+start_manual_web() {
+  local -a security network
+  mapfile -t security < <(acceptance_security_args)
+  mapfile -t network < <(active_network_args)
+  acceptance_engine run --detach "${network[@]}" --name "${ACTIVE_POD}-web" \
+    "${security[@]}" \
+    --env TRACKGLANCE_WEB_MODE=manual \
+    --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance:ro" \
+    "$WEB_IMAGE" >/dev/null
+  register_active_container "${ACTIVE_POD}-web"
+}
+
+manual_lab() {
+  parse_manual_options "$@"
+  local platform=$MANUAL_PLATFORM locus_dir=$LOCUS_INPUT_DIR
+  doctor_acceptance
+  require_manual_images
+  require_current_golden "$locus_dir"
+  ensure_cache_volumes
+
+  RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$-manual"
+  RUN_ARTIFACTS="$BUILD_ROOT/$RUN_ID"
+  mkdir -p "$RUN_ARTIFACTS"
+  MANUAL_ARTIFACTS=$RUN_ARTIFACTS
+  MANUAL_GOLDEN_MARKER=$(golden_marker) \
+    || die "Could not snapshot the golden-state marker before the manual session."
+  ACTIVE_DATA_VOLUME="trackglance-${RUN_ID}-android"
+  ACTIVE_WATCH_VOLUME="trackglance-${RUN_ID}-watch"
+  ACTIVE_RUNTIME_VOLUME="trackglance-${RUN_ID}-runtime"
+  clone_volume "$GOLDEN_VOLUME" "$ACTIVE_DATA_VOLUME"
+  acceptance_engine volume create "$ACTIVE_WATCH_VOLUME" >/dev/null
+  acceptance_engine volume create "$ACTIVE_RUNTIME_VOLUME" >/dev/null
+  ACTIVE_POD="trackglance-${RUN_ID}"
+  if ! create_test_pod "$ACTIVE_POD" true; then
+    die "Could not create the manual lab on 127.0.0.1:5173; stop the previous lab and retry."
+  fi
+  start_android "${ACTIVE_POD}-android" "$ACTIVE_DATA_VOLUME" "$ACTIVE_RUNTIME_VOLUME"
+  start_manual_watch "$platform"
+  start_manual_controller "$platform"
+  start_manual_web
+
+  local controller="${ACTIVE_POD}-manual" deadline=$((SECONDS + 300)) state
+  while (( SECONDS < deadline )); do
+    state=$(acceptance_engine inspect --format '{{.State.Status}}' "$controller" 2>/dev/null || true)
+    [[ "$state" != exited && "$state" != dead ]] \
+      || die "Manual-lab initialization failed; diagnostics are being retained in $MANUAL_ARTIFACTS."
+    if acceptance_engine exec "$controller" test -s /run/trackglance/manual-ready 2>/dev/null \
+      && acceptance_engine exec "$controller" python3 -c \
+        'import socket; socket.create_connection(("127.0.0.1", 8081), 2).close()' 2>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  (( SECONDS < deadline )) \
+    || die "Manual lab did not become ready within 300 seconds; diagnostics are being retained."
+
+  echo "Manual $platform lab is ready at http://127.0.0.1:5173/."
+  echo "Locus recording is stopped. Captures and bounded logs are stored in $MANUAL_ARTIFACTS."
+  echo "Press Ctrl-C to collect diagnostics and remove this disposable session."
+
+  while [[ "$(acceptance_engine inspect --format '{{.State.Running}}' "$controller" 2>/dev/null || true)" == true ]]; do
+    sleep 2
+  done
+  collect_manual_artifacts
+  cleanup_active
+  echo "Manual lab stopped; disposable containers and volumes were removed."
+  return 1
 }
 
 static_tests() {
@@ -1250,6 +1439,7 @@ main() {
       ;;
     dev) development_command "$@" ;;
     bootstrap) bootstrap "$@" ;;
+    manual) manual_lab "$@" ;;
     static) [[ $# -eq 0 ]] || die "static takes no options"; static_tests ;;
     documentation) [[ $# -eq 0 ]] || die "documentation takes no options"; documentation_tests ;;
     release-check) [[ $# -eq 0 ]] || die "release-check takes no options"; release_check ;;

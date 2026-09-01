@@ -6,6 +6,9 @@ for _ in $(seq 1 300); do
   sleep 0.1
 done
 test -s /run/trackglance/android-discovery.ini
+if [[ "${TRACKGLANCE_WEB_MODE:-bootstrap}" == manual ]]; then
+  install -m 0644 /opt/trackglance-manual/App.tsx /opt/aemu/js/example/src/App.tsx
+fi
 /opt/gateway-venv/bin/videobridge-gateway \
   --port=8080 \
   --discovery_file=/run/trackglance/android-discovery.ini &
