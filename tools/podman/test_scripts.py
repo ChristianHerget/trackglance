@@ -541,9 +541,28 @@ class DeviceReadinessTest(unittest.TestCase):
     def test_emulator_console_token_stays_in_the_private_runtime_volume(self):
         entrypoint = EMULATOR_ENTRYPOINT.read_text(encoding="utf-8")
         helper = EMULATOR_CONSOLE.read_text(encoding="utf-8")
+        podman_test = PODMAN_TEST.read_text(encoding="utf-8")
+        android = podman_test.split("run_android_tests() {", 1)[1].split(
+            "\nrun_e2e_platform() {", 1
+        )[0]
         self.assertIn("/run/trackglance/emulator-console-auth-token", entrypoint)
         self.assertIn('socket.create_connection(("127.0.0.1", 5556)', helper)
         self.assertIn("geo fix", helper)
+        self.assertIn(
+            'install -m 600 "$EMULATOR_CONSOLE_TOKEN" /root/.emulator_console_auth_token',
+            android,
+        )
+        self.assertLess(
+            android.index("/root/.emulator_console_auth_token"),
+            android.index("connectedDebugAndroidTest"),
+        )
+        self.assertIn('rm -rf "$results"', android)
+        self.assertIn("gradle_status=$?", android)
+        self.assertLess(android.index('rm -rf "$results"'), android.index("connectedDebugAndroidTest"))
+        self.assertLess(
+            android.index("connectedDebugAndroidTest"),
+            android.index("assert-instrumentation-results.py"),
+        )
 
     def test_locus_acceptance_permissions_include_the_device_idle_allowlist(self):
         source = DEVICE_LIB.read_text(encoding="utf-8")
