@@ -8,7 +8,8 @@ release is published.
 ## 0.2.8 - 2026-09-01
 
 - Fixed the TrackGlance icon shown in Locus Map function pickers, add-on listings, and configured
-  panel shortcuts while retaining the existing full-color Android launcher icon.
+  panel shortcuts while retaining the existing full-color Android launcher icon. The Locus icon
+  now uses its brighter, more legible appearance in both light and dark Android themes.
 
 ## 0.2.7 - 2026-08-28
 
