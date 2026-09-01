@@ -95,15 +95,15 @@ jobs:
             -czf "build/release-assets/trackglance-docs-$version.tar.gz" -C docs/sphinx/_build/html .
           (cd build/release-assets && sha256sum ./* > SHA256SUMS)
       - name: Attest APK provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: build/release-assets/*.apk
       - name: Attest PBW provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: build/release-assets/*.pbw
       - name: Attest documentation provenance
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: build/release-assets/trackglance-docs-*.tar.gz
       - name: Generate release notes
