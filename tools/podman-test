@@ -1178,6 +1178,9 @@ run_android_tests() {
     # Refresh the boot-time console fix after Locus is active. The emulator retains it until the
     # recording service registers its real GPS listener.
     set_emulator_test_location
+    # AGP/ddmlib opens the emulator console while finalizing connected-test results. Give it the
+    # same pod-private token used above; AGP 9.4 treats an unauthenticated console as a failed run.
+    install -m 600 "$EMULATOR_CONSOLE_TOKEN" /root/.emulator_console_auth_token
     ANDROID_SERIAL="$ADB_SERIAL" timeout 30m ./gradlew :android:app:connectedDebugAndroidTest \
       -Pandroid.testInstrumentationRunnerArguments.runLocusIntegration=true
     python3 /workspace/tools/podman/assert-instrumentation-results.py \
