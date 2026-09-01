@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Require a successful exact-commit main-push CI run before a release build."""
+
+import json
+import os
+import subprocess
+import sys
+import time
+
+
+REQUIRED_JOBS = {
+    "Android, Pebble, protocol, and helpers",
+    "Committed documentation",
+    "Hosted full-stack acceptance",
+}
+
+
+def fail(message: str) -> "NoReturn":
+    raise SystemExit(f"Release certification failed: {message}")
+
+
+def run(*arguments: str) -> str:
+    completed = subprocess.run(arguments, check=False, capture_output=True, text=True)
+    if completed.returncode:
+        fail(completed.stderr.strip() or f"{' '.join(arguments)} exited {completed.returncode}")
+    return completed.stdout
+
+
+def gh_json(endpoint: str) -> dict:
+    return json.loads(run("gh", "api", "--method", "GET", endpoint))
+
+
+def repository() -> str:
+    configured = os.environ.get("GH_REPOSITORY") or os.environ.get("GITHUB_REPOSITORY")
+    if configured:
+        return configured
+    remote = run("git", "remote", "get-url", "origin").strip()
+    remote = remote.removesuffix(".git")
+    if remote.startswith("git@github.com:"):
+        return remote.split(":", 1)[1]
+    marker = "github.com/"
+    if marker in remote:
+        return remote.split(marker, 1)[1]
+    fail("set GH_REPOSITORY when origin is not a GitHub repository")
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit(f"Usage: {sys.argv[0]} vMAJOR.MINOR.PATCH")
+    tag = sys.argv[1]
+    commit = run("git", "rev-parse", f"{tag}^{{commit}}").strip()
+    repo = repository()
+    creation_timeout = float(os.environ.get("RELEASE_CERTIFICATION_CREATION_TIMEOUT", "300"))
+    completion_timeout = float(os.environ.get("RELEASE_CERTIFICATION_COMPLETION_TIMEOUT", "14400"))
+    poll_interval = float(os.environ.get("RELEASE_CERTIFICATION_POLL_INTERVAL", "15"))
+    creation_deadline = time.monotonic() + creation_timeout
+    selected = None
+
+    while selected is None:
+        payload = gh_json(
+            f"repos/{repo}/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha={commit}&per_page=100"
+        )
+        candidates = [
+            item for item in payload.get("workflow_runs", [])
+            if item.get("event") == "push"
+            and item.get("head_branch") == "main"
+            and item.get("head_sha") == commit
+        ]
+        if candidates:
+            selected = max(candidates, key=lambda item: (item.get("run_attempt", 0), item.get("id", 0)))
+            break
+        if time.monotonic() >= creation_deadline:
+            fail(f"no CI push run for main at {commit} appeared within {creation_timeout:g}s")
+        time.sleep(poll_interval)
+
+    run_id = selected["id"]
+    run_url = selected.get("html_url", f"https://github.com/{repo}/actions/runs/{run_id}")
+    print(f"Certification run: {run_id} {run_url}", flush=True)
+    completion_deadline = time.monotonic() + completion_timeout
+    while True:
+        current = gh_json(f"repos/{repo}/actions/runs/{run_id}")
+        conclusion = current.get("conclusion")
+        if conclusion in {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}:
+            fail(f"CI run {run_id} concluded {conclusion}: {run_url}")
+        if current.get("status") == "completed":
+            jobs_payload = gh_json(f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100")
+            jobs = {job.get("name"): job.get("conclusion") for job in jobs_payload.get("jobs", [])}
+            missing = sorted(REQUIRED_JOBS - jobs.keys())
+            if missing:
+                fail(f"CI run {run_id} is missing required jobs: {', '.join(missing)} ({run_url})")
+            unsuccessful = sorted(f"{name}={jobs[name]}" for name in REQUIRED_JOBS if jobs[name] != "success")
+            if unsuccessful:
+                fail(f"CI run {run_id} has unsuccessful required jobs: {', '.join(unsuccessful)} ({run_url})")
+            print(f"Release certification passed for {tag} at {commit} using run {run_id}: {run_url}")
+            if os.environ.get("GITHUB_OUTPUT"):
+                with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                    output.write(f"run_id={run_id}\nrun_url={run_url}\nsource_commit={commit}\n")
+            return
+        if time.monotonic() >= completion_deadline:
+            fail(f"CI run {run_id} did not complete within {completion_timeout:g}s: {run_url}")
+        time.sleep(poll_interval)
+
+
+if __name__ == "__main__":
+    main()
