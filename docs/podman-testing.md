@@ -33,8 +33,8 @@ before changing kernels or disabling KVM.
 Podman uses a dedicated test pod. Docker attaches the Android container to a dedicated network and
 runs the build, CoreApp/Pebble, and relay containers in its network namespace. ADB, emulator
 console, emulator gRPC, Pebble QEMU, and the relay control socket remain inside that group.
-Interactive bootstrap publishes only the Google WebRTC frontend as `127.0.0.1:5173`; headless
-bootstrap and all test runs publish no ports.
+Interactive bootstrap publishes only the browser dashboard as `127.0.0.1:5173`; headless bootstrap
+and all test runs publish no ports.
 
 ## Pinned inputs
 
@@ -125,6 +125,43 @@ If an emulator, Pebble App, or Locus input changes, run `clean`, rebuild, and bo
 test commands reject a missing or stale golden volume rather than silently mixing inputs. Runtime
 commands require the same directory so its current fingerprint can be compared with the bootstrap
 provenance; the APK remains read-only and is not mounted into the test pod.
+
+## Interactive emulator lab
+
+After `build` and `bootstrap` have produced current TrackGlance artifacts, interactive WebRTC
+support, and a provenance-matching golden state, start one disposable platform at a time:
+
+```sh
+./tools/podman-test manual --platform emery \
+  --locus-apks /absolute/private/path
+./tools/podman-test manual --platform gabbro \
+  --locus-apks /absolute/private/path
+```
+
+Open `http://127.0.0.1:5173/`. This is the only published port and it is bound to host loopback.
+The dashboard combines an ADB-backed live Android display with a live Pebble `screendump` canvas,
+readiness indicators, relay-backed sensor inputs, and Back, Up, Select, and Down buttons. The
+keyboard equivalents are Q, W, S, and X respectively; left, up, right, and down arrows provide
+the same mapping. Keyboard shortcuts are suspended while an input or selector has focus.
+
+Heart-rate values accept 0–255 plus the relay's quality values; steps are absolute values from 0
+through 2147483647. Capture names use up to 64 ASCII letters, digits, dots, underscores, or
+hyphens. Android and Pebble controls save separate PNG files in the printed
+`build/podman/<run>-manual/` directory and immediately offer each file as a browser download.
+Existing names are not overwritten, and captures never update tracked documentation images.
+
+The command installs the current Bridge APK, starts Locus Map and the Pebble App, connects the
+selected fresh QEMU state, sideloads the current PBW, and returns Locus to the foreground with
+recording stopped. Press Ctrl-C to retain captures and bounded diagnostics while removing the
+session's Android clone, watch/runtime volumes, containers, and pod. The golden volume is mounted
+read-only only while cloning and its marker is checked again during cleanup. A failed startup uses
+the same cleanup path.
+
+If the command reports missing artifacts or an old WebRTC image, rerun `build`. If it reports a
+missing or incompatible golden state, run `clean`, then `build` and `bootstrap` with the same Locus
+directory. Only one lab can own `127.0.0.1:5173` at a time; interrupt an earlier session before
+starting another. Published acceptance images deliberately omit interactive WebRTC support and are
+not a manual-lab provisioning path.
 
 ## GitHub-hosted acceptance
 

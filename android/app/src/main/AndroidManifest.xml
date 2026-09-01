@@ -26,7 +26,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <!-- Register as a Locus add-on -->
-            <intent-filter>
+            <intent-filter android:icon="@drawable/ic_locus_function">
                 <action android:name="locus.api.android.INTENT_ITEM_MAIN_FUNCTION" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

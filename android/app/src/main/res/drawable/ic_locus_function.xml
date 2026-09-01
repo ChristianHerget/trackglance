@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M20,31 C32,22 68,22 80,35 C91,47 88,70 75,82 C62,93 37,93 24,83 C12,73 9,42 20,31 Z"
+        android:strokeColor="@color/locus_function_icon_contrast"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="12" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M18,50 Q37,43 55,47"
+        android:strokeColor="@color/locus_function_icon_contrast"
+        android:strokeLineCap="round"
+        android:strokeWidth="12" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M17,68 Q37,60 56,64"
+        android:strokeColor="@color/locus_function_icon_contrast"
+        android:strokeLineCap="round"
+        android:strokeWidth="12" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M20,31 C32,22 68,22 80,35 C91,47 88,70 75,82 C62,93 37,93 24,83 C12,73 9,42 20,31 Z"
+        android:strokeColor="@color/locus_function_icon"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="6" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M18,50 Q37,43 55,47"
+        android:strokeColor="@color/locus_function_icon"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M17,68 Q37,60 56,64"
+        android:strokeColor="@color/locus_function_icon"
+        android:strokeLineCap="round"
+        android:strokeWidth="6" />
+    <path
+        android:fillColor="@color/locus_function_icon"
+        android:fillType="evenOdd"
+        android:pathData="M66,18 C58,18 52,24 52,32 C52,42 66,57 66,57 C66,57 80,42 80,32 C80,24 74,18 66,18 Z M66,27 C63,27 61,29 61,32 C61,35 63,37 66,37 C69,37 71,35 71,32 C71,29 69,27 66,27 Z"
+        android:strokeColor="@color/locus_function_icon_contrast"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5" />
+</vector>

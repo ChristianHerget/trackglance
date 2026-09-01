@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="720"
+   height="320"
+   viewBox="0 0 1280 640" preserveAspectRatio="xMidYMid slice"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="social_preview.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.38581514"
+     inkscape:cx="672.60191"
+     inkscape:cy="283.81468"
+     inkscape:window-width="1022"
+     inkscape:window-height="802"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="root-layer" />
+  <defs
+     id="defs1" />
+  <title
+     id="title1">constructed-svg</title>
+  <g
+     id="root-layer"
+     inkscape:groupmode="layer">
+    <rect
+       width="1280"
+       height="640"
+       fill="#1e293b"
+       id="rect1" />
+    <g
+       id="g6">
+      <g
+         opacity="0.4"
+         id="g4">
+        <path
+           d="M 0 160 L 1280 160 M 0 320 L 1280 320 M 0 480 L 1280 480"
+           stroke="#334155"
+           stroke-width="3"
+           stroke-dasharray="10 15"
+           id="path1" />
+        <path
+           d="M 320 0 L 320 640 M 640 0 L 640 640 M 960 0 L 960 640"
+           stroke="#334155"
+           stroke-width="3"
+           stroke-dasharray="10 15"
+           id="path2" />
+        <path
+           d="M -100 500 Q 640 -100 1380 500"
+           fill="none"
+           stroke="#475569"
+           stroke-width="8"
+           id="path3" />
+        <path
+           d="M -100 700 Q 640 100 1380 700"
+           fill="none"
+           stroke="#475569"
+           stroke-width="12"
+           id="path4" />
+      </g>
+      <image
+         href="/home/christian/pebble-locus-map/artwork/mark_main_512.svg"
+         x="200"
+         y="160"
+         width="320"
+         height="320"
+         id="image4" />
+      <text
+         x="580"
+         y="320"
+         font-family="sans-serif"
+         font-weight="900"
+         font-size="96"
+         fill="#f8fafc"
+         id="text4">TrackGlance</text>
+      <text
+         x="580"
+         y="390"
+         font-family="sans-serif"
+         font-weight="500"
+         font-size="44"
+         fill="#cbd5e1"
+         id="text5">Locus Map on your wrist</text>
+      <rect
+         x="580"
+         y="440"
+         width="16"
+         height="16"
+         rx="8"
+         fill="#34d399"
+         id="rect5" />
+      <text
+         x="610"
+         y="455"
+         font-family="sans-serif"
+         font-size="22"
+         font-weight="bold"
+         fill="#34d399"
+         letter-spacing="1.5"
+         id="text6">PEBBLE SMARTWATCH</text>
+    </g>
+  </g>
+</svg>

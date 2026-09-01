@@ -1,6 +1,8 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
+LABEL io.trackglance.manual-lab="1"
+
 ARG ANDROID_EMULATOR_SCRIPTS_COMMIT
 ARG AEMU_PROTOS_COMMIT
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,6 +38,17 @@ RUN sed -i \
     cd /opt/aemu/js && \
     python3 eslint_prefix.py src/proto/emulator_controller_pb.js && \
     npm ci --prefix /opt/aemu/js/example
+COPY tools/podman/manual-dashboard/vite-lab-api.patch /tmp/vite-lab-api.patch
+RUN git -C /opt/aemu apply --check /tmp/vite-lab-api.patch && \
+    git -C /opt/aemu apply /tmp/vite-lab-api.patch && \
+    rm -f /tmp/vite-lab-api.patch
+COPY tools/podman/manual-dashboard/App.tsx /opt/trackglance-manual/App.tsx
+COPY tools/podman/android_frame.py /opt/trackglance-manual/android_frame.py
+RUN cp /opt/aemu/js/example/src/App.tsx /tmp/bootstrap-App.tsx && \
+    install -m 0644 /opt/trackglance-manual/App.tsx /opt/aemu/js/example/src/App.tsx && \
+    npm run build --prefix /opt/aemu/js/example && \
+    mv /tmp/bootstrap-App.tsx /opt/aemu/js/example/src/App.tsx && \
+    rm -rf /opt/aemu/js/example/dist
 COPY tools/podman/web-entrypoint.sh /usr/local/bin/trackglance-web
 RUN chmod 0755 /usr/local/bin/trackglance-web
 EXPOSE 5173

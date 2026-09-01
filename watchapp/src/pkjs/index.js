@@ -3,7 +3,7 @@
   'use strict';
 
   var V = 5;
-  var RELEASE = '0.2.7';
+  var RELEASE = '0.2.8';
   var CONFIG = 'config';
   var CACHE = 'locusProfiles.v4';
   var NOTICE = 'configNotice.v4';

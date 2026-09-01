@@ -208,6 +208,24 @@ available. The same test stages run locally with the private fixture through
 the validated golden state for fast feedback. Use `--published --cleanup` to reproduce hosted
 provisioning locally, and reserve `--fresh --cleanup` for source-provisioning or image comparisons.
 
+For interactive work against the same validated golden state, start a disposable Emery or Gabbro
+lab and open `http://127.0.0.1:5173/`:
+
+```sh
+./tools/podman-test manual --platform emery \
+  --locus-apks /absolute/private/path
+```
+
+The page places the Android and Pebble displays together with watch buttons, Q/W/S/X and arrow-key
+controls, heart-rate and absolute-step inputs, readiness state, and named PNG captures. Captures and
+bounded shutdown diagnostics remain under the printed `build/podman/<run>-manual/` path. Press
+Ctrl-C to remove the cloned Android, watch, and runtime state without changing the golden volume.
+The dashboard remains bound to host loopback.
+Use `--platform gabbro` for Pebble Round 2. Missing-image errors require `build`; stale or missing
+golden provenance requires `clean`, `build`, and `bootstrap` with the same private Locus directory.
+The complete lifecycle and input limits are documented in
+[Interactive emulator lab](podman-testing.md#interactive-emulator-lab).
+
 The real Locus contract test is deliberately opt-in and non-mutating. It requires idle Locus,
 validates numeric recording-profile identities, and confirms that obsolete Start command `1` is
 rejected without changing recording state:
