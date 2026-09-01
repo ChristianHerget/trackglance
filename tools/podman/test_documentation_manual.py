@@ -137,6 +137,36 @@ class DocumentationManualTest(unittest.TestCase):
         self.assertGreater(screenshot.stat().st_size, 10_000)
         self.assertEqual(png_dimensions(screenshot), (780, 1688))
 
+    def test_getting_started_documents_the_complete_locus_button_flow(self):
+        guide = (SPHINX / "getting-started.rst").read_text(encoding="utf-8")
+        screenshots = {
+            "locus_menu_all_features.png": "Locus main menu with the All features button",
+            "locus_all_features_add_ons.png": "Locus All features screen with Add-ons",
+            "locus_trackglance_pin_to_map.png": "TrackGlance Bridge in Locus Add-ons",
+            "locus_trackglance_map_button.png": "Locus map with the TrackGlance function button",
+        }
+
+        for filename, alt_text in screenshots.items():
+            with self.subTest(filename=filename):
+                screenshot = SPHINX / "_static" / filename
+                self.assertGreater(screenshot.stat().st_size, 50_000)
+                self.assertEqual(png_dimensions(screenshot), (1080, 2400))
+                self.assertIn(f".. image:: _static/{filename}", guide)
+                self.assertIn(f":alt: {alt_text}", guide)
+
+        normalized = re.sub(r"\s+", " ", guide)
+        for instruction in (
+            "All features",
+            "Add-ons",
+            "Pin to map screen",
+            "Modify panel",
+            "Set function panels",
+            "Add function button",
+            "asks the Pebble App to launch TrackGlance on the connected watch",
+            "docs.locusmap.app/doku.php/manual:user_guide:functions:panel",
+        ):
+            self.assertIn(instruction, normalized)
+
     def test_features_finish_with_the_complete_watch_matrix(self):
         features = (SPHINX / "features.rst").read_text(encoding="utf-8")
 

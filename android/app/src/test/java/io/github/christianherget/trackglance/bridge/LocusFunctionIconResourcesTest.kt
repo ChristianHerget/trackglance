@@ -32,17 +32,17 @@ class LocusFunctionIconResourcesTest {
     }
 
     @Test
-    fun dedicatedIconIsNonAdaptiveAndHasLightAndNightContrastColors() {
+    fun dedicatedIconIsNonAdaptiveAndAlwaysUsesTheHighContrastLightMark() {
         val vector = document("src/main/res/drawable/ic_locus_function.xml").documentElement
         val lightColors = colors("src/main/res/values/colors.xml")
         val nightColors = colors("src/main/res/values-night/colors.xml")
 
         assertEquals("vector", vector.tagName)
         assertTrue(vector.getElementsByTagName("path").length >= 7)
-        assertEquals("#1E293B", lightColors.getValue("locus_function_icon"))
-        assertEquals("#F1F5F9", nightColors.getValue("locus_function_icon"))
-        assertEquals("#F1F5F9", lightColors.getValue("locus_function_icon_contrast"))
-        assertEquals("#1E293B", nightColors.getValue("locus_function_icon_contrast"))
+        assertEquals("#F1F5F9", lightColors.getValue("locus_function_icon"))
+        assertEquals("#1E293B", lightColors.getValue("locus_function_icon_contrast"))
+        assertFalse(nightColors.containsKey("locus_function_icon"))
+        assertFalse(nightColors.containsKey("locus_function_icon_contrast"))
     }
 
     private fun Element.actionNames(): List<String> {

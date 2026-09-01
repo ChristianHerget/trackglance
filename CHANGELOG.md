@@ -8,7 +8,11 @@ release is published.
 ## 0.2.8 - 2026-09-01
 
 - Fixed the TrackGlance icon shown in Locus Map function pickers, add-on listings, and configured
-  panel shortcuts while retaining the existing full-color Android launcher icon.
+  panel shortcuts while retaining the existing full-color Android launcher icon. The Locus icon
+  now uses its brighter, more legible appearance in both light and dark Android themes.
+- Added a screenshot walkthrough for pinning TrackGlance to a Locus Map function panel and
+  explained that its button opens the Android Bridge and launches TrackGlance on the connected
+  watch.
 
 ## 0.2.7 - 2026-08-28
 

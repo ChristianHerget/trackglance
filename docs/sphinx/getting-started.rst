@@ -14,6 +14,50 @@ the phone, install the PBW through the Pebble App, open Locus Map once, and laun
 the watch. The Bridge status screen should report Locus as available, the watch as connected, the
 watchapp as open, and matching versions.
 
+Add TrackGlance to the Locus Map Screen
+---------------------------------------
+
+Pin TrackGlance to a Locus function panel so you can open the Bridge and start the watch app
+without leaving the map:
+
+1. Open the Locus main menu from the map and tap **All features**.
+
+   .. image:: _static/locus_menu_all_features.png
+      :alt: Locus main menu with the All features button in the lower-right corner
+      :width: 360px
+
+2. Tap **Add-ons** in the All features list.
+
+   .. image:: _static/locus_all_features_add_ons.png
+      :alt: Locus All features screen with Add-ons at the bottom of the category list
+      :width: 360px
+
+3. Open the three-dot menu beside **TrackGlance Bridge**, then tap **Pin to map screen**.
+
+   .. image:: _static/locus_trackglance_pin_to_map.png
+      :alt: TrackGlance Bridge in Locus Add-ons with its Pin to map screen action open
+      :width: 360px
+
+4. Return to the map. The TrackGlance icon now appears in a function panel; its exact position
+   depends on your Locus panel layout.
+
+   .. image:: _static/locus_trackglance_map_button.png
+      :alt: Locus map with the TrackGlance function button visible in the right panel
+      :width: 360px
+
+To choose its exact position instead, long-press a bottom or right function button and select
+**Modify panel**. You can also open **Menu → Settings → Controlling → Panels & buttons → Set
+function panels**. In the panel editor, tap **+ → Add function button**, select **TrackGlance
+Bridge**, and place it in the bottom or right panel. See the official `Locus function-panel guide
+<https://docs.locusmap.app/doku.php/manual:user_guide:functions:panel>`_ for more panel options.
+
+What the Button Does
+~~~~~~~~~~~~~~~~~~~~
+
+Tapping the TrackGlance function button opens the Android Bridge. The Bridge then asks the Pebble
+App to launch TrackGlance on the connected watch. Leave the Bridge open to see whether Locus, the
+watch, and the watch app are connected and ready.
+
 The Android Bridge Is Required
 ------------------------------
 
