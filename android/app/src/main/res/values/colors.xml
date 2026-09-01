@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_background">#075E48</color>
+    <color name="locus_function_icon">#1E293B</color>
+    <color name="locus_function_icon_contrast">#F1F5F9</color>
     <color name="trackglance_background">#F4FBF6</color>
     <color name="trackglance_primary">#006C4C</color>
 </resources>

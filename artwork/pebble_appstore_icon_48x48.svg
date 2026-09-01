@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="48" height="48">
+  <defs>
+    <linearGradient id="pebble_grad" x1="20%" y1="10%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#f1f5f9"/>
+      <stop offset="45%" stop-color="#94a3b8"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+    <linearGradient id="green_pin_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <clipPath id="pebble_clip">
+      <path d="M 22 34 C 34 25, 69 25, 81 38 C 91 50, 88 72, 75 84 C 63 94, 38 94, 25 84 C 13 75, 9 44, 22 34 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Dark Slate Rounded Base -->
+  <rect x="0" y="0" width="100" height="100" rx="22" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Organic Pebble Drop Shadow -->
+  <path d="M 25 41 C 38 31, 72 31, 84 44 C 94 56, 91 78, 78 91 C 66 100, 41 100, 28 91 C 16 81, 13 50, 25 41 Z" fill="#0f172a" opacity="0.6"/>
+
+  <!-- Organic Grey Pebble -->
+  <path d="M 22 34 C 34 25, 69 25, 81 38 C 91 50, 88 72, 75 84 C 63 94, 38 94, 25 84 C 13 75, 9 44, 22 34 Z" fill="url(#pebble_grad)" stroke="#cbd5e1" stroke-width="0.8"/>
+
+  <!-- Bold Map Topo / Grid Lines (Clipped to Pebble) -->
+  <g clip-path="url(#pebble_clip)">
+    <!-- Topo contour curves -->
+    <path d="M 10 50 Q 50 41 90 53" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" opacity="0.95"/>
+    <path d="M 12 69 Q 50 59 90 72" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" opacity="0.95"/>
+    <path d="M 50 15 Q 50 56 53 94" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="6,4.5" opacity="0.8"/>
+  </g>
+
+  <!-- Green Location Pin Shadow -->
+  <ellipse cx="69" cy="50" rx="8" ry="4" fill="#0f172a" opacity="0.6"/>
+
+  <!-- Bold Teardrop Green Location Pin in Upper-Right -->
+  <path d="M 69 22 C 61 22 55 28 55 36 C 55 45 69 59 69 59 C 69 59 83 45 83 36 C 83 28 77 22 69 22 Z" fill="url(#green_pin_grad)" stroke="#ffffff" stroke-width="3"/>
+  <circle cx="69" cy="36" r="5" fill="#ffffff"/>
+</svg>

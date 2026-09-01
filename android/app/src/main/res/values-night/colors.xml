@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="locus_function_icon">#F1F5F9</color>
+    <color name="locus_function_icon_contrast">#1E293B</color>
     <color name="trackglance_background">#0F172A</color>
     <color name="trackglance_primary">#34D399</color>
 </resources>

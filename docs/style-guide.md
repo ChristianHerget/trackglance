@@ -29,6 +29,14 @@ the text and contrast can adapt to its surface.
 - Use **Pebble App** in user-facing text. CoreApp is reserved for source and developer material that
   identifies the upstream package.
 
+The Locus Map function picker and panel are an exception to the full-color mark rules. They use
+`artwork/locus_function_icon.svg`, a dedicated monochrome derivative with transparent padding,
+the organic pebble outline, two simplified map lines, and the location pin. It may appear at Locus
+panel sizes below 20px. A neutral contrast keyline keeps the dark-slate light-mode glyph visible on
+Locus's dark map buttons and the off-white dark-mode glyph visible in lists; the colors reverse with
+the system night configuration. Do not use this functional glyph as the Android launcher icon or as
+a general replacement for the primary mark.
+
 ## Color and themes
 
 | Token | Light | Dark |
