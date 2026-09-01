@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import socket
 import struct
@@ -12,6 +13,7 @@ import subprocess
 import threading
 import time
 import urllib.parse
+import urllib.request
 import zlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +24,11 @@ CAPTURE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 QUALITIES = {"off-wrist", "worst", "poor", "acceptable", "good", "excellent"}
 BUTTONS = {"back", "up", "select", "down"}
+ANDROID_KEYS = {
+    "back": "KEYCODE_BACK",
+    "home": "KEYCODE_HOME",
+    "overview": "KEYCODE_APP_SWITCH",
+}
 MAX_REQUEST_BYTES = 4096
 
 
@@ -94,6 +101,8 @@ class LabController:
         self.relay_socket = relay_socket
         self.adb_serial = adb_serial
         self.capture_lock = threading.Lock()
+        self.capture_names_lock = threading.Lock()
+        self.active_capture_names: set[str] = set()
         self.status_lock = threading.Lock()
         self.cached_status: tuple[float, dict[str, object]] | None = None
         self.artifacts.mkdir(parents=True, exist_ok=True)
@@ -123,21 +132,23 @@ class LabController:
             raise LabError(f"Android emulator command failed: {type(error).__name__}") from error
         return result.stdout
 
-    def bridge_status(self, field: str) -> str | None:
+    def bridge_status(self) -> dict[str, str]:
         output = self.adb(
             "shell",
             "content",
             "query",
             "--uri",
             "content://app.trackglance.bridge.debug-status/status",
-            "--projection",
-            field,
         ).decode(errors="replace")
-        prefix = f"Row: 0 {field}="
+        values: dict[str, str] = {}
         for line in output.splitlines():
-            if line.startswith(prefix):
-                return line.removeprefix(prefix).strip()
-        return None
+            if not line.startswith("Row: 0 "):
+                continue
+            for item in line.removeprefix("Row: 0 ").split(", "):
+                field, separator, value = item.partition("=")
+                if separator:
+                    values[field] = value
+        return values
 
     def status(self) -> dict[str, object]:
         with self.status_lock:
@@ -147,8 +158,9 @@ class LabController:
             status: dict[str, object] = {"platform": self.platform}
             try:
                 status["android_ready"] = self.adb("shell", "getprop", "sys.boot_completed").strip() == b"1"
+                bridge = self.bridge_status()
                 for field in ("locus_available", "recording_state", "watch_connected", "watch_app_open"):
-                    status[field] = self.bridge_status(field)
+                    status[field] = bridge.get(field)
             except LabError as error:
                 status.update(android_ready=False, android_error=str(error))
             try:
@@ -219,24 +231,85 @@ class LabController:
             finally:
                 temporary.unlink(missing_ok=True)
 
+    def android_frame(self) -> tuple[bytes, int, int]:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:8082/frame.png", timeout=10) as response:
+                payload = response.read()
+                width = int(response.headers["X-Android-Width"])
+                height = int(response.headers["X-Android-Height"])
+        except OSError as error:
+            raise LabError(f"Android frame service is unavailable: {error}") from error
+        except (KeyError, TypeError, ValueError) as error:
+            raise LabError("Android frame service returned invalid dimensions") from error
+        if not payload.startswith(PNG_SIGNATURE):
+            raise LabError("Android screencap is not a PNG")
+        if not 1 <= width <= 4096 or not 1 <= height <= 4096:
+            raise LabError("Android frame service returned invalid dimensions")
+        return payload, width, height
+
+    def android_png(self) -> bytes:
+        return self.android_frame()[0]
+
+    def android_touch(self, values: dict[str, object]) -> None:
+        coordinates = []
+        for name in ("x1", "y1", "x2", "y2"):
+            value = values.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 4096:
+                raise LabError(f"{name} must be an integer between 0 and 4096")
+            coordinates.append(value)
+        duration = values.get("duration_ms")
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, int)
+            or not 0 <= duration <= 5000
+        ):
+            raise LabError("duration_ms must be an integer between 0 and 5000")
+        x1, y1, x2, y2 = coordinates
+        if abs(x2 - x1) <= 3 and abs(y2 - y1) <= 3:
+            self.adb("shell", "input", "tap", str(x1), str(y1))
+        else:
+            self.adb(
+                "shell",
+                "input",
+                "swipe",
+                str(x1),
+                str(y1),
+                str(x2),
+                str(y2),
+                str(duration),
+            )
+
+    def android_key(self, value: object) -> None:
+        if value not in ANDROID_KEYS:
+            raise LabError("key must be back, home, or overview")
+        self.adb("shell", "input", "keyevent", ANDROID_KEYS[value])
+
     def capture(self, kind: str, name_value: object) -> str:
         name = validate_capture_name(name_value)
         if kind not in {"android", "pebble"}:
             raise LabError("capture kind must be android or pebble")
         filename = f"{name}-{kind}.png"
         destination = self.artifacts / filename
-        if destination.exists():
-            raise FileExistsError(filename)
-        payload = self.adb("exec-out", "screencap", "-p", timeout=30) if kind == "android" else self.pebble_png()
-        if not payload.startswith(PNG_SIGNATURE):
-            raise LabError(f"{kind} capture is not a PNG")
-        temporary = self.artifacts / f".{filename}.partial"
+        with self.capture_names_lock:
+            if filename in self.active_capture_names or destination.exists():
+                raise FileExistsError(filename)
+            self.active_capture_names.add(filename)
+        temporary = self.artifacts / f".{filename}.{threading.get_ident()}.partial"
         try:
+            payload = (
+                self.adb("exec-out", "screencap", "-p", timeout=30)
+                if kind == "android"
+                else self.pebble_png()
+            )
+            if not payload.startswith(PNG_SIGNATURE):
+                raise LabError(f"{kind} capture is not a PNG")
             with temporary.open("xb") as output:
                 output.write(payload)
-            temporary.replace(destination)
+            os.link(temporary, destination)
         finally:
             temporary.unlink(missing_ok=True)
+            with self.capture_names_lock:
+                self.active_capture_names.discard(filename)
         return filename
 
     def download(self, filename: str) -> bytes:
@@ -299,6 +372,16 @@ class LabHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
+            elif path == "/lab-api/android-frame.png":
+                payload, width, height = self.server.controller.android_frame()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Android-Width", str(width))
+                self.send_header("X-Android-Height", str(height))
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
             elif path.startswith("/lab-api/captures/"):
                 filename = urllib.parse.unquote(path.removeprefix("/lab-api/captures/"))
                 payload = self.server.controller.download(filename)
@@ -327,6 +410,12 @@ class LabHandler(BaseHTTPRequestHandler):
                 response = {"ok": True}
             elif path == "/lab-api/steps":
                 self.server.controller.steps(request.get("count"))
+                response = {"ok": True}
+            elif path == "/lab-api/android/touch":
+                self.server.controller.android_touch(request)
+                response = {"ok": True}
+            elif path == "/lab-api/android/key":
+                self.server.controller.android_key(request.get("key"))
                 response = {"ok": True}
             elif path.startswith("/lab-api/capture/"):
                 kind = path.removeprefix("/lab-api/capture/")

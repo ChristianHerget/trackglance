@@ -6,13 +6,17 @@ for _ in $(seq 1 300); do
   sleep 0.1
 done
 test -s /run/trackglance/android-discovery.ini
+frame_pid=
 if [[ "${TRACKGLANCE_WEB_MODE:-bootstrap}" == manual ]]; then
   install -m 0644 /opt/trackglance-manual/App.tsx /opt/aemu/js/example/src/App.tsx
+  PYTHONPATH=/opt/aemu/gateway/src/videobridge_gateway/proto \
+    /opt/gateway-venv/bin/python /opt/trackglance-manual/android_frame.py &
+  frame_pid=$!
 fi
 /opt/gateway-venv/bin/videobridge-gateway \
   --port=8080 \
   --discovery_file=/run/trackglance/android-discovery.ini &
 gateway_pid=$!
-trap 'kill "$gateway_pid" 2>/dev/null || true' EXIT INT TERM
+trap 'kill "$gateway_pid" ${frame_pid:-} 2>/dev/null || true' EXIT INT TERM
 cd /opt/aemu/js/example
 exec npm run dev -- --host 0.0.0.0 --port 5173

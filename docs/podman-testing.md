@@ -33,8 +33,8 @@ before changing kernels or disabling KVM.
 Podman uses a dedicated test pod. Docker attaches the Android container to a dedicated network and
 runs the build, CoreApp/Pebble, and relay containers in its network namespace. ADB, emulator
 console, emulator gRPC, Pebble QEMU, and the relay control socket remain inside that group.
-Interactive bootstrap publishes only the Google WebRTC frontend as `127.0.0.1:5173`; headless
-bootstrap and all test runs publish no ports.
+Interactive bootstrap publishes only the browser dashboard as `127.0.0.1:5173`; headless bootstrap
+and all test runs publish no ports.
 
 ## Pinned inputs
 
@@ -139,7 +139,7 @@ support, and a provenance-matching golden state, start one disposable platform a
 ```
 
 Open `http://127.0.0.1:5173/`. This is the only published port and it is bound to host loopback.
-The dashboard combines the Android WebRTC display with a live Pebble `screendump` canvas,
+The dashboard combines an ADB-backed live Android display with a live Pebble `screendump` canvas,
 readiness indicators, relay-backed sensor inputs, and Back, Up, Select, and Down buttons. The
 keyboard equivalents are Q, W, S, and X respectively; left, up, right, and down arrows provide
 the same mapping. Keyboard shortcuts are suspended while an input or selector has focus.

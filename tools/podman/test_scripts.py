@@ -12,6 +12,7 @@ DEVICE_LIB = ROOT / "tools" / "podman" / "device-lib.sh"
 APK_VALIDATOR = ROOT / "tools" / "podman" / "validate-locus-apks.py"
 GENERATOR_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.generator"
 WEB_CONTAINERFILE = ROOT / "tools" / "podman" / "Containerfile.web"
+ANDROID_FRAME = ROOT / "tools" / "podman" / "android_frame.py"
 MANUAL_STAGE = ROOT / "tools" / "podman" / "manual-stage.sh"
 MANUAL_DASHBOARD = ROOT / "tools" / "podman" / "manual-dashboard" / "App.tsx"
 MANUAL_VITE_PATCH = ROOT / "tools" / "podman" / "manual-dashboard" / "vite-lab-api.patch"
@@ -1049,6 +1050,7 @@ class ManualLabHarnessTest(unittest.TestCase):
     def test_manual_web_image_is_versioned_and_proxies_only_an_internal_api(self):
         containerfile = WEB_CONTAINERFILE.read_text(encoding="utf-8")
         proxy_patch = MANUAL_VITE_PATCH.read_text(encoding="utf-8")
+        frame_server = ANDROID_FRAME.read_text(encoding="utf-8")
 
         self.assertIn('LABEL io.trackglance.manual-lab="1"', containerfile)
         self.assertIn("git -C /opt/aemu apply --check", containerfile)
@@ -1056,6 +1058,10 @@ class ManualLabHarnessTest(unittest.TestCase):
         self.assertIn("'/lab-api'", proxy_patch)
         self.assertIn("http://127.0.0.1:8081", proxy_patch)
         self.assertNotIn("0.0.0.0:8081", proxy_patch)
+        self.assertIn('default="127.0.0.1"', frame_server)
+        self.assertIn("width=540", frame_server)
+        self.assertIn("getScreenshot", frame_server)
+        self.assertIn("getDisplayConfigurations", frame_server)
 
     def test_dashboard_has_official_keyboard_mappings_and_ignores_text_editing(self):
         dashboard = MANUAL_DASHBOARD.read_text(encoding="utf-8")
@@ -1072,6 +1078,15 @@ class ManualLabHarnessTest(unittest.TestCase):
     def test_manual_setup_installs_current_artifacts_and_finishes_stopped(self):
         stage = MANUAL_STAGE.read_text(encoding="utf-8")
         self.assertIn("install -r \"$bridge_apk\"", stage)
+        installation = stage.split('install -r "$bridge_apk"', 1)[1]
+        self.assertLess(
+            installation.index("am force-stop menion.android.locus"),
+            installation.index("adb_device shell am force-stop app.trackglance.bridge"),
+        )
+        self.assertLess(
+            installation.index("am force-stop menion.android.locus"),
+            installation.index("foreground_locus"),
+        )
         self.assertIn("cache/trackglance.pbw", stage)
         self.assertIn("ADD_QEMU_WATCH", stage)
         self.assertNotIn("monkey -p coredevices.coreapp", stage)

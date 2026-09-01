@@ -43,6 +43,7 @@ RUN git -C /opt/aemu apply --check /tmp/vite-lab-api.patch && \
     git -C /opt/aemu apply /tmp/vite-lab-api.patch && \
     rm -f /tmp/vite-lab-api.patch
 COPY tools/podman/manual-dashboard/App.tsx /opt/trackglance-manual/App.tsx
+COPY tools/podman/android_frame.py /opt/trackglance-manual/android_frame.py
 RUN cp /opt/aemu/js/example/src/App.tsx /tmp/bootstrap-App.tsx && \
     install -m 0644 /opt/trackglance-manual/App.tsx /opt/aemu/js/example/src/App.tsx && \
     npm run build --prefix /opt/aemu/js/example && \

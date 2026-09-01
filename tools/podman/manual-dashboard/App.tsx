@@ -1,7 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Emulator, logger } from '../../src';
-
-logger.setLevel('warn');
 
 const buttonKeys: Record<string, string> = {
   q: 'back',
@@ -65,6 +62,10 @@ function App() {
   const [captureName, setCaptureName] = useState('manual');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
+  const androidCanvasRef = useRef<HTMLCanvasElement>(null);
+  const androidDrawingRef = useRef(false);
+  const androidSizeRef = useRef({ width: 0, height: 0 });
+  const androidPointerRef = useRef<{ x: number; y: number; started: number } | null>(null);
 
   const pressButton = useCallback(async (button: string) => {
     try {
@@ -93,6 +94,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | undefined;
     const refresh = async () => {
       try {
         const next = await api('/lab-api/status');
@@ -102,13 +104,14 @@ function App() {
         }
       } catch (error) {
         if (!cancelled) setMessage(String(error));
+      } finally {
+        if (!cancelled) timer = window.setTimeout(refresh, 2000);
       }
     };
     void refresh();
-    const timer = window.setInterval(refresh, 2000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
 
@@ -143,6 +146,77 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const draw = async () => {
+      if (cancelled || androidDrawingRef.current || document.hidden) return;
+      androidDrawingRef.current = true;
+      try {
+        const response = await fetch(`/lab-api/android-frame.png?t=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Android frame: ${response.status}`);
+        androidSizeRef.current = {
+          width: Number(response.headers.get('X-Android-Width')),
+          height: Number(response.headers.get('X-Android-Height')),
+        };
+        const bitmap = await createImageBitmap(await response.blob());
+        const canvas = androidCanvasRef.current;
+        if (canvas) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+          setAndroidState('connected');
+        }
+        bitmap.close();
+      } catch (error) {
+        if (!cancelled) {
+          setAndroidState('error');
+          setMessage(String(error));
+        }
+      } finally {
+        androidDrawingRef.current = false;
+      }
+    };
+    void draw();
+    const timer = window.setInterval(draw, 750);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const androidPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const native = androidSizeRef.current;
+    return {
+      x: Math.round((event.clientX - rect.left) * (native.width || canvas.width) / rect.width),
+      y: Math.round((event.clientY - rect.top) * (native.height || canvas.height) / rect.height),
+    };
+  };
+
+  const androidPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    androidPointerRef.current = { ...androidPoint(event), started: Date.now() };
+  };
+
+  const androidPointerUp = async (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const start = androidPointerRef.current;
+    androidPointerRef.current = null;
+    if (!start) return;
+    const end = androidPoint(event);
+    try {
+      await api('/lab-api/android/touch', {
+        x1: start.x,
+        y1: start.y,
+        x2: end.x,
+        y2: end.y,
+        duration_ms: Math.min(5000, Date.now() - start.started),
+      });
+    } catch (error) {
+      setMessage(String(error));
+    }
+  };
+
   const submit = async (path: string, body: object, success: string) => {
     try {
       await api(path, body);
@@ -169,7 +243,7 @@ function App() {
 
   const statuses = [
     ['Android', status.android_ready],
-    ['Android video', androidState === 'connected'],
+    ['Android display', androidState === 'connected'],
     ['Locus available', status.locus_available === 'true'],
     ['Recording stopped', status.recording_state === 'STOPPED'],
     ['Pebble QEMU', status.qemu_connected],
@@ -199,13 +273,21 @@ function App() {
         <section style={panel}>
           <h2 style={{ marginTop: 0 }}>Android</h2>
           <div style={{ background: '#111', borderRadius: 12, padding: 10, width: 'fit-content', maxWidth: '100%' }}>
-            <Emulator
-              uri={window.location.host}
-              width={360}
-              height={640}
-              onStateChange={(state: any) => setAndroidState(String(state).toLowerCase())}
-              onError={(error: any) => setMessage(`Android video: ${String(error)}`)}
+            <canvas
+              ref={androidCanvasRef}
+              aria-label="Live Android emulator screen"
+              onPointerDown={androidPointerDown}
+              onPointerUp={(event) => void androidPointerUp(event)}
+              onPointerCancel={() => { androidPointerRef.current = null; }}
+              style={{ height: 640, maxHeight: '70vh', maxWidth: '100%', touchAction: 'none', display: 'block' }}
             />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            {['back', 'home', 'overview'].map((key) => (
+              <button key={key} style={buttonStyle} onClick={() => void submit('/lab-api/android/key', { key }, `${key} pressed`)}>
+                {key[0].toUpperCase()}{key.slice(1)}
+              </button>
+            ))}
           </div>
         </section>
 

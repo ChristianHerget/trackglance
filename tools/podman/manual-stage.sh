@@ -25,6 +25,10 @@ grant_coreapp_test_permissions
 foreground_locus
 adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
 adb_device_timeout 180 install -r "$bridge_apk" >/dev/null
+# Locus caches external main-function activities. It was already running when the bridge was
+# installed, so restart it once to make the Add-ons row appear below Various in All features.
+adb_device shell am force-stop menion.android.locus
+foreground_locus
 adb_device shell am force-stop app.trackglance.bridge
 adb_device shell am start -W -n "$bridge_activity" >/dev/null
 wait_status locus_available true 45

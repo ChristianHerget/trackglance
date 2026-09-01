@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 import zlib
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -73,6 +74,45 @@ class CaptureValidationTest(unittest.TestCase):
                 controller.capture("android", "smoke")
             self.assertEqual(existing.read_bytes(), PNG_SIGNATURE)
 
+    def test_concurrent_duplicate_capture_has_one_winner_and_no_partial_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = LabController(Path(directory), "emery", Path("/missing"), "missing")
+            capture_started = threading.Event()
+            release_capture = threading.Event()
+
+            def delayed_adb(*_arguments, **_keywords):
+                capture_started.set()
+                self.assertTrue(release_capture.wait(timeout=2))
+                return PNG_SIGNATURE
+
+            controller.adb = delayed_adb
+            errors = []
+
+            def capture():
+                try:
+                    controller.capture("android", "simultaneous")
+                except Exception as error:  # noqa: BLE001
+                    errors.append(error)
+
+            first = threading.Thread(target=capture)
+            first.start()
+            self.assertTrue(capture_started.wait(timeout=2))
+            second = threading.Thread(target=capture)
+            second.start()
+            second.join(timeout=2)
+            release_capture.set()
+            first.join(timeout=2)
+
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertEqual(len(errors), 1)
+            self.assertIsInstance(errors[0], FileExistsError)
+            self.assertEqual(
+                (Path(directory) / "simultaneous-android.png").read_bytes(),
+                PNG_SIGNATURE,
+            )
+            self.assertEqual(list(Path(directory).glob("*.partial")), [])
+
 
 class RelayInputValidationTest(unittest.TestCase):
     def controller(self):
@@ -105,6 +145,93 @@ class RelayInputValidationTest(unittest.TestCase):
         self.assertEqual(requests, [])
 
 
+class StatusTest(unittest.TestCase):
+    def test_status_reads_all_bridge_fields_with_one_content_query(self):
+        controller = LabController(Path(tempfile.gettempdir()), "emery", Path("/missing"), "missing")
+        calls = []
+
+        def adb(*arguments, **_keywords):
+            calls.append(arguments)
+            if arguments[-2:] == ("getprop", "sys.boot_completed"):
+                return b"1\n"
+            return (
+                b"Row: 0 watch_app_open=true, watch_connected=true, "
+                b"locus_available=true, recording_state=STOPPED\n"
+            )
+
+        controller.adb = adb
+        controller.relay = lambda _request: {"ok": True, "phone_connected": True, "qemu_connected": True}
+
+        self.assertTrue(controller.status()["ready"])
+        content_calls = [call for call in calls if "content" in call]
+        self.assertEqual(len(content_calls), 1)
+        self.assertNotIn("--projection", content_calls[0])
+
+
+class AndroidControlTest(unittest.TestCase):
+    def controller(self):
+        controller = LabController(
+            Path(tempfile.gettempdir()),
+            "emery",
+            Path("/missing"),
+            "missing",
+        )
+        calls = []
+        controller.adb = lambda *arguments, **_keywords: calls.append(arguments) or b""
+        return controller, calls
+
+    def test_tap_swipe_and_navigation_use_adb_input(self):
+        controller, calls = self.controller()
+
+        controller.android_touch(
+            {"x1": 10, "y1": 20, "x2": 11, "y2": 22, "duration_ms": 50}
+        )
+        controller.android_touch(
+            {"x1": 10, "y1": 20, "x2": 110, "y2": 220, "duration_ms": 300}
+        )
+        controller.android_key("overview")
+
+        self.assertEqual(calls[0], ("shell", "input", "tap", "10", "20"))
+        self.assertEqual(
+            calls[1],
+            ("shell", "input", "swipe", "10", "20", "110", "220", "300"),
+        )
+        self.assertEqual(
+            calls[2],
+            ("shell", "input", "keyevent", "KEYCODE_APP_SWITCH"),
+        )
+
+    def test_invalid_touch_and_navigation_are_rejected(self):
+        controller, calls = self.controller()
+        valid = {"x1": 10, "y1": 20, "x2": 10, "y2": 20, "duration_ms": 50}
+
+        for field, value in (("x1", -1), ("y2", 4097), ("duration_ms", True)):
+            request = {**valid, field: value}
+            with self.subTest(field=field, value=value), self.assertRaises(LabError):
+                controller.android_touch(request)
+        with self.assertRaises(LabError):
+            controller.android_key("power")
+        self.assertEqual(calls, [])
+
+    def test_android_frame_must_be_a_png(self):
+        controller, _calls = self.controller()
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = PNG_SIGNATURE
+        response.__enter__.return_value.headers = {
+            "X-Android-Width": "1080",
+            "X-Android-Height": "2400",
+        }
+        with mock.patch("manual_lab.urllib.request.urlopen", return_value=response):
+            self.assertEqual(controller.android_frame(), (PNG_SIGNATURE, 1080, 2400))
+            self.assertEqual(controller.android_png(), PNG_SIGNATURE)
+        response.__enter__.return_value.read.return_value = b"not a png"
+        with (
+            mock.patch("manual_lab.urllib.request.urlopen", return_value=response),
+            self.assertRaises(LabError),
+        ):
+            controller.android_png()
+
+
 class FakeController:
     def status(self):
         return {"ready": True, "platform": "emery"}
@@ -121,6 +248,18 @@ class FakeController:
 
     def pebble_png(self):
         return PNG_SIGNATURE
+
+    def android_png(self):
+        return PNG_SIGNATURE
+
+    def android_frame(self):
+        return PNG_SIGNATURE, 1080, 2400
+
+    def android_touch(self, _values):
+        return None
+
+    def android_key(self, _value):
+        return None
 
     def capture(self, _kind, _name):
         return "smoke-pebble.png"
@@ -155,6 +294,17 @@ class HttpApiTest(unittest.TestCase):
         with self.request(result["download_url"]) as response:
             self.assertEqual(response.headers.get_content_type(), "image/png")
             self.assertIn("attachment", response.headers["Content-Disposition"])
+        with self.request("/lab-api/android-frame.png") as response:
+            self.assertEqual(response.read(), PNG_SIGNATURE)
+
+    def test_android_touch_and_key_controls_are_accepted(self):
+        with self.request(
+            "/lab-api/android/touch",
+            {"x1": 10, "y1": 20, "x2": 30, "y2": 40, "duration_ms": 100},
+        ) as response:
+            self.assertTrue(json.load(response)["ok"])
+        with self.request("/lab-api/android/key", {"key": "home"}) as response:
+            self.assertTrue(json.load(response)["ok"])
 
     def test_api_rejects_invalid_content_and_unknown_buttons(self):
         with self.assertRaises(urllib.error.HTTPError) as invalid_content:

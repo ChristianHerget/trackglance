@@ -213,13 +213,14 @@ lab and open `http://127.0.0.1:5173/`:
 
 ```sh
 ./tools/podman-test manual --platform emery \
-  --locus-apks /home/christian/.local/share/trackglance-acceptance/locus-apks
+  --locus-apks /absolute/private/path
 ```
 
 The page places the Android and Pebble displays together with watch buttons, Q/W/S/X and arrow-key
 controls, heart-rate and absolute-step inputs, readiness state, and named PNG captures. Captures and
 bounded shutdown diagnostics remain under the printed `build/podman/<run>-manual/` path. Press
 Ctrl-C to remove the cloned Android, watch, and runtime state without changing the golden volume.
+The dashboard remains bound to host loopback.
 Use `--platform gabbro` for Pebble Round 2. Missing-image errors require `build`; stale or missing
 golden provenance requires `clean`, `build`, and `bootstrap` with the same private Locus directory.
 The complete lifecycle and input limits are documented in
