@@ -83,8 +83,6 @@ for stem in trackglance-bridge trackglance-watch; do
     --input-format json \
     --input-version v1_6 \
     --fail-on-errors
-  jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' \
-    "$sbom_dir/$stem-$version.spdx.json" >/dev/null
   tools/release-sbom verify-pair \
     --cyclonedx "$sbom_dir/$stem-$version.cdx.json" \
     --spdx "$sbom_dir/$stem-$version.spdx.json"

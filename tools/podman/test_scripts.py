@@ -155,6 +155,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("tools/release-sbom watch", source)
         self.assertIn("tools/release-sbom verify-pair", source)
         self.assertIn("cyclonedx validate", source)
+        self.assertNotIn("jq ", source)
         for forbidden in (
             "testDebugUnitTest",
             "assembleDebugAndroidTest",
