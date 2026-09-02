@@ -1,7 +1,11 @@
+import org.cyclonedx.model.Component
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("dev.detekt")
+    id("org.cyclonedx.bom")
+    id("org.spdx.sbom")
 }
 
 android {
@@ -98,3 +102,27 @@ dependencies {
 }
 
 base { archivesName.set("trackglance-bridge") }
+
+tasks.cyclonedxDirectBom {
+    projectType = Component.Type.APPLICATION
+    componentName = "trackglance-bridge"
+    componentVersion = android.defaultConfig.versionName ?: "unspecified"
+    includeConfigs = listOf("releaseRuntimeClasspath")
+    jsonOutput = layout.buildDirectory.file("reports/cyclonedx-direct/release.json")
+    xmlOutput.unsetConvention()
+}
+
+spdxSbom {
+    onlyUseLocalLicenses.set(true)
+    targets {
+        create("release") {
+            configurations.set(listOf("releaseRuntimeClasspath"))
+            outputFile.set(layout.buildDirectory.file("reports/spdx/release.spdx.json"))
+            document {
+                name.set("trackglance-bridge")
+                namespace.set("https://github.com/ChristianHerget/trackglance/sbom/android")
+                creator.set("Organization: TrackGlance")
+            }
+        }
+    }
+}

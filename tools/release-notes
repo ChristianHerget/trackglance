@@ -1,19 +1,89 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import pathlib
 import re
 
 
-parser = argparse.ArgumentParser(description="Extract one TrackGlance changelog section")
+VERSION = re.compile(r"^(?:v)?(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\.(?P<patch>0|[1-9][0-9]*)$")
+
+
+def parse_version(value):
+    match = VERSION.fullmatch(value)
+    if not match:
+        raise SystemExit(f"Invalid semantic version: {value}")
+    return tuple(int(match.group(part)) for part in ("major", "minor", "patch"))
+
+
+def release_entries(path):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"Cannot read GitHub release metadata: {error}") from error
+    if not isinstance(value, list):
+        raise SystemExit("GitHub release metadata must be a JSON array")
+    entries = []
+    for item in value:
+        if isinstance(item, list):
+            entries.extend(item)
+        else:
+            entries.append(item)
+    if not all(isinstance(item, dict) for item in entries):
+        raise SystemExit("GitHub release metadata contains a non-object entry")
+    return entries
+
+
+parser = argparse.ArgumentParser(
+    description="Extract TrackGlance changes since the last published release"
+)
 parser.add_argument("version")
+parser.add_argument("--releases-json", type=pathlib.Path)
+parser.add_argument("--root", type=pathlib.Path)
 args = parser.parse_args()
-root = pathlib.Path(__file__).resolve().parents[1]
+root = args.root or pathlib.Path(__file__).resolve().parents[1]
 text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-match = re.search(
-    rf"^## {re.escape(args.version)}(?: - [^\n]+)?\n\n(?P<body>.*?)(?=^## |\Z)",
+target = parse_version(args.version)
+sections = []
+for match in re.finditer(
+    r"^## (?P<version>[0-9]+\.[0-9]+\.[0-9]+)(?: - [^\n]+)?\n\n"
+    r"(?P<body>.*?)(?=^## |\Z)",
     text,
     re.MULTILINE | re.DOTALL,
-)
-if not match:
+):
+    sections.append(
+        (
+            parse_version(match.group("version")),
+            match.group("version"),
+            match.group("body").strip(),
+        )
+    )
+if not any(version == target for version, _, _ in sections):
     raise SystemExit(f"No changelog section for {args.version}")
-print(match.group("body").strip())
+
+predecessor = None
+if args.releases_json:
+    published = []
+    for release in release_entries(args.releases_json):
+        if release.get("draft") or release.get("prerelease"):
+            continue
+        tag = release.get("tag_name")
+        if not isinstance(tag, str) or not VERSION.fullmatch(tag):
+            continue
+        version = parse_version(tag)
+        if version < target:
+            published.append(version)
+    predecessor = max(published, default=None)
+
+if args.releases_json:
+    selected = [
+        section
+        for section in sections
+        if section[0] <= target and (predecessor is None or section[0] > predecessor)
+    ]
+else:
+    selected = [section for section in sections if section[0] == target]
+selected.sort(reverse=True)
+if len(selected) == 1:
+    print(selected[0][2])
+else:
+    print("\n\n".join(f"## {version}\n\n{body}" for _, version, body in selected))

@@ -23,6 +23,7 @@ jobs:
       source-commit: ${{ steps.candidate.outputs.source_commit }}
       docs-digest: ${{ steps.candidate.outputs.docs_digest }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download and verify draft candidate
         id: candidate
         env:
@@ -32,15 +33,7 @@ jobs:
           commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)
           mkdir candidate
           gh release download "$GITHUB_REF_NAME" --dir candidate
-          (cd candidate && sha256sum --check --strict SHA256SUMS)
-          for asset in candidate/*.apk candidate/*.pbw candidate/trackglance-docs-*.tar.gz; do
-            gh attestation verify "$asset" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-              --source-ref "$GITHUB_REF" \
-              --source-digest "$commit" \
-              --deny-self-hosted-runners
-          done
+          tools/verify-release-candidate candidate "$GITHUB_REF_NAME" "$commit"
           docs=$(find candidate -maxdepth 1 -name 'trackglance-docs-*.tar.gz' -print -quit)
           test -n "$docs"
           mkdir site
@@ -75,6 +68,7 @@ jobs:
       contents: write
       id-token: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Redownload, reverify, and publish reviewed draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,15 +79,7 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)" = "$SOURCE_COMMIT"
           mkdir candidate
           gh release download "$GITHUB_REF_NAME" --dir candidate
-          (cd candidate && sha256sum --check --strict SHA256SUMS)
-          for asset in candidate/*.apk candidate/*.pbw candidate/trackglance-docs-*.tar.gz; do
-            gh attestation verify "$asset" \
-              --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
-              --source-ref "$GITHUB_REF" \
-              --source-digest "$SOURCE_COMMIT" \
-              --deny-self-hosted-runners
-          done
+          tools/verify-release-candidate candidate "$GITHUB_REF_NAME" "$SOURCE_COMMIT"
           docs=$(find candidate -maxdepth 1 -name 'trackglance-docs-*.tar.gz' -print -quit)
           test "$(sha256sum "$docs" | cut -d' ' -f1)" = "$DEPLOYED_DOCS_DIGEST"
           gh release edit "$GITHUB_REF_NAME" --draft=false

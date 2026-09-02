@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Create deterministic release SBOM metadata around verified build outputs."""
+
+import argparse
+import hashlib
+import json
+import pathlib
+import uuid
+import zipfile
+
+
+REPOSITORY = "https://github.com/ChristianHerget/trackglance"
+GROUP = "io.github.christianherget"
+
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+
+def sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_json(path: pathlib.Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        fail(f"Cannot read JSON from {path}: {error}")
+    if not isinstance(value, dict):
+        fail(f"Expected a JSON object in {path}")
+    return value
+
+
+def root_component(name: str, version: str, artifact: pathlib.Path) -> dict:
+    artifact_digest = sha256(artifact)
+    return {
+        "type": "application",
+        "bom-ref": f"{name}@{version}",
+        "group": GROUP,
+        "name": name,
+        "version": version,
+        "hashes": [{"alg": "SHA-256", "content": artifact_digest}],
+        "licenses": [{"license": {"id": "Apache-2.0"}}],
+        "externalReferences": [{"type": "vcs", "url": REPOSITORY}],
+    }
+
+
+def stable_serial(name: str, version: str, artifact: pathlib.Path) -> str:
+    identity = f"{REPOSITORY}/{name}/{version}/{sha256(artifact)}"
+    return f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, identity)}"
+
+
+def sort_bom(bom: dict) -> None:
+    bom["components"] = sorted(
+        bom.get("components", []),
+        key=lambda component: (
+            component.get("bom-ref", ""),
+            component.get("name", ""),
+            component.get("version", ""),
+        ),
+    )
+    for dependency in bom.get("dependencies", []):
+        dependency["dependsOn"] = sorted(dependency.get("dependsOn", []))
+    bom["dependencies"] = sorted(
+        bom.get("dependencies", []), key=lambda dependency: dependency.get("ref", "")
+    )
+
+
+def write_bom(bom: dict, output: pathlib.Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(bom, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def create_android(args: argparse.Namespace) -> None:
+    bom = load_json(args.input)
+    if bom.get("bomFormat") != "CycloneDX":
+        fail("The Android input is not a CycloneDX BOM")
+    old_root = bom.get("metadata", {}).get("component", {}).get("bom-ref")
+    root = root_component("trackglance-bridge", args.version, args.artifact)
+    metadata = bom.setdefault("metadata", {})
+    metadata["timestamp"] = args.timestamp
+    metadata["component"] = root
+    bom["serialNumber"] = stable_serial(root["name"], args.version, args.artifact)
+    bom["specVersion"] = "1.6"
+    if old_root and old_root != root["bom-ref"]:
+        for dependency in bom.get("dependencies", []):
+            if dependency.get("ref") == old_root:
+                dependency["ref"] = root["bom-ref"]
+            dependency["dependsOn"] = [
+                root["bom-ref"] if ref == old_root else ref
+                for ref in dependency.get("dependsOn", [])
+            ]
+    if not any(
+        dependency.get("ref") == root["bom-ref"] for dependency in bom.get("dependencies", [])
+    ):
+        bom.setdefault("dependencies", []).append(
+            {
+                "ref": root["bom-ref"],
+                "dependsOn": [
+                    component["bom-ref"]
+                    for component in bom.get("components", [])
+                    if "bom-ref" in component
+                ],
+            }
+        )
+    sort_bom(bom)
+    write_bom(bom, args.output)
+
+
+def create_watch(args: argparse.Namespace) -> None:
+    package = load_json(args.package)
+    if package.get("version") != args.version:
+        fail(
+            f"Watch package version {package.get('version')!r} does not equal {args.version!r}"
+        )
+    dependencies = package.get("dependencies", {})
+    if dependencies:
+        fail("Watch production dependencies must be modeled before generating its release SBOM")
+    try:
+        with zipfile.ZipFile(args.artifact) as archive:
+            appinfo = json.loads(archive.read("appinfo.json"))
+    except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError) as error:
+        fail(f"Cannot read PBW appinfo.json: {error}")
+    if appinfo.get("targetPlatforms") != ["emery", "gabbro"]:
+        fail("PBW must contain the supported Emery and Gabbro targets")
+    root = root_component("trackglance-watch", args.version, args.artifact)
+    root["properties"] = [
+        {"name": "io.trackglance.pebble.target", "value": platform}
+        for platform in appinfo["targetPlatforms"]
+    ]
+    root["properties"].extend(
+        (
+            {
+                "name": "io.trackglance.pebble.sdkCompatibility",
+                "value": str(appinfo.get("sdkVersion")),
+            },
+            {
+                "name": "io.trackglance.pebble.buildSdk",
+                "value": args.pebble_sdk_version,
+            },
+        )
+    )
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "serialNumber": stable_serial(root["name"], args.version, args.artifact),
+        "version": 1,
+        "metadata": {
+            "timestamp": args.timestamp,
+            "component": root,
+        },
+        "components": [],
+        "dependencies": [{"ref": root["bom-ref"], "dependsOn": []}],
+    }
+    write_bom(bom, args.output)
+
+
+def normalize_android_spdx(args: argparse.Namespace) -> None:
+    spdx = load_json(args.input)
+    if spdx.get("spdxVersion") != "SPDX-2.3":
+        fail("Android input is not a native SPDX 2.3 document")
+    root = next(
+        (package for package in spdx.get("packages", []) if package.get("name") == "app"),
+        None,
+    )
+    if root is None:
+        fail("Native SPDX document has no Android application package")
+    root["name"] = "trackglance-bridge"
+    root["versionInfo"] = args.version
+    root["checksums"] = [{"algorithm": "SHA256", "checksumValue": sha256(args.artifact)}]
+    spdx["name"] = f"trackglance-bridge-{args.version}"
+    spdx["documentNamespace"] = (
+        "https://spdx.org/spdxdocs/trackglance-bridge-"
+        f"{stable_serial('trackglance-bridge', args.version, args.artifact).removeprefix('urn:uuid:')}"
+    )
+    spdx["documentDescribes"] = [root["SPDXID"]]
+    spdx.setdefault("creationInfo", {})["created"] = args.timestamp
+    write_bom(spdx, args.output)
+
+
+def create_watch_spdx(args: argparse.Namespace) -> None:
+    package = load_json(args.package)
+    if package.get("version") != args.version or package.get("dependencies", {}):
+        fail("Watch package metadata is not a dependency-free release at the requested version")
+    try:
+        with zipfile.ZipFile(args.artifact) as archive:
+            appinfo = json.loads(archive.read("appinfo.json"))
+    except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError) as error:
+        fail(f"Cannot read PBW appinfo.json: {error}")
+    if appinfo.get("targetPlatforms") != ["emery", "gabbro"]:
+        fail("PBW must contain the supported Emery and Gabbro targets")
+    root_id = "SPDXRef-trackglance-watch"
+    serial = stable_serial("trackglance-watch", args.version, args.artifact).removeprefix(
+        "urn:uuid:"
+    )
+    spdx = {
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "spdxVersion": "SPDX-2.3",
+        "creationInfo": {
+            "created": args.timestamp,
+            "creators": ["Tool: TrackGlance tools/release-sbom"],
+        },
+        "name": f"trackglance-watch-{args.version}",
+        "dataLicense": "CC0-1.0",
+        "documentNamespace": f"https://spdx.org/spdxdocs/trackglance-watch-{serial}",
+        "documentDescribes": [root_id],
+        "packages": [
+            {
+                "SPDXID": root_id,
+                "name": "trackglance-watch",
+                "versionInfo": args.version,
+                "downloadLocation": "NOASSERTION",
+                "filesAnalyzed": False,
+                "licenseConcluded": "Apache-2.0",
+                "licenseDeclared": "Apache-2.0",
+                "copyrightText": "NOASSERTION",
+                "checksums": [{"algorithm": "SHA256", "checksumValue": sha256(args.artifact)}],
+                "comment": (
+                    f"Built with Pebble SDK {args.pebble_sdk_version}; "
+                    f"PBW compatibility level {appinfo.get('sdkVersion')}; targets emery and gabbro. "
+                    "The SDK is build tooling and is not shipped in the PBW."
+                ),
+            }
+        ],
+        "relationships": [
+            {
+                "spdxElementId": "SPDXRef-DOCUMENT",
+                "relationshipType": "DESCRIBES",
+                "relatedSpdxElement": root_id,
+            }
+        ],
+    }
+    write_bom(spdx, args.output)
+
+
+def component_identities_from_cdx(bom: dict) -> set[tuple[str, str]]:
+    components = [bom.get("metadata", {}).get("component", {})] + bom.get("components", [])
+    return {
+        (component.get("name", ""), component.get("version", ""))
+        for component in components
+        if component.get("name")
+    }
+
+
+def component_identities_from_spdx(bom: dict) -> set[tuple[str, str]]:
+    return {
+        (package.get("name", ""), package.get("versionInfo", ""))
+        for package in bom.get("packages", [])
+        if package.get("name")
+    }
+
+
+def dependency_identities_from_cdx(bom: dict) -> set[tuple[tuple[str, str], tuple[str, str]]]:
+    components = [bom.get("metadata", {}).get("component", {})] + bom.get("components", [])
+    identities = {
+        component.get("bom-ref"): (component.get("name", ""), component.get("version", ""))
+        for component in components
+    }
+    return {
+        (identities[dependency["ref"]], identities[target])
+        for dependency in bom.get("dependencies", [])
+        for target in dependency.get("dependsOn", [])
+        if dependency.get("ref") in identities and target in identities
+    }
+
+
+def dependency_identities_from_spdx(bom: dict) -> set[tuple[tuple[str, str], tuple[str, str]]]:
+    identities = {
+        package.get("SPDXID"): (package.get("name", ""), package.get("versionInfo", ""))
+        for package in bom.get("packages", [])
+    }
+    return {
+        (identities[relationship["spdxElementId"]], identities[relationship["relatedSpdxElement"]])
+        for relationship in bom.get("relationships", [])
+        if relationship.get("relationshipType") == "DEPENDS_ON"
+        and relationship.get("spdxElementId") in identities
+        and relationship.get("relatedSpdxElement") in identities
+    }
+
+
+def verify_pair(args: argparse.Namespace) -> None:
+    cdx = load_json(args.cyclonedx)
+    spdx = load_json(args.spdx)
+    if cdx.get("bomFormat") != "CycloneDX" or cdx.get("specVersion") != "1.6":
+        fail("Expected a CycloneDX 1.6 JSON document")
+    if spdx.get("spdxVersion") != "SPDX-2.3":
+        fail("Expected an SPDX 2.3 JSON document")
+    cdx_root = cdx.get("metadata", {}).get("component", {})
+    described = set(spdx.get("documentDescribes", []))
+    spdx_root = next(
+        (package for package in spdx.get("packages", []) if package.get("SPDXID") in described),
+        None,
+    )
+    if spdx_root is None:
+        fail("SPDX document does not describe a root artifact")
+    if (cdx_root.get("name"), cdx_root.get("version")) != (
+        spdx_root.get("name"),
+        spdx_root.get("versionInfo"),
+    ):
+        fail("Independently generated SBOMs describe different root artifacts")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for command, handler in (
+        ("android", create_android),
+        ("watch", create_watch),
+        ("android-spdx", normalize_android_spdx),
+        ("watch-spdx", create_watch_spdx),
+    ):
+        subparser = subparsers.add_parser(command)
+        subparser.add_argument("--version", required=True)
+        subparser.add_argument("--artifact", required=True, type=pathlib.Path)
+        subparser.add_argument("--timestamp", required=True)
+        subparser.add_argument("--output", required=True, type=pathlib.Path)
+        if command in ("android", "android-spdx"):
+            subparser.add_argument("--input", required=True, type=pathlib.Path)
+        if command in ("watch", "watch-spdx"):
+            subparser.add_argument("--package", required=True, type=pathlib.Path)
+            subparser.add_argument("--pebble-sdk-version", required=True)
+        subparser.set_defaults(handler=handler)
+    verify = subparsers.add_parser("verify-pair")
+    verify.add_argument("--cyclonedx", required=True, type=pathlib.Path)
+    verify.add_argument("--spdx", required=True, type=pathlib.Path)
+    verify.set_defaults(handler=verify_pair)
+    args = parser.parse_args()
+    args.handler(args)
+
+
+if __name__ == "__main__":
+    main()

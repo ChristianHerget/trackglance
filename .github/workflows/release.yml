@@ -91,6 +91,8 @@ jobs:
           cp watchapp/build/watchapp.pbw "build/release-assets/trackglance-watch-$version.pbw"
           cp trackglance-release-certificate.pem build/release-assets/
           cp trackglance-release-certificate.sha256 build/release-assets/
+          cp build/release-sboms/trackglance-bridge-"$version".*.json build/release-assets/
+          cp build/release-sboms/trackglance-watch-"$version".*.json build/release-assets/
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -czf "build/release-assets/trackglance-docs-$version.tar.gz" -C docs/sphinx/_build/html .
           (cd build/release-assets && sha256sum ./* > SHA256SUMS)
@@ -102,6 +104,26 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/release-assets/*.pbw
+      - name: Attest APK CycloneDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-assets/*.apk
+          sbom-path: build/release-assets/trackglance-bridge-*.cdx.json
+      - name: Attest APK SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-assets/*.apk
+          sbom-path: build/release-assets/trackglance-bridge-*.spdx.json
+      - name: Attest PBW CycloneDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-assets/*.pbw
+          sbom-path: build/release-assets/trackglance-watch-*.cdx.json
+      - name: Attest PBW SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/release-assets/*.pbw
+          sbom-path: build/release-assets/trackglance-watch-*.spdx.json
       - name: Attest documentation provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -111,8 +133,11 @@ jobs:
           CERTIFICATION_RUN_ID: ${{ needs.preflight.outputs.certification-run-id }}
           CERTIFICATION_RUN_URL: ${{ needs.preflight.outputs.certification-run-url }}
           SOURCE_COMMIT: ${{ needs.preflight.outputs.source-commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tools/release-notes "${GITHUB_REF_NAME#v}" > build/release-notes.md
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > build/releases.json
+          tools/release-notes "${GITHUB_REF_NAME#v}" \
+            --releases-json build/releases.json > build/release-notes.md
           cat >> build/release-notes.md <<EOF
 
           Source commit: \`$SOURCE_COMMIT\`
@@ -124,6 +149,12 @@ jobs:
           Verify a downloaded artifact with:
 
           \`gh attestation verify ARTIFACT --repo $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/release.yml --source-ref $GITHUB_REF --source-digest $SOURCE_COMMIT --deny-self-hosted-runners\`
+
+          Verify a downloaded artifact's CycloneDX SBOM with:
+
+          \`gh attestation verify ARTIFACT --repo $GITHUB_REPOSITORY --signer-workflow $GITHUB_REPOSITORY/.github/workflows/release.yml --source-ref $GITHUB_REF --source-digest $SOURCE_COMMIT --deny-self-hosted-runners --predicate-type https://cyclonedx.org/bom\`
+
+          For SPDX, use predicate type \`https://spdx.dev/Document/v2.3\` instead. An SBOM is a component inventory, not a vulnerability-free guarantee.
           EOF
       - name: Start VirusTotal timing
         run: echo "VIRUSTOTAL_STARTED=$(date +%s)" >> "$GITHUB_ENV"
