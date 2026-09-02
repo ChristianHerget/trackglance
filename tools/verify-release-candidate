@@ -22,30 +22,7 @@ android_spdx="$candidate/trackglance-bridge-$version.spdx.json"
 watch_cdx="$candidate/trackglance-watch-$version.cdx.json"
 watch_spdx="$candidate/trackglance-watch-$version.spdx.json"
 
-expected=(
-  SHA256SUMS
-  "trackglance-bridge-$version.apk"
-  "trackglance-docs-$version.tar.gz"
-  trackglance-release-certificate.pem
-  trackglance-release-certificate.sha256
-  "trackglance-watch-$version.pbw"
-  "trackglance-bridge-$version.cdx.json"
-  "trackglance-bridge-$version.spdx.json"
-  "trackglance-watch-$version.cdx.json"
-  "trackglance-watch-$version.spdx.json"
-)
-mapfile -t actual < <(find "$candidate" -maxdepth 1 -type f -printf '%f\n' | sort)
-mapfile -t sorted_expected < <(printf '%s\n' "${expected[@]}" | sort)
-if [[ "${actual[*]}" != "${sorted_expected[*]}" ]]; then
-  echo "Release candidate has a missing or unexpected asset." >&2
-  diff -u <(printf '%s\n' "${sorted_expected[@]}") <(printf '%s\n' "${actual[@]}") || true
-  exit 1
-fi
-(cd "$candidate" && sha256sum --check --strict SHA256SUMS)
-[[ $(wc -l < "$candidate/SHA256SUMS") -eq 9 ]] || {
-  echo "SHA256SUMS must cover every public asset except itself." >&2
-  exit 1
-}
+tools/verify-release-assets "$candidate" "$version"
 
 verify_common=(
   --repo "$GITHUB_REPOSITORY"

@@ -84,6 +84,7 @@ jobs:
           find build/release-private -type f -delete 2>/dev/null || true
           rmdir build/release-private 2>/dev/null || true
       - name: Stage public assets
+        id: assets
         run: |
           version=${GITHUB_REF_NAME#v}
           mkdir -p build/release-assets
@@ -91,11 +92,24 @@ jobs:
           cp watchapp/build/watchapp.pbw "build/release-assets/trackglance-watch-$version.pbw"
           cp trackglance-release-certificate.pem build/release-assets/
           cp trackglance-release-certificate.sha256 build/release-assets/
-          cp build/release-sboms/trackglance-bridge-"$version".*.json build/release-assets/
-          cp build/release-sboms/trackglance-watch-"$version".*.json build/release-assets/
+          android_cdx="build/release-assets/trackglance-bridge-$version.cdx.json"
+          android_spdx="build/release-assets/trackglance-bridge-$version.spdx.json"
+          watch_cdx="build/release-assets/trackglance-watch-$version.cdx.json"
+          watch_spdx="build/release-assets/trackglance-watch-$version.spdx.json"
+          cp "build/release-sboms/trackglance-bridge-$version.cdx.json" "$android_cdx"
+          cp "build/release-sboms/trackglance-bridge-$version.spdx.json" "$android_spdx"
+          cp "build/release-sboms/trackglance-watch-$version.cdx.json" "$watch_cdx"
+          cp "build/release-sboms/trackglance-watch-$version.spdx.json" "$watch_spdx"
           tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
             -czf "build/release-assets/trackglance-docs-$version.tar.gz" -C docs/sphinx/_build/html .
           (cd build/release-assets && sha256sum ./* > SHA256SUMS)
+          tools/verify-release-assets build/release-assets "$version"
+          {
+            printf 'android_cdx=%s\n' "$android_cdx"
+            printf 'android_spdx=%s\n' "$android_spdx"
+            printf 'watch_cdx=%s\n' "$watch_cdx"
+            printf 'watch_spdx=%s\n' "$watch_spdx"
+          } >> "$GITHUB_OUTPUT"
       - name: Attest APK provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -108,22 +122,22 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/release-assets/*.apk
-          sbom-path: build/release-assets/trackglance-bridge-*.cdx.json
+          sbom-path: ${{ steps.assets.outputs.android_cdx }}
       - name: Attest APK SPDX SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/release-assets/*.apk
-          sbom-path: build/release-assets/trackglance-bridge-*.spdx.json
+          sbom-path: ${{ steps.assets.outputs.android_spdx }}
       - name: Attest PBW CycloneDX SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/release-assets/*.pbw
-          sbom-path: build/release-assets/trackglance-watch-*.cdx.json
+          sbom-path: ${{ steps.assets.outputs.watch_cdx }}
       - name: Attest PBW SPDX SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/release-assets/*.pbw
-          sbom-path: build/release-assets/trackglance-watch-*.spdx.json
+          sbom-path: ${{ steps.assets.outputs.watch_spdx }}
       - name: Attest documentation provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
