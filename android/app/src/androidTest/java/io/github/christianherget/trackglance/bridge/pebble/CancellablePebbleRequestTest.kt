@@ -46,6 +46,7 @@ class CancellablePebbleRequestTest {
 
         assertNull(cancellablePebbleRequest(endpoint, Bundle()))
         assertFalse(endpoint.requested)
+        assertTrue(endpoint.awaitClosedRegistration())
         assertEquals(1, endpoint.closedRegistrations)
     }
 
