@@ -7,6 +7,8 @@ release is published.
 
 ## 0.2.8 - 2026-09-01
 
+- Added signed CycloneDX and SPDX software bills of materials for both release applications, so
+  users and security tools can inspect the runtime components in the exact APK and PBW downloads.
 - Fixed the TrackGlance icon shown in Locus Map function pickers, add-on listings, and configured
   panel shortcuts while retaining the existing full-color Android launcher icon. The Locus icon
   now uses its brighter, more legible appearance in both light and dark Android themes.

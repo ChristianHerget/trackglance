@@ -37,6 +37,11 @@ documentation use their normal external services, and tapping the Bridge's legal
 opens the page in the user's browser. Maintainers also submit release APK and PBW artifacts to
 VirusTotal; those build artifacts contain no user runtime data.
 
+Each release also includes signed CycloneDX and SPDX software bills of materials for the Android
+Bridge and watch app. They give users and security tools a machine-readable inventory of the
+runtime components associated with each exact download. An SBOM is an inventory, not a security
+audit or a guarantee that a release has no vulnerabilities.
+
 The Android bridge explicitly selects the installed Pebble App package (`coredevices.coreapp`) and
 verifies that incoming Binder calls resolve to that package and UID. Android's package manager
 enforces package-name uniqueness and signature-compatible updates, so no separate certificate

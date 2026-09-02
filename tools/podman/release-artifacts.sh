@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+source tools/podman/versions.env
+
 mkdir -p "$HOME"
-./gradlew :android:app:assembleRelease
+./gradlew :android:app:assembleRelease :android:app:cyclonedxDirectBom :android:app:spdxSbomForRelease
 release_apk=android/app/build/outputs/apk/release/trackglance-bridge-release.apk
 test -s "$release_apk"
 
@@ -38,3 +40,52 @@ test -s watchapp/build/watchapp.pbw
 
 bash docs/build_html.sh
 test -s docs/sphinx/_build/html/index.html
+
+version="$expected_version"
+source_timestamp=$(git show -s --format=%cI HEAD)
+sbom_dir=build/release-sboms
+mkdir -p "$sbom_dir"
+android_cdx="$sbom_dir/trackglance-bridge-$version.cdx.json"
+android_spdx="$sbom_dir/trackglance-bridge-$version.spdx.json"
+watch_cdx="$sbom_dir/trackglance-watch-$version.cdx.json"
+watch_spdx="$sbom_dir/trackglance-watch-$version.spdx.json"
+
+tools/release-sbom android \
+  --version "$version" \
+  --artifact "$release_apk" \
+  --timestamp "$source_timestamp" \
+  --input android/app/build/reports/cyclonedx-direct/release.json \
+  --output "$android_cdx"
+tools/release-sbom watch \
+  --version "$version" \
+  --artifact watchapp/build/watchapp.pbw \
+  --timestamp "$source_timestamp" \
+  --package watchapp/package.json \
+  --pebble-sdk-version "$PEBBLE_SDK_VERSION" \
+  --output "$watch_cdx"
+tools/release-sbom android-spdx \
+  --version "$version" \
+  --artifact "$release_apk" \
+  --timestamp "$source_timestamp" \
+  --input android/app/build/reports/spdx/release.spdx.json \
+  --output "$android_spdx"
+tools/release-sbom watch-spdx \
+  --version "$version" \
+  --artifact watchapp/build/watchapp.pbw \
+  --timestamp "$source_timestamp" \
+  --package watchapp/package.json \
+  --pebble-sdk-version "$PEBBLE_SDK_VERSION" \
+  --output "$watch_spdx"
+
+for stem in trackglance-bridge trackglance-watch; do
+  cyclonedx validate \
+    --input-file "$sbom_dir/$stem-$version.cdx.json" \
+    --input-format json \
+    --input-version v1_6 \
+    --fail-on-errors
+  jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' \
+    "$sbom_dir/$stem-$version.spdx.json" >/dev/null
+  tools/release-sbom verify-pair \
+    --cyclonedx "$sbom_dir/$stem-$version.cdx.json" \
+    --spdx "$sbom_dir/$stem-$version.spdx.json"
+done

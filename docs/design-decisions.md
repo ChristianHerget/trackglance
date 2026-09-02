@@ -122,12 +122,20 @@ to signing secrets and immediately before the draft is changed.
 
 The protected tag build verifies the signed and attested, digest-pinned acceptance runner and uses
 it only as an immutable build toolchain. It freshly builds and validates the signed APK, generated
-PBW, and an offline documentation archive, attests those three artifacts, and leaves a draft.
+PBW, and an offline documentation archive, attests those three artifacts, and leaves a draft. It
+also publishes runtime-only CycloneDX 1.6 and SPDX 2.3 SBOMs for the APK and PBW. Each format is
+generated natively from the original Gradle or PBW metadata; neither is converted from the other.
+CycloneDX also runs in ordinary CI for AppSec feedback, while SPDX runs only for stable release-tag
+builds for legal and audit consumers. Each document is attested against its artifact. The PBW
+metadata records its Pebble SDK build version and compatibility level without misrepresenting the
+SDK as shipped content. Build tools
+remain represented by the separate CI-image SBOMs rather than by the release SBOMs.
 General unit, lint, Android-test, and acceptance entry points are deliberately absent from this
 job; Android's release-internal `lintVital` remains part of `assembleRelease`.
 
-Publication is a separate tag-ref manual workflow. It verifies the draft checksums and exact
-workflow/source/runner provenance, deploys the archived documentation for review, pauses at the
+Publication is a separate tag-ref manual workflow. It verifies the draft checksums, exact
+workflow/source/runner provenance, and equality of downloaded SBOMs with their signed predicates;
+it then deploys the archived documentation for review, pauses at the
 protected `release` environment, then downloads and verifies everything again before publishing.
 It does not require the older reviewed tag to remain the current `main` HEAD. Published releases
 are not mutated; a correction requires a new patch release.

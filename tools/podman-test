@@ -446,6 +446,8 @@ build_static_image() {
     --build-arg "NODE_X86_64_SHA256=$NODE_X86_64_SHA256" \
     --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" \
     --build-arg "ACTIONLINT_X86_64_SHA256=$ACTIONLINT_X86_64_SHA256" \
+    --build-arg "CYCLONEDX_CLI_VERSION=$CYCLONEDX_CLI_VERSION" \
+    --build-arg "CYCLONEDX_CLI_X86_64_SHA256=$CYCLONEDX_CLI_X86_64_SHA256" \
     --file "$SCRIPT_DIR/podman/Containerfile.build" \
     --tag "$BUILD_IMAGE" "$PROJECT_DIR"
 }
@@ -1050,7 +1052,8 @@ static_tests() {
     ./tools/check-format
     ./tools/check-c
     ./gradlew verifyPebbleTargets :android:app:testDebugUnitTest :android:app:lintDebug :android:app:detekt \
-      :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin
+      :android:app:assembleDebug :android:app:compileDebugAndroidTestKotlin \
+      :android:app:cyclonedxDirectBom
     npm ci --prefix watchapp
     npm test --prefix watchapp
     npm run lint --prefix watchapp

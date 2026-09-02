@@ -51,9 +51,14 @@ gh secret set VIRUSTOTAL_API_KEY --env release --repo ChristianHerget/trackglanc
 ```
 
 The release job verifies the published runner and invokes only
-`./tools/podman-test release-artifacts --published`. It builds the signed APK, generated PBW, and
-Sphinx documentation archive without rerunning general tests or acceptance. It submits the staged
-APK and PBW after deleting the private signing key. Both
+`./tools/podman-test release-artifacts --published`. It builds the signed APK, generated PBW,
+their runtime-only CycloneDX and SPDX SBOMs, and the Sphinx documentation archive without rerunning
+general tests or acceptance. Each SBOM format is attested against the exact artifact it describes
+and included in `SHA256SUMS`. CycloneDX generation also runs during every normal static CI build for
+automated security tooling. SPDX is generated independently on stable release tags for license and procurement review;
+the pipeline never converts one SBOM format into the other. The PBW SBOMs record Pebble SDK 4.33.1
+as build-tool metadata and compatibility level 3, not as shipped third-party code. It submits the
+staged APK and PBW after deleting the private signing key. Both
 uploads and their analysis links must succeed before a draft is created. The links identify
 successful submissions only: the workflow does not wait for analysis or gate publication on later
 malicious or suspicious detections.
@@ -65,7 +70,8 @@ publication using the tag itself as the workflow ref (there is deliberately no t
 gh workflow run publish-release.yml --ref v0.2.8
 ```
 
-Publication verifies the draft, deploys its documentation through the protected `github-pages`
+Publication verifies the draft, requires the downloaded SBOM documents to match their signed
+attestation predicates, deploys its documentation through the protected `github-pages`
 environment, then waits at the protected `release` environment. Review the live site before
 approving. The final job downloads and verifies the candidate again before publishing it. It does
 not compare the reviewed tag with a later `main` HEAD.

@@ -24,6 +24,8 @@ RELEASE_METADATA = ROOT / "tools" / "podman" / "release-metadata.sh"
 RELEASE_MANIFEST_POLICY = ROOT / "tools" / "podman" / "check_release_manifest.py"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 PUBLISH_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
+RELEASE_CANDIDATE_VERIFIER = ROOT / "tools" / "verify-release-candidate"
+RELEASE_ARTIFACT_SCRIPT = ROOT / "tools" / "podman" / "release-artifacts.sh"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 DEPENDENCY_REVIEW_WORKFLOW = ROOT / ".github" / "workflows" / "dependency-review.yml"
@@ -113,7 +115,11 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(source.count('tools/release-preflight "${GITHUB_REF_NAME}"'), 2)
         self.assertIn("tools/release-certification", source)
         self.assertIn("tools/podman-test release-artifacts --published", source)
-        self.assertEqual(source.count("actions/attest@"), 3)
+        self.assertEqual(source.count("actions/attest@"), 7)
+        self.assertEqual(source.count("sbom-path:"), 4)
+        for suffix in ("cdx.json", "spdx.json"):
+            self.assertIn(f"trackglance-bridge-*.{suffix}", source)
+            self.assertIn(f"trackglance-watch-*.{suffix}", source)
         self.assertNotIn("actions/attest-build-provenance@", source)
         for forbidden in ("podman-test static", "podman-test documentation", "acceptance-suite"):
             self.assertNotIn(forbidden, source)
@@ -126,13 +132,41 @@ class ReleaseWorkflowTest(unittest.TestCase):
         source = PUBLISH_RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("workflow_dispatch:", source)
         self.assertNotIn("inputs:", source)
-        self.assertEqual(source.count("gh attestation verify"), 2)
-        self.assertEqual(source.count("--deny-self-hosted-runners"), 2)
-        self.assertEqual(source.count("--source-digest"), 2)
+        self.assertEqual(source.count("tools/verify-release-candidate"), 2)
         self.assertIn("environment: release", source)
         publish = source.split("  publish:", 1)[1]
-        self.assertIn("sha256sum --check --strict SHA256SUMS", publish)
-        self.assertLess(publish.index("gh attestation verify"), publish.index("--draft=false"))
+        self.assertLess(
+            publish.index("tools/verify-release-candidate"), publish.index("--draft=false")
+        )
+
+        verifier = RELEASE_CANDIDATE_VERIFIER.read_text(encoding="utf-8")
+        self.assertEqual(verifier.count("gh attestation verify"), 2)
+        self.assertIn("sha256sum --check --strict SHA256SUMS", verifier)
+        self.assertIn("--deny-self-hosted-runners", verifier)
+        self.assertIn("--source-digest", verifier)
+        self.assertIn("https://cyclonedx.org/bom", verifier)
+        self.assertIn("https://spdx.dev/Document/v2.3", verifier)
+        self.assertIn("statement.predicate == $expected[0]", verifier)
+
+    def test_release_sboms_are_runtime_only_validated_and_generated_without_general_tests(self):
+        source = RELEASE_ARTIFACT_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(":android:app:cyclonedxDirectBom", source)
+        self.assertIn("releaseRuntimeClasspath", (ROOT / "android/app/build.gradle.kts").read_text())
+        self.assertIn("tools/release-sbom watch", source)
+        self.assertIn("tools/release-sbom verify-pair", source)
+        self.assertIn("cyclonedx validate", source)
+        for forbidden in (
+            "testDebugUnitTest",
+            "assembleDebugAndroidTest",
+            "npm test",
+            "acceptance-suite",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_release_notes_receive_complete_github_release_history(self):
+        source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100"', source)
+        self.assertIn("--releases-json build/releases.json", source)
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):

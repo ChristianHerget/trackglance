@@ -18,6 +18,8 @@ ARG NODE_VERSION
 ARG NODE_X86_64_SHA256
 ARG ACTIONLINT_VERSION
 ARG ACTIONLINT_X86_64_SHA256
+ARG CYCLONEDX_CLI_VERSION
+ARG CYCLONEDX_CLI_X86_64_SHA256
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ANDROID_SDK_ROOT=/opt/android-sdk \
@@ -90,6 +92,14 @@ RUN curl --fail --location --retry 4 \
     tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint && \
     install -m 0755 /tmp/actionlint /usr/local/bin/actionlint && \
     rm -f /tmp/actionlint.tar.gz /tmp/actionlint
+
+RUN curl --fail --location --retry 4 \
+      "https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/cyclonedx-linux-x64" \
+      --output /tmp/cyclonedx && \
+    echo "${CYCLONEDX_CLI_X86_64_SHA256}  /tmp/cyclonedx" | sha256sum --check --strict && \
+    install -m 0755 /tmp/cyclonedx /usr/local/bin/cyclonedx && \
+    rm -f /tmp/cyclonedx && \
+    test "$(cyclonedx --version | cut -d+ -f1)" = "${CYCLONEDX_CLI_VERSION}"
 
 # Docker runs this image as the invoking host UID so generated files stay
 # user-owned. Pebble Tool also writes small settings/telemetry state here. The

@@ -14,6 +14,21 @@ the phone, install the PBW through the Pebble App, open Locus Map once, and laun
 the watch. The Bridge status screen should report Locus as available, the watch as connected, the
 watchapp as open, and matching versions.
 
+Verify Release Downloads
+------------------------
+
+Each release provides CycloneDX and SPDX software bills of materials (SBOMs) for both the Android
+Bridge APK and watch PBW. These machine-readable inventories help users and security tools inspect
+the runtime components associated with the exact downloads. They complement the release checksums,
+provenance attestations, and VirusTotal submissions; an SBOM is not a security audit or a guarantee
+that a release has no vulnerabilities.
+
+After downloading an artifact, verify its provenance with the command shown in that release's
+notes. Use the same command with ``--predicate-type https://cyclonedx.org/bom`` to verify its
+CycloneDX SBOM, or ``--predicate-type https://spdx.dev/Document/v2.3`` for SPDX. The versioned
+``*.cdx.json`` and ``*.spdx.json`` release assets contain the corresponding inventories for direct
+use by compatible tools.
+
 Add TrackGlance to the Locus Map Screen
 ---------------------------------------
 
