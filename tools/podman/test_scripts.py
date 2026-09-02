@@ -25,6 +25,7 @@ RELEASE_MANIFEST_POLICY = ROOT / "tools" / "podman" / "check_release_manifest.py
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 PUBLISH_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 RELEASE_CANDIDATE_VERIFIER = ROOT / "tools" / "verify-release-candidate"
+RELEASE_ASSET_VERIFIER = ROOT / "tools" / "verify-release-assets"
 RELEASE_ARTIFACT_SCRIPT = ROOT / "tools" / "podman" / "release-artifacts.sh"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
@@ -117,9 +118,13 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("tools/podman-test release-artifacts --published", source)
         self.assertEqual(source.count("actions/attest@"), 7)
         self.assertEqual(source.count("sbom-path:"), 4)
-        for suffix in ("cdx.json", "spdx.json"):
-            self.assertIn(f"trackglance-bridge-*.{suffix}", source)
-            self.assertIn(f"trackglance-watch-*.{suffix}", source)
+        self.assertIn("id: assets", source)
+        for output in ("android_cdx", "android_spdx", "watch_cdx", "watch_spdx"):
+            self.assertIn(f"sbom-path: ${{{{ steps.assets.outputs.{output} }}}}", source)
+        self.assertNotIn("sbom-path: build/release-assets/", source)
+        self.assertIn(
+            'tools/verify-release-assets build/release-assets "$version"', source
+        )
         self.assertNotIn("actions/attest-build-provenance@", source)
         for forbidden in ("podman-test static", "podman-test documentation", "acceptance-suite"):
             self.assertNotIn(forbidden, source)
@@ -141,7 +146,9 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
         verifier = RELEASE_CANDIDATE_VERIFIER.read_text(encoding="utf-8")
         self.assertEqual(verifier.count("gh attestation verify"), 2)
-        self.assertIn("sha256sum --check --strict SHA256SUMS", verifier)
+        self.assertIn('tools/verify-release-assets "$candidate" "$version"', verifier)
+        asset_verifier = RELEASE_ASSET_VERIFIER.read_text(encoding="utf-8")
+        self.assertIn("sha256sum --check --strict SHA256SUMS", asset_verifier)
         self.assertIn("--deny-self-hosted-runners", verifier)
         self.assertIn("--source-digest", verifier)
         self.assertIn("https://cyclonedx.org/bom", verifier)
