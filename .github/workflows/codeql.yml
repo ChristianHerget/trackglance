@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: ghcr.io/christianherget/trackglance-codeql-kotlin@sha256:7bc63f1acd2e6145c52994f9f565257d32168e982b7197f3d860adb05a8d45f5
+      image: ghcr.io/christianherget/trackglance-codeql-kotlin@sha256:097bf3c7fe1c477cc3318677739c6376d7d835050d31683e9fbb3fe75818da7f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Initialize CodeQL
