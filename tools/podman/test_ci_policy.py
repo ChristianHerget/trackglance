@@ -67,6 +67,27 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         ):
             self.assertIn(f"category: {category}", source)
 
+    def test_kotlin_codeql_nightly_is_checksum_pinned_and_scoped(self):
+        source = CODEQL_WORKFLOW.read_text(encoding="utf-8")
+        standard_job = source.split("  analyze:\n", 1)[1].split("\n  analyze-kotlin:", 1)[0]
+        kotlin_job = source.split("  analyze-kotlin:\n", 1)[1]
+        nightly_url = (
+            "https://github.com/dsp-testing/codeql-cli-nightlies/releases/download/"
+            "codeql-bundle-20260914/codeql-bundle-linux64.tar.gz"
+        )
+        nightly_sha256 = (
+            "0e368291ce2fa5cc28017293a56ae902b29c52fe42ea71bfbc3abce4bd6b6b34"
+        )
+
+        self.assertNotIn("tools: nightly", source)
+        self.assertNotIn("CODEQL_NIGHTLY", standard_job)
+        self.assertNotIn("tools:", standard_job)
+        self.assertEqual(kotlin_job.count(nightly_url), 1)
+        self.assertEqual(kotlin_job.count(nightly_sha256), 1)
+        self.assertIn("curl --fail --location --proto '=https' --tlsv1.2 --retry 4", kotlin_job)
+        self.assertIn("sha256sum --check --strict", kotlin_job)
+        self.assertIn("tools: ${{ runner.temp }}/codeql-bundle-linux64.tar.gz", kotlin_job)
+
     def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("branches: [main]", source)
