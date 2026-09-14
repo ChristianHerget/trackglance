@@ -48,6 +48,10 @@ class PublishedCiImageTest(unittest.TestCase):
         )
         self.assertIn('if command -v cosign', source)
         self.assertIn('"$engine" run --rm "$cosign_image"', source)
+        attestation_verification = source.split("cosign_args=", 1)[0]
+        self.assertIn('--signer-workflow "${workflow%@*}"', attestation_verification)
+        self.assertIn("--source-ref refs/heads/main", attestation_verification)
+        self.assertNotIn("--cert-identity", attestation_verification)
 
     def test_acceptance_runner_embeds_only_the_public_pebble_app_fixture(self):
         source = ACCEPTANCE_RUNNER_CONTAINERFILE.read_text(encoding="utf-8")

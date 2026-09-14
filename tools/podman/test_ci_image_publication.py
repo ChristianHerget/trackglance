@@ -147,7 +147,7 @@ elif command == "gh":
     assert "@sha256:" in args[2]
     assert args[args.index("--source-ref") + 1] == "refs/heads/main"
     assert args[args.index("--signer-workflow") + 1] == state["workflow"].split("@")[0]
-    assert args[args.index("--cert-identity") + 1] == "https://github.com/" + state["workflow"]
+    assert "--cert-identity" not in args
     assert args[args.index("--repo") + 1] == "ChristianHerget/trackglance"
     predicate = args[args.index("--predicate-type") + 1]
     failure = state.get("verification_error")

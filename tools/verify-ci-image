@@ -30,7 +30,6 @@ for predicate in https://slsa.dev/provenance/v1 https://spdx.dev/Document; do
   timeout 180 gh attestation verify "oci://$image" \
     --repo "${workflow%%/.github/workflows/*}" \
     --signer-workflow "${workflow%@*}" \
-    --cert-identity "https://github.com/$workflow" \
     --source-ref refs/heads/main \
     --predicate-type "$predicate" || failed_check "$predicate attestation"
 done
