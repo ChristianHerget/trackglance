@@ -198,6 +198,23 @@ cleans up again. Either path may need network access unless every pinned input i
 adds a second Emery/Gabbro pass for a release-candidate soak or flake investigation; it is not an
 automatic retry, and a failure in either pass fails the suite immediately.
 
+`--component all|android|emery|gabbro` selects the stages to run; `all` is the default.
+Android runs once, while `--watch-passes 1|2` applies only to selected watches (it has no effect
+with `--component android`). `--fresh` and `--published` are mutually exclusive. Each selected
+component uses the same fixture validation, provisioning, diagnostics, and cleanup rules.
+
+Hosted CI runs Android instrumentation first, then Emery and Gabbro in parallel jobs with
+`fail-fast: false`. The final `Hosted full-stack acceptance` check requires all three components
+to succeed. Each failed component uploads a distinct diagnostics artifact for seven days;
+successful components report provisioning mode, elapsed time, and passed checkpoints in the job
+summary. No component receives an automatic clean retry.
+
+Within a watch attempt, settings navigation waits for both relay and Bridge connection health,
+reopens the Pebble App Apps deep link after foreground drift, and requires the settings WebView
+marker. Missing controls remain recoverable within the bounded navigation loop. Expiry reports
+the foreground activity, relay and Bridge status, UI dump, and checkpoint trace. The relay replaces
+an obsolete phone/QEMU pair on reconnect and records session IDs and disconnect reasons.
+
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
 [run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
 at commit `47d9eb36a3ec10d80bffe337686b5e36120f972d`. The 34-minute-41-second job built
