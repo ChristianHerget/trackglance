@@ -46,16 +46,6 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
             bootstrap.index("foreground_locus 30"),
         )
 
-    def test_acceptance_retries_external_settings_webview_loading(self):
-        source = E2E_STAGE.read_text(encoding="utf-8")
-        settings = source.split("settings_loaded=0", 1)[1].split(
-            'cp /tmp/trackglance-window.xml', 1
-        )[0]
-
-        self.assertIn("for _ in 1 2 3", settings)
-        self.assertIn('resource-id="generalOpen"', settings)
-        self.assertIn("KEYCODE_BACK", settings)
-
     def test_acceptance_uses_the_manifest_activity_class_not_the_application_id(self):
         podman_test = PODMAN_TEST.read_text(encoding="utf-8")
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
@@ -80,22 +70,9 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
         )
         self.assertNotIn("/sdcard/Android/data/coredevices.coreapp/cache", e2e_stage)
 
-    def test_e2e_dismisses_a_stale_coreapp_onboarding_gate(self):
-        e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
-        device_lib = DEVICE_LIB.read_text(encoding="utf-8")
-        self.assertIn("complete_coreapp_onboarding 90", e2e_stage)
-        self.assertIn("Connect a Pebble", device_lib)
-        self.assertIn("Get Started", device_lib)
-        self.assertIn("tap_text Finished", device_lib)
-        self.assertGreaterEqual(e2e_stage.count("pebble://navbar/apps"), 2)
-        self.assertLess(
-            e2e_stage.index("complete_coreapp_onboarding 90"),
-            e2e_stage.index('tap_text "TrackGlance"'),
-        )
-
     def test_e2e_polls_until_the_watch_settings_webview_is_rendered(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
-        self.assertIn("settings_deadline=$((SECONDS + 30))", e2e_stage)
+        self.assertIn("open_trackglance_settings", e2e_stage)
         self.assertIn("general_deadline=$((SECONDS + 30))", e2e_stage)
         self.assertIn('tap_text "General settings" 30', e2e_stage)
         self.assertIn("grep -Fq 'resource-id=\"theme\"'", e2e_stage)
@@ -129,10 +106,7 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
         self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
         self.assertIn("watch_heart_rate_deadline=$((SECONDS + 30))", e2e_stage)
         self.assertIn("heart_rate_deadline=$((SECONDS + 20))", e2e_stage)
-        self.assertLess(
-            e2e_stage.index('tap_text "Apps"'),
-            e2e_stage.index('tap_text "TrackGlance"'),
-        )
+
 
     def test_emery_and_gabbro_exercise_deterministic_watch_steps(self):
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")

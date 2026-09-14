@@ -170,10 +170,11 @@ class Transcript:
             with self.path.open("a", encoding="utf-8") as output:
                 output.write(line)
 
-    async def bytes(self, direction: str, data: bytes) -> None:
+    async def bytes(self, direction: str, data: bytes, session_id: int) -> None:
         await self.write(
             "bytes",
             direction=direction,
+            session_id=session_id,
             length=len(data),
             sha256=hashlib.sha256(data).hexdigest(),
         )
@@ -194,27 +195,58 @@ class Relay:
         self.qemu_writer: asyncio.StreamWriter | None = None
         self.phone_connected = False
         self._write_lock = asyncio.Lock()
+        self._session_lock = asyncio.Lock()
+        self.session_id = 0
+        self.reconnect_count = 0
+        self.last_disconnect_reason: str | None = None
+        self._phone_writer: asyncio.StreamWriter | None = None
+        self._session_task: asyncio.Task | None = None
+        self._retiring_tasks: set[asyncio.Task] = set()
 
     async def inject(self, data: bytes, description: str) -> None:
-        if self.qemu_writer is None or self.qemu_writer.is_closing():
-            raise RuntimeError("QEMU is not connected")
-        async with self._write_lock:
-            self.qemu_writer.write(data)
-            await self.qemu_writer.drain()
-        await self.transcript.write("inject", command=description, length=len(data))
+        async with self._session_lock, self._write_lock:
+            writer = self.qemu_writer
+            if writer is None or writer.is_closing():
+                raise RuntimeError("QEMU is not connected")
+            writer.write(data)
+            await self.transcript.write(
+                "inject", session_id=self.session_id, command=description, length=len(data)
+            )
+        # Backpressure on a half-open socket must not prevent its replacement.
+        await writer.drain()
 
     async def handle_phone(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        if self.phone_connected:
-            writer.close()
-            await writer.wait_closed()
-            return
-        self.phone_connected = True
-        await self.transcript.write("phone-connected")
-        qemu_reader: asyncio.StreamReader
-        qemu_writer: asyncio.StreamWriter
+        tasks = set()
+        qemu_writer = None
+        session_id = None
+        reason = "cancelled"
         try:
+            async with self._session_lock:
+                if self._session_task is not None:
+                    self.last_disconnect_reason = "replaced"
+                    await self.transcript.write(
+                        "session-replaced", session_id=self.session_id,
+                        replacement_session_id=self.session_id + 1, reason="replaced",
+                    )
+                    if self._session_task not in self._retiring_tasks:
+                        self._session_task.cancel()
+                    self._phone_writer.close()
+                    if self.qemu_writer is not None:
+                        self.qemu_writer.close()
+                self.session_id += 1
+                session_id = self.session_id
+                self.reconnect_count = session_id - 1
+                self._session_task = asyncio.current_task()
+                self._phone_writer = writer
+                self.qemu_writer = None
+                self.phone_connected = True
+                await self.transcript.write("phone-connected", session_id=session_id)
             qemu_reader, qemu_writer = await asyncio.open_connection(self.qemu_host, self.qemu_port)
-            self.qemu_writer = qemu_writer
+            async with self._session_lock:
+                if session_id != self.session_id:
+                    return
+                self.qemu_writer = qemu_writer
+                await self.transcript.write("qemu-connected", session_id=session_id)
 
             async def forward(
                 source: asyncio.StreamReader,
@@ -235,11 +267,12 @@ class Relay:
                         async with target_lock:
                             if forwarded:
                                 target.write(forwarded)
-                                await target.drain()
-                    await self.transcript.bytes(direction, data)
+                        if forwarded:
+                            await target.drain()
+                    await self.transcript.bytes(direction, data, session_id)
                     if patcher and patcher.serial_patch_count != previous_patch_count:
                         await self.transcript.write(
-                            "watch-serial-synthesized",
+                            "watch-serial-synthesized", session_id=session_id,
                             count=patcher.serial_patch_count - previous_patch_count,
                         )
                     if (
@@ -247,37 +280,54 @@ class Relay:
                         and patcher.platform_patch_count != previous_platform_patch_count
                     ):
                         await self.transcript.write(
-                            "watch-platform-synthesized",
+                            "watch-platform-synthesized", session_id=session_id,
                             platform=patcher.platform,
                             count=patcher.platform_patch_count - previous_platform_patch_count,
                         )
 
             watch_version_patcher = QemuWatchVersionPatcher(self.watch_platform)
             tasks = {
-                asyncio.create_task(forward(reader, qemu_writer, "phone-to-qemu", self._write_lock)),
+                asyncio.create_task(forward(reader, qemu_writer, "phone-to-qemu", self._write_lock), name="phone-eof"),
                 asyncio.create_task(
-                    forward(qemu_reader, writer, "qemu-to-phone", patcher=watch_version_patcher)
+                    forward(qemu_reader, writer, "qemu-to-phone", patcher=watch_version_patcher), name="qemu-eof"
                 ),
             }
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            reason = sorted(task.get_name() for task in done)[0]
             for task in done:
                 task.result()
-            await asyncio.gather(*pending, return_exceptions=True)
+        except asyncio.CancelledError:
+            reason = "replaced" if session_id != self.session_id else "cancelled"
+            raise
         except Exception as error:
-            await self.transcript.write("disconnect-error", error=type(error).__name__, detail=str(error))
+            reason = "qemu-connect-failed" if qemu_writer is None else "forward-error"
+            await self.transcript.write(
+                "disconnect-error", session_id=session_id, reason=reason,
+                error=type(error).__name__, detail=str(error),
+            )
         finally:
-            self.qemu_writer = None
-            self.phone_connected = False
+            # Replacement must not interrupt cleanup that has already started after EOF.
+            owner = asyncio.current_task()
+            self._retiring_tasks.add(owner)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             writer.close()
-            with contextlib.suppress(Exception):
-                await writer.wait_closed()
-            if "qemu_writer" in locals():
+            if qemu_writer is not None:
                 qemu_writer.close()
-                with contextlib.suppress(Exception):
-                    await qemu_writer.wait_closed()
-            await self.transcript.write("phone-disconnected")
+            async with self._session_lock:
+                if session_id == self.session_id:
+                    self.qemu_writer = None
+                    self.phone_connected = False
+                    self._phone_writer = None
+                    self._session_task = None
+                    self.last_disconnect_reason = reason
+                await self.transcript.write("phone-disconnected", session_id=session_id, reason=reason)
+            for stream in (writer, qemu_writer):
+                if stream is not None:
+                    with contextlib.suppress(Exception):
+                        await stream.wait_closed()
+            self._retiring_tasks.discard(owner)
 
     async def handle_control(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         response: dict[str, object]
@@ -285,7 +335,13 @@ class Relay:
             request = json.loads((await asyncio.wait_for(reader.readline(), timeout=5)).decode("utf-8"))
             command = request.get("command")
             if command == "status":
-                response = {"ok": True, "phone_connected": self.phone_connected, "qemu_connected": self.qemu_writer is not None}
+                async with self._session_lock:
+                    response = {
+                        "ok": True, "phone_connected": self.phone_connected,
+                        "qemu_connected": self.qemu_writer is not None and not self.qemu_writer.is_closing(),
+                        "session_id": self.session_id, "reconnect_count": self.reconnect_count,
+                        "last_disconnect_reason": self.last_disconnect_reason,
+                    }
             elif command == "button":
                 button = request.get("button")
                 if button not in BUTTONS:
