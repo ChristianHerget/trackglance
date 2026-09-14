@@ -36,6 +36,9 @@ adb_device_timeout() {
     opens=$((opens + 1)); page=apps
     if [[ "$SCENARIO" == onboarding && "$opens" == 1 ]]; then page=intro; fi
     echo "launch:$tick" >> "$CALLS"
+  elif [[ "$*" == *'input swipe'* ]]; then
+    if [[ "$page" == carousel ]]; then page=configure; else page=finish; fi
+    echo swipe >> "$CALLS"
   elif [[ "$*" == *'content query'* ]]; then
     echo 'Row: 0 watch_connected=true, recording_state=STOPPED'
   fi
@@ -48,6 +51,8 @@ dump_ui() {
   case "$page" in
     intro) echo '<node text="Get Started"/>' ;;
     choice) echo '<hierarchy><node text="I have a:"/><node text="Watch"/></hierarchy>' ;;
+    carousel) echo '<node text="Get Started!"/>' ;;
+    configure) echo '<node text="Configure your watch"/>' ;;
     finish) echo '<node text="Finished"/>' ;;
     apps) echo '<hierarchy><node text="Watch"/><node text="Settings"/><node text="Apps"/></hierarchy>' ;;
     list) echo '<hierarchy><node text="Settings"/><node text="TrackGlance"/></hierarchy>' ;;
@@ -62,17 +67,17 @@ tap_text() {
   fi
   case "$1" in
     'Get Started') page=choice ;;
-    Watch) page=finish ;;
+    Watch) page=carousel ;;
     Finished) page=apps ;;
     Apps) page=list ;;
     TrackGlance) page=details ;;
     Settings) page=settings ;;
   esac
 }
-open_trackglance_settings 10
+open_trackglance_settings 15
 if [[ "$SCENARIO" == reopen ]]; then
   page=bridge
-  open_trackglance_settings 10
+  open_trackglance_settings 15
 fi
 '''
             trace = Path(directory) / 'trace'
@@ -118,6 +123,7 @@ fi
                          ['tap:Get Started', 'tap:Watch', 'tap:Finished', 'tap:Apps',
                           'tap:TrackGlance', 'tap:Settings'])
         self.assertEqual(calls.count('launch:'), 2)
+        self.assertEqual(calls.splitlines().count('swipe'), 2)
         self.assertIn('settings-webview-passed', trace)
 
     def test_settings_reopen_uses_same_marker_and_recovery(self):

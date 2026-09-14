@@ -63,9 +63,10 @@ open_trackglance_settings() {
           break
         fi
       done
-      if (( ! matched )) && grep -Fq 'Get Started!' /tmp/trackglance-window.xml; then
+      if (( ! matched )) && grep -Eq 'text="(Get Started!|Configure your watch)"' /tmp/trackglance-window.xml; then
         adb_device_timeout 5 shell input swipe 540 2100 540 400 200 || true
         settings_checkpoint onboarding-swipe
+        last_launch=$SECONDS
       fi
     fi
     if (( SECONDS - last_launch >= 20 )); then
