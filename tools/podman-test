@@ -1077,10 +1077,10 @@ static_tests() {
     source tools/podman/check-report.sh
     mkdir -p "$HOME"
     check_stage static-helpers
-    bash -n tools/podman-test tools/podman/*.sh docs/*.sh
+    bash -n tools/podman-test tools/ci-image-key tools/publish-ci-images tools/verify-ci-image tools/podman/*.sh docs/*.sh
     actionlint .github/workflows/*.yml
-    shellcheck --severity=warning tools/podman-test tools/format tools/check-format tools/check-c tools/podman/*.sh docs/*.sh
-    ruff check tools
+    shellcheck --severity=warning tools/podman-test tools/ci-image-key tools/publish-ci-images tools/verify-ci-image tools/format tools/check-format tools/check-c tools/podman/*.sh docs/*.sh
+    ruff check tools tools/resolve-ci-image
     python3 -m unittest discover -s tools/podman -p "test_*.py"
     python3 tools/validate-appstore-kit.py
     version_check=$(./tools/bump-version --check)

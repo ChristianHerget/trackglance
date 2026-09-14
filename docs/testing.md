@@ -68,7 +68,7 @@ Run modules, classes, or individual methods with native unittest selection:
 ```
 
 The script-policy groups are `test_action_pin_policy`, `test_release_workflows`, `test_ci_policy`,
-`test_published_images`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
+`test_published_images`, `test_ci_image_publication`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
 `test_acceptance_orchestration`, and `test_manual_harness`. Fixture validation and fingerprinting
 live together in `test_locus_fixture`. Shared policy helpers contain no test classes, so discovery
 executes each scenario once. Read the selected module and the shell function or workflow it covers.

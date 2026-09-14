@@ -1,0 +1,157 @@
+#!/bin/bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+[[ $# -eq 0 ]] || { echo "Usage: $0" >&2; exit 2; }
+[[ ${GITHUB_REF:-} == refs/heads/main ]] || {
+  echo 'CI images must be published by the protected workflow on main.' >&2
+  exit 1
+}
+: "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+: "${GITHUB_SHA:?GITHUB_SHA is required}"
+workflow=ChristianHerget/trackglance/.github/workflows/publish-ci-images.yml@refs/heads/main
+names=(runner emulator codeql)
+acceptance_key=$(tools/ci-image-key acceptance)
+codeql_key=$(tools/ci-image-key codeql-kotlin)
+declare -A keys=( [runner]="$acceptance_key" [emulator]="$acceptance_key" [codeql]="$codeql_key" )
+declare -A repositories=(
+  [runner]="${ACCEPTANCE_RUNNER_REPOSITORY:?}"
+  [emulator]="${ACCEPTANCE_EMULATOR_REPOSITORY:?}"
+  [codeql]="${CODEQL_KOTLIN_REPOSITORY:?}"
+)
+declare -A tags refs states
+
+resolve_tag() {
+  local name=$1 status
+  if resolved=$(tools/resolve-ci-image "${tags[$name]}"); then
+    [[ "$resolved" == "${repositories[$name]}"@sha256:* && ${resolved##*@} =~ ^sha256:[a-f0-9]{64}$ ]] || {
+      echo "Invalid immutable reference for ${tags[$name]}: $resolved" >&2
+      exit 1
+    }
+    return 0
+  else
+    status=$?
+    [[ $status -eq 3 ]] && return 3
+    echo "Cannot establish registry state for ${tags[$name]}; stopping before publication." >&2
+    exit 1
+  fi
+}
+
+# Resolve the entire set, then verify every existing digest before any build or write.
+for name in "${names[@]}"; do
+  tags[$name]="${repositories[$name]}:${keys[$name]}"
+  if resolve_tag "$name"; then
+    refs[$name]=$resolved
+    states[$name]=reused
+  else
+    states[$name]=missing
+  fi
+done
+for name in "${names[@]}"; do
+  [[ ${states[$name]} == reused ]] || continue
+  if ! tools/verify-ci-image "${refs[$name]}" "$workflow"; then
+    echo "Cannot reuse ${tags[$name]} (${refs[$name]}): verification failed; see the failed check above." >&2
+    echo 'Recovery: investigate the original publication and verification logs. Retry only if the failure was transient.' >&2
+    echo 'For an incomplete or invalid publication, have a maintainer review a replacement through the protected workflow with a new input key.' >&2
+    echo 'Do not delete, overwrite, sign, or attest the existing digest to repair it. Keep current pins until source-versus-published acceptance passes.' >&2
+    exit 1
+  fi
+done
+
+if [[ ${states[runner]} == missing || ${states[emulator]} == missing ]]; then
+  sudo setfacl -m "u:${USER}:rw" /dev/kvm
+  ACCEPTANCE_CONTAINER_ENGINE=docker tools/podman-test build-acceptance
+elif [[ ${states[codeql]} == missing ]]; then
+  DEV_CONTAINER_ENGINE=docker tools/podman-test build-static
+fi
+
+if [[ ${states[runner]} == missing || ${states[emulator]} == missing || ${states[codeql]} == missing ]]; then
+  source tools/podman/versions.env
+  source tools/podman/release-metadata.sh
+  load_release_metadata "$root"
+  build_image="localhost/trackglance/build:${RELEASE_VERSION}"
+  if [[ ${states[runner]} == missing ]]; then
+    docker build \
+      --build-arg "BUILD_IMAGE=$build_image" \
+      --build-arg "CORE_APP_COMMIT=$CORE_APP_COMMIT" \
+      --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+      --file tools/podman/Containerfile.acceptance-runner \
+      --tag "${tags[runner]}" .
+  fi
+  if [[ ${states[emulator]} == missing ]]; then
+    docker tag "localhost/trackglance/android-api32:${ANDROID_EMULATOR_VERSION}" "${tags[emulator]}"
+  fi
+  if [[ ${states[codeql]} == missing ]]; then
+    docker build \
+      --build-arg "BUILD_IMAGE=$build_image" \
+      --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+      --file tools/podman/Containerfile.codeql-kotlin \
+      --tag "${tags[codeql]}" .
+  fi
+fi
+
+# Reject forbidden image content before pushing any new image. Reused images retain
+# the checks and certification from their original protected publication.
+for name in "${names[@]}"; do
+  [[ ${states[$name]} == missing ]] || continue
+  history=$(docker image history --no-trunc "${tags[$name]}")
+  if grep -E '/(locus|trackglance-bridge).*[.]apk|[.]pbw|[.]p12|[.]keystore' <<< "$history"; then
+    echo "Forbidden artifact reference found in ${tags[$name]} history." >&2
+    exit 1
+  fi
+done
+if [[ ${states[runner]} == missing ]]; then
+  fixtures=$(docker run --rm "${tags[runner]}" find /opt/trackglance -type f -printf '%f\n')
+  [[ "$fixtures" == pebble-app-x86_64-debug.apk ]] || {
+    echo "Unexpected acceptance runner fixture files: $fixtures" >&2
+    exit 1
+  }
+fi
+
+# Publication is serialized by the workflow. Recheck after the build as well, so
+# a tag created outside that workflow is never deliberately replaced.
+for name in "${names[@]}"; do
+  [[ ${states[$name]} == missing ]] || continue
+  if resolve_tag "$name"; then
+    echo "Refusing to overwrite published image tag ${tags[$name]} ($resolved). Rerun to verify it." >&2
+    exit 1
+  fi
+done
+for name in "${names[@]}"; do
+  [[ ${states[$name]} == missing ]] || continue
+  docker push "${tags[$name]}"
+  pushed=$(docker image inspect --format '{{index .RepoDigests 0}}' "${tags[$name]}")
+  if ! resolve_tag "$name" || [[ "$resolved" != "$pushed" ]]; then
+    echo "Pushed digest could not be confirmed for ${tags[$name]}: $pushed" >&2
+    exit 1
+  fi
+  refs[$name]=$resolved
+  states[$name]=published
+done
+for name in "${names[@]}"; do
+  [[ ${states[$name]} == published ]] || continue
+  cosign sign --yes "${refs[$name]}"
+done
+
+mkdir -p build
+summary=build/ci-image-publication-summary.md
+printf '| Image | Input key | Result | Immutable reference |\n| --- | --- | --- | --- |\n' > "$summary"
+for name in "${names[@]}"; do
+  published=false
+  [[ ${states[$name]} != published ]] || published=true
+  {
+    echo "${name}_ref=${refs[$name]}"
+    echo "${name}_digest=${refs[$name]##*@}"
+    echo "${name}_published=$published"
+  } >> "$GITHUB_OUTPUT"
+  printf '| %s | `%s` | %s | `%s` |\n' "$name" "${keys[$name]}" "${states[$name]}" "${refs[$name]}" >> "$summary"
+  echo "$name: key=${keys[$name]} ${states[$name]} ${refs[$name]}"
+done
+{
+  printf '\n```dotenv\n'
+  echo "ACCEPTANCE_RUNNER_IMAGE=${refs[runner]}"
+  echo "ACCEPTANCE_EMULATOR_IMAGE=${refs[emulator]}"
+  echo "CODEQL_KOTLIN_IMAGE=${refs[codeql]}"
+  printf '```\n'
+} >> "$summary"

@@ -21,10 +21,19 @@ workflow=$2
 : "${GH_TOKEN:?GH_TOKEN is required to verify GitHub attestations}"
 command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
 
-gh attestation verify "oci://$image" \
-  --repo "${workflow%%/.github/workflows/*}" \
-  --signer-workflow "${workflow%@*}" \
-  --source-ref refs/heads/main
+failed_check() {
+  echo "CI image verification failed: $image; check: $1." >&2
+  exit 1
+}
+
+for predicate in https://slsa.dev/provenance/v1 https://spdx.dev/Document; do
+  timeout 180 gh attestation verify "oci://$image" \
+    --repo "${workflow%%/.github/workflows/*}" \
+    --signer-workflow "${workflow%@*}" \
+    --cert-identity "https://github.com/$workflow" \
+    --source-ref refs/heads/main \
+    --predicate-type "$predicate" || failed_check "$predicate attestation"
+done
 
 cosign_args=(
   verify "$image"
@@ -32,7 +41,7 @@ cosign_args=(
   --certificate-identity "https://github.com/$workflow"
 )
 if command -v cosign >/dev/null; then
-  cosign "${cosign_args[@]}" >/dev/null
+  timeout 180 cosign "${cosign_args[@]}" >/dev/null || failed_check 'Cosign signature'
 else
   cosign_image=ghcr.io/sigstore/cosign/cosign@sha256:6ca1127dc1e9ff19f3f2bfa214936813a86fbbf52919652eda49d393c888ad3c
   if [[ -n "${DEV_CONTAINER_ENGINE:-}" ]]; then
@@ -45,5 +54,6 @@ else
     echo "cosign or a Docker-compatible container engine is required" >&2
     exit 1
   fi
-  "$engine" run --rm "$cosign_image" "${cosign_args[@]}" >/dev/null
+  timeout 180 "$engine" run --rm "$cosign_image" "${cosign_args[@]}" >/dev/null \
+    || failed_check 'Cosign signature'
 fi
