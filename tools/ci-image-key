@@ -3,6 +3,10 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 kind=${1:-}
+[[ $# -eq 1 || ( $# -eq 2 && $2 == --list-inputs ) ]] || {
+  echo "Usage: $0 acceptance|codeql-kotlin [--list-inputs]" >&2
+  exit 2
+}
 case "$kind" in
   acceptance)
     files=(
@@ -25,10 +29,15 @@ case "$kind" in
     )
     ;;
   *)
-    echo "Usage: $0 acceptance|codeql-kotlin" >&2
+    echo "Usage: $0 acceptance|codeql-kotlin [--list-inputs]" >&2
     exit 2
     ;;
 esac
+
+if [[ ${2:-} == --list-inputs ]]; then
+  printf '%s\n' "${files[@]}"
+  exit 0
+fi
 
 for file in "${files[@]}"; do
   [[ -f "$root/$file" ]] || { echo "Missing image input: $file" >&2; exit 1; }

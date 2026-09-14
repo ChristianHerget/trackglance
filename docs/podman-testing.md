@@ -198,6 +198,23 @@ cleans up again. Either path may need network access unless every pinned input i
 adds a second Emery/Gabbro pass for a release-candidate soak or flake investigation; it is not an
 automatic retry, and a failure in either pass fails the suite immediately.
 
+`--component all|android|emery|gabbro` selects the stages to run; `all` is the default.
+Android runs once, while `--watch-passes 1|2` applies only to selected watches (it has no effect
+with `--component android`). `--fresh` and `--published` are mutually exclusive. Each selected
+component uses the same fixture validation, provisioning, diagnostics, and cleanup rules.
+
+Hosted CI runs Android instrumentation first, then Emery and Gabbro in parallel jobs with
+`fail-fast: false`. The final `Hosted full-stack acceptance` check requires all three components
+to succeed. Each failed component uploads a distinct diagnostics artifact for seven days;
+successful components report provisioning mode, elapsed time, and passed checkpoints in the job
+summary. No component receives an automatic clean retry.
+
+Within a watch attempt, settings navigation waits for both relay and Bridge connection health,
+reopens the Pebble App Apps deep link after foreground drift, and requires the settings WebView
+marker. Missing controls remain recoverable within the bounded navigation loop. Expiry reports
+the foreground activity, relay and Bridge status, UI dump, and checkpoint trace. The relay replaces
+an obsolete phone/QEMU pair on reconnect and records session IDs and disconnect reasons.
+
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
 [run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
 at commit `47d9eb36a3ec10d80bffe337686b5e36120f972d`. The 34-minute-41-second job built
@@ -227,7 +244,7 @@ pair is one versioned image set and shares the acceptance invalidation key.
 
 `tools/ci-images.env` is the only accepted image-pin source. Every published reference must use a
 full `ghcr.io/...@sha256:...` digest. Before pulling, `tools/verify-ci-image` checks GitHub's signed
-SLSA provenance and the independent keyless Cosign signature. Both identities must resolve to
+SLSA provenance, SPDX SBOM attestation, and the independent keyless Cosign signature. All identities must resolve to
 `.github/workflows/publish-ci-images.yml` on `main`. A tag, an unattested digest, a different
 repository, or a different workflow fails closed. GitHub Actions installs the pinned Cosign binary;
 local verification uses that binary when present or the official Cosign container pinned by digest,
@@ -243,14 +260,40 @@ App APK. The Locus fixture is downloaded and validated in `$RUNNER_TEMP` at acce
 the current TrackGlance APK/PBW are built from the checked-out change. Locus, TrackGlance binaries,
 signing identities, emulator data, Gradle/npm caches, and diagnostics must never be copied into an
 image or registry layer. Publication rejects suspicious image history and unexpected runner
-fixture files before signing.
+fixture files before pushing new images.
 
 The acceptance key changes when any emulator download/revision, Android or Pebble tool version,
 Pebble App commit/patch, emulator generator/entrypoint, or relevant container definition changes.
 The Kotlin CodeQL key changes for its Android/Gradle toolchain pins or container definition;
 project dependency locks remain runtime inputs from the checked-out commit. `tools/ci-image-key` is
-the executable list of these invalidation rules. A changed key requires a new publication and a
-reviewed digest-only pin update; existing tags and manifests are never overwritten.
+the executable list of these invalidation rules. Run `tools/ci-image-key acceptance --list-inputs`
+or `tools/ci-image-key codeql-kotlin --list-inputs` for one input path per line. Publication triggers
+cover those inputs plus explicit publication orchestration and verification files. Application
+dependency locks, Gradle verification metadata, and the Gradle wrapper do not trigger publication.
+A changed key requires a new publication and a reviewed digest-only pin update; existing tags and
+manifests are never overwritten.
+
+`tools/publish-ci-images` resolves all three expected tags to immutable digests before building.
+Only HTTP 404 with the registry's `MANIFEST_UNKNOWN` error confirms an absent tag; authentication,
+network, and other registry failures stop publication. Existing images must pass all three
+verification checks against the protected publishing workflow on `main`. Verified images retain
+their original signatures and provenance: they are neither pushed nor signed nor attested again.
+If every image verifies, publication succeeds without building. Missing acceptance images use
+`build-acceptance`; a missing CodeQL image alone uses `build-static`. Only missing images are
+published, and the summary lists each image's input key, digest, and whether it was reused or
+published. The protected environment and serialized publication remain required.
+
+An incomplete or invalid existing publication stops the workflow with its digest and failed check.
+Inspect the original publication and verification logs. Retry when an authentication, network, or
+verification service failure was transient. If a signature or required attestation is absent or
+invalid, a maintainer must review a replacement through the protected workflow with a new input
+key. Do not delete or overwrite the existing tag, or sign or attest its digest to repair it. Keep
+the current pins until the replacement passes the source-versus-published comparison below.
+
+After merging publication changes, dispatch `Publish CI images` on `main`, then rerun that
+successful run. Both runs must report the same digests; the rerun must reuse all three images with
+no build, push, signing, or attestation steps. Do not rerun a historical failure to test new code:
+[GitHub reruns retain the original commit and ref](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
 
 For image refreshes, manually dispatch CI with
 `acceptance_provisioning=compare`. It runs the source-built and verified published paths against

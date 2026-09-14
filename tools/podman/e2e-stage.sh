@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 source /workspace/tools/podman/device-lib.sh
+source /workspace/tools/podman/settings-navigation.sh
 source /workspace/tools/podman/release-metadata.sh
 load_release_metadata /workspace
 
@@ -75,39 +76,9 @@ recording_profile=$(cut -d'|' -f2 <<<"$profiles")
 test -n "$recording_profile"
 watch_screenshot "${PEBBLE_PLATFORM}-dashboard"
 
-adb_device shell am start -W -a android.intent.action.VIEW \
-  -d pebble://navbar/apps -n coredevices.coreapp/.MainActivity >/dev/null
-# A fresh CoreApp starts at "Get Started"; older prepared states may resume at "Connect a Pebble!"
-# or the final carousel. QEMU is already connected, so finish whichever bounded onboarding state is
-# visible, then resend the Apps deep link because the first one was consumed by onboarding.
-complete_coreapp_onboarding 90
-adb_device shell am start -W -a android.intent.action.VIEW \
-  -d pebble://navbar/apps -n coredevices.coreapp/.MainActivity >/dev/null
-# CoreApp keeps the onboarding navigation graph for the lifetime of the activity, so the first
-# post-onboarding deep link can leave Watch Home on its default Faces tab. Select Apps explicitly.
-tap_text "Apps" 15
-tap_text "TrackGlance" 30
-settings_loaded=0
-for _ in 1 2 3; do
-  tap_text "Settings" 30
-  settings_deadline=$((SECONDS + 30))
-  while (( SECONDS < settings_deadline )); do
-    dump_ui
-    if grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
-      settings_loaded=1
-      break 2
-    fi
-    sleep 0.5
-  done
-  adb_device shell input keyevent KEYCODE_BACK
-  sleep 1
-done
+open_trackglance_settings
 cp /tmp/trackglance-window.xml "/artifacts/${PEBBLE_PLATFORM}-settings.xml"
 android_screenshot "${PEBBLE_PLATFORM}-settings"
-if (( ! settings_loaded )); then
-  echo "${PEBBLE_PLATFORM} settings did not finish loading" >&2
-  exit 1
-fi
 
 tap_text "$recording_profile" 30
 tap_text "Use watch steps for this activity" 30
@@ -128,22 +99,6 @@ if (( ! general_loaded )); then
   echo "${PEBBLE_PLATFORM} General settings did not finish loading" >&2
   exit 1
 fi
-
-open_trackglance_settings() {
-  adb_device shell am start -W -a android.intent.action.VIEW \
-    -d pebble://navbar/apps -n coredevices.coreapp/.MainActivity >/dev/null
-  tap_text "Apps" 15
-  tap_text "TrackGlance" 30
-  tap_text "Settings" 30
-  local deadline=$((SECONDS + 30))
-  while (( SECONDS < deadline )); do
-    dump_ui
-    grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml && return 0
-    sleep 0.5
-  done
-  echo "${PEBBLE_PLATFORM} settings did not reopen" >&2
-  return 1
-}
 
 toggle_watch_steps_source() {
   open_trackglance_settings

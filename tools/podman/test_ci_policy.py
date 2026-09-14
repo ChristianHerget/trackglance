@@ -148,7 +148,31 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("inputs.acceptance_provisioning || 'published'", source)
         self.assertIn("run_suite Source --fresh", source)
         self.assertIn("run_suite Published --published", source)
-        self.assertIn("build/acceptance-timings.txt", source)
+        self.assertNotIn("build/acceptance-timings.txt", source)
         run_suite = source.split("run_suite() {", 1)[1].split("\n          }", 1)[0]
         self.assertIn('sudo setfacl -m "u:${USER}:rw" /dev/kvm', run_suite)
         self.assertIn("test -w /dev/kvm", run_suite)
+
+
+class AcceptanceComponentsPolicyTest(unittest.TestCase):
+    def test_android_precedes_parallel_watches_and_aggregate_requires_all(self):
+        source = CI_WORKFLOW.read_text()
+        android = source.split("  acceptance-android:", 1)[1].split("  acceptance-watch:", 1)[0]
+        watch = source.split("  acceptance-watch:", 1)[1].split("  acceptance-hosted:", 1)[0]
+        aggregate = source.split("  acceptance-hosted:", 1)[1]
+        self.assertIn("ACCEPTANCE_COMPONENT: android", android)
+        self.assertIn("needs: acceptance-android", watch)
+        self.assertIn("fail-fast: false", watch)
+        self.assertIn("component: [emery, gabbro]", watch)
+        self.assertNotIn("max-parallel: 1", watch)
+        self.assertIn("needs: [acceptance-android, acceptance-watch]", aggregate)
+        self.assertIn("if: always()", aggregate)
+        self.assertIn('test "$ANDROID_RESULT" = success', aggregate)
+        self.assertIn('test "$WATCH_RESULT" = success', aggregate)
+        self.assertEqual(source.count("name: Hosted full-stack acceptance"), 1)
+        for job in (android, watch):
+            self.assertIn("acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-", job)
+            self.assertIn("retention-days: 7", job)
+            self.assertIn("if: failure()", job)
+            self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', job)
+            self.assertIn('"$GITHUB_STEP_SUMMARY"', job)

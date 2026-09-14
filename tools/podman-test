@@ -67,7 +67,8 @@ Commands:
                                  Build and validate only distributable APK, PBW, and documentation
   android --locus-apks DIR       Run every instrumentation test, including Locus
   acceptance --locus-apks DIR    Run Emery acceptance and Gabbro smoke automation
-  acceptance-suite [OPTIONS]     Run Android plus Emery/Gabbro acceptance from warm or fresh state
+  acceptance-suite [OPTIONS]     Run selected acceptance components from warm or fresh state
+                                --component all|android|emery|gabbro (default: all)
   all --locus-apks DIR           Run static, android, and e2e in order
   clean                          Remove this workflow's generated state and images
 
@@ -1077,10 +1078,10 @@ static_tests() {
     source tools/podman/check-report.sh
     mkdir -p "$HOME"
     check_stage static-helpers
-    bash -n tools/podman-test tools/podman/*.sh docs/*.sh
+    bash -n tools/podman-test tools/ci-image-key tools/publish-ci-images tools/verify-ci-image tools/podman/*.sh docs/*.sh
     actionlint .github/workflows/*.yml
-    shellcheck --severity=warning tools/podman-test tools/format tools/check-format tools/check-c tools/podman/*.sh docs/*.sh
-    ruff check tools
+    shellcheck --severity=warning tools/podman-test tools/ci-image-key tools/publish-ci-images tools/verify-ci-image tools/format tools/check-format tools/check-c tools/podman/*.sh docs/*.sh
+    ruff check tools tools/resolve-ci-image
     python3 -m unittest discover -s tools/podman -p "test_*.py"
     python3 tools/validate-appstore-kit.py
     version_check=$(./tools/bump-version --check)
@@ -1325,8 +1326,12 @@ e2e_tests() {
   new_run e2e
   cp "$PROJECT_DIR/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk" "$RUN_ARTIFACTS/"
   cp "$PROJECT_DIR/watchapp/build/watchapp.pbw" "$RUN_ARTIFACTS/"
-  run_e2e_platform emery "$RUN_ARTIFACTS"
-  run_e2e_platform gabbro "$RUN_ARTIFACTS"
+  local component=${2:-all} platform
+  for platform in emery gabbro; do
+    if [[ "$component" == all || "$component" == "$platform" ]]; then
+      run_e2e_platform "$platform" "$RUN_ARTIFACTS"
+    fi
+  done
 }
 
 all_tests() {
@@ -1389,10 +1394,12 @@ assert_no_active_acceptance_runtime() {
 
 acceptance_suite() {
   local fresh=false published=false cleanup=false watch_passes=1 status cleanup_status pass
+  local component=all platform source_requested=false
   local -a locus_options=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --fresh)
+        source_requested=true
         fresh=true
         shift
         ;;
@@ -1404,6 +1411,11 @@ acceptance_suite() {
       --cleanup)
         cleanup=true
         shift
+        ;;
+      --component)
+        [[ $# -ge 2 ]] || die "--component requires all, android, emery, or gabbro"
+        component=$2
+        shift 2
         ;;
       --watch-passes)
         [[ $# -ge 2 ]] || die "--watch-passes requires 1 or 2"
@@ -1420,9 +1432,21 @@ acceptance_suite() {
   done
   [[ "$watch_passes" == 1 || "$watch_passes" == 2 ]] \
     || die "--watch-passes must be 1 or 2"
-  check_plan android-instrumentation
+  case "$component" in
+    all|android|emery|gabbro) ;;
+    *) die "--component must be all, android, emery, or gabbro" ;;
+  esac
+  [[ "$source_requested" != true || "$published" != true ]] \
+    || die "--fresh and --published are mutually exclusive"
+  if [[ "$component" == all || "$component" == android ]]; then
+    check_plan android-instrumentation
+  fi
   for ((pass=1; pass <= watch_passes; pass++)); do
-    check_plan "emery-acceptance-pass-$pass" "gabbro-acceptance-pass-$pass"
+    for platform in emery gabbro; do
+      if [[ "$component" == all || "$component" == "$platform" ]]; then
+        check_plan "$platform-acceptance-pass-$pass"
+      fi
+    done
   done
   parse_locus_apk_options "${locus_options[@]}"
   local locus_dir=$LOCUS_INPUT_DIR
@@ -1445,13 +1469,16 @@ acceptance_suite() {
       doctor_acceptance
     fi
     report_acceptance_resources
-    run_android_tests "$locus_dir"
-    assert_no_active_acceptance_runtime
-    report_acceptance_resources
+    if [[ "$component" == all || "$component" == android ]]; then
+      run_android_tests "$locus_dir"
+      assert_no_active_acceptance_runtime
+      report_acceptance_resources
+    fi
     for ((pass=1; pass <= watch_passes; pass++)); do
+      [[ "$component" != android ]] || break
       export CHECK_PASS=$pass
-      echo "Running Emery and Gabbro acceptance pass $pass of $watch_passes."
-      e2e_tests "$locus_dir"
+      echo "Running $component watch acceptance pass $pass of $watch_passes."
+      e2e_tests "$locus_dir" "$component"
       assert_no_active_acceptance_runtime
       report_acceptance_resources
     done

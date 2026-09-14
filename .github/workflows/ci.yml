@@ -76,11 +76,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  acceptance-hosted:
-    name: Hosted full-stack acceptance
+  acceptance-android:
+    name: Android instrumentation
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     env:
+      ACCEPTANCE_COMPONENT: android
       ACCEPTANCE_CONTAINER_ENGINE: docker
       ACCEPTANCE_REPORT_RESOURCES: 1
       WATCH_PASSES: ${{ inputs.watch_passes || '1' }}
@@ -113,19 +114,21 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
-      - name: Run fresh Android, Emery, and Gabbro acceptance
+      - name: Run selected acceptance component
         run: |
           run_suite() {
-            local label=$1 provisioning=$2 started elapsed
+            local label=$1 provisioning=$2 started elapsed report
             sudo setfacl -m "u:${USER}:rw" /dev/kvm
             test -r /dev/kvm
             test -w /dev/kvm
             started=$SECONDS
             timeout 110m tools/podman-test acceptance-suite \
-              "$provisioning" --cleanup --watch-passes "$WATCH_PASSES"
+              "$provisioning" --cleanup --watch-passes "$WATCH_PASSES" \
+              --component "$ACCEPTANCE_COMPONENT"
             elapsed=$((SECONDS - started))
-            echo "$label provisioning and acceptance: ${elapsed}s" | tee -a build/acceptance-timings.txt
-            echo "- $label: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+            echo "- $ACCEPTANCE_COMPONENT: $label provisioning, ${elapsed}s, all selected checkpoints passed" >> "$GITHUB_STEP_SUMMARY"
+            report=$(cat build/check-logs/latest)
+            awk -F '\t' '$3 == 0 { print "  - Passed: " $2 }' "$report/manifest.tsv" >> "$GITHUB_STEP_SUMMARY"
           }
           case "$ACCEPTANCE_PROVISIONING" in
             source) run_suite Source --fresh ;;
@@ -140,14 +143,6 @@ jobs:
       - name: Print bounded failure diagnostics
         if: failure()
         run: tools/check-diagnostics
-      - name: Upload sanitized acceptance diagnostics
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: acceptance-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/check-logs
-          if-no-files-found: warn
-          retention-days: 7
       - name: Remove ephemeral fixture and any remaining acceptance state
         if: always()
         run: |
@@ -157,3 +152,116 @@ jobs:
           rmdir "$LOCUS_APKS_DIR" 2>/dev/null || true
           docker system df
           exit "$status"
+      - name: Upload sanitized acceptance diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/check-logs
+          if-no-files-found: warn
+          retention-days: 7
+
+  acceptance-watch:
+    name: Watch acceptance (${{ matrix.component }})
+    needs: acceptance-android
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [emery, gabbro]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      ACCEPTANCE_COMPONENT: ${{ matrix.component }}
+      ACCEPTANCE_CONTAINER_ENGINE: docker
+      ACCEPTANCE_REPORT_RESOURCES: 1
+      WATCH_PASSES: ${{ inputs.watch_passes || '1' }}
+      ACCEPTANCE_PROVISIONING: ${{ inputs.acceptance_provisioning || 'published' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure ephemeral fixture location
+        run: echo "LOCUS_APKS_DIR=$RUNNER_TEMP/locus-apks" >> "$GITHUB_ENV"
+      - name: Report fresh hosted-runner resources
+        run: |
+          uname -a
+          nproc
+          free -h
+          df -h
+          docker version
+          ls -l /dev/kvm
+          docker system df
+      - name: Grant this runner access to KVM
+        run: |
+          sudo setfacl -m "u:${USER}:rw" /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+      - name: Download the pinned public Locus fixture
+        run: |
+          mkdir -p "$LOCUS_APKS_DIR"
+          tools/download-locus-apk --output "$LOCUS_APKS_DIR/locus.apk"
+      - name: Install the pinned image signature verifier
+        if: env.ACCEPTANCE_PROVISIONING != 'source'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Run selected acceptance component
+        run: |
+          run_suite() {
+            local label=$1 provisioning=$2 started elapsed report
+            sudo setfacl -m "u:${USER}:rw" /dev/kvm
+            test -r /dev/kvm
+            test -w /dev/kvm
+            started=$SECONDS
+            timeout 110m tools/podman-test acceptance-suite \
+              "$provisioning" --cleanup --watch-passes "$WATCH_PASSES" \
+              --component "$ACCEPTANCE_COMPONENT"
+            elapsed=$((SECONDS - started))
+            echo "- $ACCEPTANCE_COMPONENT: $label provisioning, ${elapsed}s, all selected checkpoints passed" >> "$GITHUB_STEP_SUMMARY"
+            report=$(cat build/check-logs/latest)
+            awk -F '\t' '$3 == 0 { print "  - Passed: " $2 }' "$report/manifest.tsv" >> "$GITHUB_STEP_SUMMARY"
+          }
+          case "$ACCEPTANCE_PROVISIONING" in
+            source) run_suite Source --fresh ;;
+            published) run_suite Published --published ;;
+            compare)
+              echo '## Acceptance provisioning comparison' >> "$GITHUB_STEP_SUMMARY"
+              run_suite Source --fresh
+              run_suite Published --published
+              ;;
+            *) echo "Unknown provisioning path: $ACCEPTANCE_PROVISIONING" >&2; exit 2 ;;
+          esac
+      - name: Print bounded failure diagnostics
+        if: failure()
+        run: tools/check-diagnostics
+      - name: Remove ephemeral fixture and any remaining acceptance state
+        if: always()
+        run: |
+          status=0
+          tools/podman-test clean || status=$?
+          find "$LOCUS_APKS_DIR" -type f -delete 2>/dev/null || true
+          rmdir "$LOCUS_APKS_DIR" 2>/dev/null || true
+          docker system df
+          exit "$status"
+      - name: Upload sanitized acceptance diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/check-logs
+          if-no-files-found: warn
+          retention-days: 7
+
+  acceptance-hosted:
+    name: Hosted full-stack acceptance
+    needs: [acceptance-android, acceptance-watch]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require Android and both watch components
+        env:
+          ANDROID_RESULT: ${{ needs.acceptance-android.result }}
+          WATCH_RESULT: ${{ needs.acceptance-watch.result }}
+        run: |
+          test "$ANDROID_RESULT" = success
+          test "$WATCH_RESULT" = success
