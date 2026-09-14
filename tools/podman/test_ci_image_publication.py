@@ -147,7 +147,8 @@ elif command == "gh":
     assert "@sha256:" in args[2]
     assert args[args.index("--source-ref") + 1] == "refs/heads/main"
     assert args[args.index("--signer-workflow") + 1] == state["workflow"].split("@")[0]
-    assert "--cert-identity" not in args
+    identity_flags = {"--cert-identity", "--cert-identity-regex", "--signer-workflow"}
+    assert sum(arg.split("=", 1)[0] in identity_flags for arg in args) <= 1
     assert args[args.index("--repo") + 1] == "ChristianHerget/trackglance"
     predicate = args[args.index("--predicate-type") + 1]
     failure = state.get("verification_error")
@@ -249,6 +250,20 @@ class CiImagePublicationTest(unittest.TestCase):
             if event[0] == "cosign":
                 self.assertEqual(event[1], "verify", event)
         self.assertEqual(self.output.read_text(), "")
+
+    def test_fake_gh_rejects_conflicting_attestation_identity_flags(self):
+        verifier = self.repo / "tools/verify-ci-image"
+        original = verifier.read_text()
+        for flag in ("--cert-identity", "--cert-identity-regex"):
+            with self.subTest(flag=flag):
+                verifier.write_text(original.replace(
+                    '--signer-workflow "${workflow%@*}"',
+                    '--signer-workflow "${workflow%@*}" ' + flag + ' invalid',
+                ))
+                result = self.publish()
+                self.assertNotEqual(result.returncode, 0)
+                self.assert_no_builds_or_writes()
+        verifier.write_text(original)
 
     def test_every_presence_combination_publishes_only_missing_images(self):
         for present in itertools.product((True, False), repeat=3):
