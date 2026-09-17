@@ -3,7 +3,7 @@
 For focused test selection and completion checks, see [Focused testing](testing.md).
 
 The repository includes a Docker and rootless Podman workflow for x86_64 Linux hosts with KVM. It runs
-all automated Android tests on Android 12L, API 32. API 32 is the acceptance runtime, while the
+all automated Android tests on Android 14, API 34. API 34 is the acceptance runtime, while the
 bridge remains installable on Android 7.0 (API 24); Platform 36 remains the compile and target SDK.
 
 Three public, immutable CI images contain only the reproducible Android/Pebble toolchains, the API
@@ -24,7 +24,7 @@ remain in the development image; the static path never falls back to host-instal
 - read/write access to `/dev/kvm`; Podman retains supplementary groups and hosted CI grants an ACL
   only to the current ephemeral runner account;
 - at least four logical CPUs, 8 GiB RAM, and 35 GiB free disk;
-- the pinned Locus Map fixture, which supports API 32 and x86_64.
+- the pinned Locus Map fixture, which supports API 34 and x86_64.
 
 On an enforcing SELinux host, these checks can pass even if policy later prevents the Android
 Emulator's render thread from creating executable heap mappings. If the accelerated emulator exits
@@ -49,7 +49,7 @@ and all test runs publish no ports.
 | Android SDK packages | Platform Tools 37.0.1; API 32 revision 1; API 36 revision 2; API 37.0 revision 2; Build Tools 36.0.0; NDK 28.2.13676358; CMake 3.22.1 |
 | Android emulator container scripts | `0654f694b46794fae4b178f1e1a17cb60c5d2d34` |
 | Android emulator WebRTC protocol definitions | AEMU `emu-main-dev` commit `863dffe2c8c7d278c918f1fc409f85d3188c691e` |
-| API 32 Google APIs x86_64 image | revision 8, `x86_64-32_r08.zip`, SHA-256 `2709bcc5a4aa98539b12c2169df606dfe9184fc3b4a0aac7120f319721e63bf1` |
+| API 34 Google APIs x86_64 image | revision 14, `x86_64-34_r14.zip`, SHA-256 `783a40134baf4f3012d4464fbe1571b1612a0dbd2e7a44d14bd8328923443833` |
 | Android Emulator | 37.1.11, `emulator-linux_x64-15917651.zip`, SHA-256 `95771e0ae431897b2a4bd2d97fa095f29a8b0624a7b216baf529f9306161c266` |
 | Pebble App source | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Pebble Tool / SDK | 5.0.40 / 4.33.1 |
@@ -92,7 +92,7 @@ Run these commands from the repository root:
 ./tools/podman-test bootstrap --locus-apks /absolute/private/path
 ```
 
-`build` creates the build/test, emulator-generator, API 32 emulator, and Google WebRTC images. The
+`build` creates the build/test, emulator-generator, API 34 emulator, and Google WebRTC images. The
 Google generator uses the selected engine's Docker-compatible socket; Podman's temporary
 user-scoped service is removed immediately afterward. It also builds the x86_64 Pebble App,
 bridge APK, and PBW. Build-time network access is expected. Named Gradle, npm, and download caches
@@ -110,12 +110,12 @@ when intentionally refreshing those references; routine builds never imply `--pu
 
 Before installation, bootstrap verifies that the APK directory is absolute, has exactly one Locus
 Map base APK, contains one consistent package/version and unique splits, declares a minimum no
-higher than API 32, and includes x86_64 when native code is present. `adb install-multiple` performs
+higher than API 34, and includes x86_64 when native code is present. `adb install-multiple` performs
 the final platform split-completeness check. Locus documents its builds for older Android versions
 in [Devices with older Android](https://docs.locusmap.app/doku.php/manual:faq:devices_older_android)
 and publishes the APKs in its linked
 [Google Drive folder](https://drive.google.com/drive/folders/1U8U1D-NGQ9CAnqXAkleEXi46wH2T7tMR).
-Download the pinned API-32-compatible regular Google Play Locus Map 4 variant into a directory
+Download the pinned API-34-compatible regular Google Play Locus Map 4 variant into a directory
 outside the repository because this image provides Google Play services. Reserve `GooglePlayAfa`
 for tests that intentionally need all-files access; the Amazon variant targets devices without
 Google Play services and is not the acceptance input here. Open `http://127.0.0.1:5173/`, complete
@@ -237,7 +237,7 @@ authoritative clean acceptance environment.
 ### Published acceptance image set
 
 The hosted suite can replace its cold source build with two public images: an acceptance runner
-and an API 32 emulator. The runner contains the pinned Android/Pebble toolchain and the x86_64
+and an API 34 emulator. The runner contains the pinned Android/Pebble toolchain and the x86_64
 Pebble App APK built from `CORE_APP_COMMIT`. The emulator image contains the pinned Google system
 image and emulator runtime. The split matches the runtime isolation used by local acceptance; the
 pair is one versioned image set and shares the acceptance invalidation key.
@@ -354,7 +354,7 @@ watch-originated heart rate is not forwarded. PBWs are sideloaded through Pebble
 
 Every Android stage clones the golden state to a new named volume and deletes it during bounded
 cleanup, including on test failure. Readiness and state changes use polling deadlines rather than
-fixed provisioning sleeps. `all` runs the three stages against the sole API 32 image. On a target
+fixed provisioning sleeps. `all` runs the three stages against the sole API 34 image. On a target
 host, run `all` twice to demonstrate repeatable provisioning, disposable Locus recording state,
 complete screenshots/HTML, and no skipped tests.
 
@@ -482,3 +482,18 @@ user-facing Getting Started requirement, Sphinx metadata if part of a release, a
 one change. Rebuild and bootstrap from scratch, run `all` twice, and retain a physical-device smoke
 test. Do not lower the bridge minimum based only on manifest inspection; prove the current Locus Map
 runtime and recording API on that Android version.
+
+Android 14 supervision coverage
+-------------------------------
+
+The single API 34 acceptance runtime exercises notification permission denial, later revocation,
+`specialUse` foreground-service startup, and sticky process recreation. Android instrumentation
+grants notification permission only for delivery and service checks; the isolated permission stage
+then clears the debug Bridge and tests the real permission dialog. Emery and Gabbro acceptance
+include a 40-second interval with the Bridge hidden and the phone screen off, without debug-provider
+queries during that interval.
+
+During image publication, `tools/ci-images.env` records the API and system-image checksum belonging
+to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks
+the actual running API before recording golden-state provenance. This allows the protected gate
+to retain its certified image until the replacement has been published and compared.

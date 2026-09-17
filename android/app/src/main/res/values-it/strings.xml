@@ -22,4 +22,30 @@
     <string name="section_settings">Impostazioni</string>
     <string name="availability">Disponibilità</string>
     <string name="refresh_interval">Intervallo di aggiornamento</string>
+    <string name="supervision_title">Supervisione app dell’orologio</string>
+    <string name="supervision_off">Disattivata</string>
+    <string name="supervision_notify">Notifica</string>
+    <string name="supervision_auto">Avvio automatico</string>
+    <plurals name="supervision_delay">
+        <item quantity="one">Ritardo: %1$d secondo</item>
+        <item quantity="many">Ritardo: %1$d secondi</item>
+        <item quantity="other">Ritardo: %1$d secondi</item>
+    </plurals>
+    <string name="supervision_waiting">In attesa dei dati dei sensori</string>
+    <string name="supervision_paused">In pausa</string>
+    <string name="supervision_closed">App dell’orologio chiusa</string>
+    <string name="supervision_unavailable">Locus non è disponibile o la registrazione è sconosciuta. Le azioni di supervisione sono sospese.</string>
+    <string name="supervision_active_both">Attiva: frequenza cardiaca e passi</string>
+    <string name="supervision_active_hr">Attiva: frequenza cardiaca</string>
+    <string name="supervision_active_steps">Attiva: passi</string>
+    <string name="supervision_explanation">Apprende le fonti dei sensori di questa registrazione quando è abilitata. Protegge solo dalla chiusura esplicita dell’app dell’orologio. Un servizio continuo consente la supervisione in background. Apri Bridge dopo un riavvio o un arresto forzato; l’apprendimento ricomincia quando il processo viene ricreato.</string>
+    <string name="supervision_blocked">Notifiche bloccate. La modalità Notifica viene disattivata. L’avvio automatico può continuare senza avvisi di errore.</string>
+    <string name="supervision_notification_settings">Impostazioni notifiche</string>
+    <string name="supervision_channel_status">Stato supervisione</string>
+    <string name="supervision_channel_alert">App dell’orologio chiusa durante la registrazione</string>
+    <string name="supervision_ongoing">Supervisione abilitata; in attesa o monitoraggio delle fonti dei sensori apprese.</string>
+    <string name="supervision_alert_both">App dell’orologio chiusa. Trasferimento della frequenza cardiaca e aggiornamenti dei passi TrackGlance interrotti.</string>
+    <string name="supervision_alert_hr">App dell’orologio chiusa. Trasferimento della frequenza cardiaca interrotto.</string>
+    <string name="supervision_alert_steps">App dell’orologio chiusa. Aggiornamenti dei passi TrackGlance interrotti.</string>
+    <string name="supervision_start">Avvia app dell’orologio</string>
 </resources>

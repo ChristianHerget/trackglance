@@ -569,7 +569,7 @@ redownload unless the NDK is actually missing or corrupt.
 ## 11. Containerized acceptance automation
 
 The containerization roadmap is implemented by `./tools/podman-test`. It builds a pinned Android
-12L/API 32 emulator with Docker or rootless Podman, provisions Pebble App and a validated Locus Map
+14/API 34 emulator with Docker or rootless Podman, provisions Pebble App and a validated Locus Map
 fixture into a golden data volume, injects Pebble QEMU buttons and heart rate through a transparent
 relay, and runs the full static, instrumentation, and watch-to-Locus acceptance suites. A Google
 WebRTC frontend supports interactive local bootstrap; fresh CI bootstrap is headless.
@@ -577,7 +577,7 @@ WebRTC frontend supports interactive local bootstrap; fresh CI bootstrap is head
 See [Containerized acceptance environment](podman-testing.md) for host requirements, pinned inputs,
 commands, privacy boundaries, failure handling, artifact paths, and the Android-minimum upgrade
 procedure. The ARCVM and direct-QEMU sections above remain useful for manual and physical-device
-diagnostics; they are separate from the disposable API 32 automation.
+diagnostics; they are separate from the disposable API 34 automation.
 
 GitHub-hosted acceptance may use the signed, digest-pinned public image set described in the
 [published acceptance image documentation](podman-testing.md#published-acceptance-image-set).

@@ -125,3 +125,10 @@ Feature matrix
    * - Forward watch heart rate to Locus
      - Yes
      - No
+
+Watchapp supervision
+--------------------
+
+Optional Android Bridge supervision learns watch heart-rate and step sources for each recording.
+After an explicit watchapp closure, it can notify you or try to reopen the watchapp while the phone
+screen is off. See :doc:`configuration` for delays, recovery attempts, and notification settings.

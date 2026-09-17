@@ -17,6 +17,13 @@ ANDROID_NAME = f"{{{ANDROID_NAMESPACE}}}name"
 APPLICATION_ID = "app.trackglance.bridge"
 CODE_NAMESPACE = "io.github.christianherget.trackglance.bridge"
 APP_PERMISSION = f"{APPLICATION_ID}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+SUPERVISION_PERMISSIONS = {
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.WAKE_LOCK",
+}
+EXPECTED_PERMISSIONS = SUPERVISION_PERMISSIONS | {APP_PERMISSION}
 MIN_SDK = "24"
 COMPONENT_TAGS = {"activity", "activity-alias", "provider", "receiver", "service"}
 FORBIDDEN_NETWORK_PERMISSIONS = {
@@ -136,9 +143,9 @@ def validate_badging(
         for line in lines
         if line.startswith("uses-permission:")
     ]
-    if permissions != [APP_PERMISSION]:
+    if set(permissions) != EXPECTED_PERMISSIONS or len(permissions) != len(EXPECTED_PERMISSIONS):
         raise PolicyError(
-            f"badging uses-permission set: expected {[APP_PERMISSION]!r}, found {permissions!r}"
+            f"badging uses-permission set: expected {sorted(EXPECTED_PERMISSIONS)!r}, found {permissions!r}"
         )
 
 
@@ -197,9 +204,9 @@ def _permission_set(manifest: DumpElement) -> None:
     for permission in uses_permissions:
         if permission in FORBIDDEN_NETWORK_PERMISSIONS:
             raise PolicyError(f"forbidden network permission: {permission}")
-    if uses_permissions != [APP_PERMISSION]:
+    if set(uses_permissions) != EXPECTED_PERMISSIONS or len(uses_permissions) != len(EXPECTED_PERMISSIONS):
         raise PolicyError(
-            f"uses-permission set: expected {[APP_PERMISSION]!r}, found {uses_permissions!r}"
+            f"uses-permission set: expected {sorted(EXPECTED_PERMISSIONS)!r}, found {uses_permissions!r}"
         )
 
 
@@ -227,6 +234,18 @@ def _component_surface(application: DumpElement, debug_components: set[str]) -> 
             )
         if exported_value == "true":
             exported.add(key)
+
+    for tag, short_name in (("service", "SupervisionService"), ("receiver", "SupervisionActionReceiver")):
+        name = f"{CODE_NAMESPACE}.{short_name}"
+        component = by_key.get((tag, name))
+        if component is None or component.attributes.get("exported") != "false":
+            raise PolicyError(f"{name} must exist and remain non-exported")
+    service = by_key[("service", f"{CODE_NAMESPACE}.SupervisionService")]
+    if int(service.attributes.get("foregroundServiceType", "0"), 0) != 0x40000000:
+        raise PolicyError("supervision service must use specialUse")
+    properties = [child for child in service.children if child.tag == "property" and child.attributes.get("name") == "android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"]
+    if len(properties) != 1 or not properties[0].attributes.get("value"):
+        raise PolicyError("supervision service requires an explanatory specialUse property")
 
     startup_providers = [
         component

@@ -10,6 +10,7 @@ import io.github.christianherget.trackglance.bridge.pebble.TrustedPebbleCompanio
 class BridgeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        SupervisionNotifications(this).clear()
         TrustedPebbleCompanionProvider.disableAutoSelection(this)
         TrustedPebbleCompanionProvider.initializeAsync(this)
     }

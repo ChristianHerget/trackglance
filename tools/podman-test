@@ -13,15 +13,15 @@ BUILD_ROOT="$PROJECT_DIR/build/podman"
 IMAGE_PREFIX=localhost/trackglance
 BUILD_IMAGE="$IMAGE_PREFIX/build:$RELEASE_VERSION"
 GENERATOR_IMAGE="$IMAGE_PREFIX/emulator-generator:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
-GENERATED_EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32-generated:15917651"
-GENERATED_EMULATOR_LATEST="$IMAGE_PREFIX/android-api32-generated:latest"
-GENERATED_EMULATOR_BARE=android-api32-generated:latest
-GENERATED_SYSTEM_IMAGE="$IMAGE_PREFIX/sys-32-google-x64:latest"
-GENERATED_SYSTEM_IMAGE_BARE=sys-32-google-x64:latest
-EMULATOR_IMAGE="$IMAGE_PREFIX/android-api32:$ANDROID_EMULATOR_VERSION"
+GENERATED_EMULATOR_IMAGE="$IMAGE_PREFIX/android-api${ANDROID_SYSTEM_API}-generated:15917651"
+GENERATED_EMULATOR_LATEST="$IMAGE_PREFIX/android-api${ANDROID_SYSTEM_API}-generated:latest"
+GENERATED_EMULATOR_BARE=android-api${ANDROID_SYSTEM_API}-generated:latest
+GENERATED_SYSTEM_IMAGE="$IMAGE_PREFIX/sys-${ANDROID_SYSTEM_API}-google-x64:latest"
+GENERATED_SYSTEM_IMAGE_BARE=sys-${ANDROID_SYSTEM_API}-google-x64:latest
+EMULATOR_IMAGE="$IMAGE_PREFIX/android-api${ANDROID_SYSTEM_API}:$ANDROID_EMULATOR_VERSION"
 WEB_IMAGE="$IMAGE_PREFIX/android-webrtc:$ANDROID_EMULATOR_SCRIPTS_COMMIT"
 NETWORK=trackglance-test
-GOLDEN_VOLUME=trackglance-android-api32-golden
+GOLDEN_VOLUME=trackglance-android-api${ANDROID_SYSTEM_API}-golden
 DOWNLOAD_VOLUME=trackglance-android-downloads
 GRADLE_CACHE=trackglance-gradle-cache
 NPM_CACHE=trackglance-npm-cache
@@ -58,7 +58,7 @@ Commands:
   dev COMMAND [ARGUMENTS...]     Run an arbitrary command in the development container
   build [--refresh]              Build pinned images; refresh explicitly pulls pinned inputs
   build-acceptance              Build only images and artifacts required by headless acceptance
-  bootstrap --locus-apks DIR     Create the onboarded API 32 golden state
+  bootstrap --locus-apks DIR     Create the onboarded pinned Android golden state
   manual --platform PLATFORM     Start a disposable Android/Pebble manual-test lab
   static                         Run every public check inside the development container
   documentation                  Validate committed documentation in the development container
@@ -405,6 +405,7 @@ build_emulator_image() {
     --env DOCKER_HOST=unix:///run/docker.sock \
     --env ANDROID_EMULATOR_URL="$ANDROID_EMULATOR_URL" \
     --env ANDROID_EMULATOR_SHA256="$ANDROID_EMULATOR_SHA256" \
+    --env ANDROID_SYSTEM_API="$ANDROID_SYSTEM_API" \
     --env ANDROID_SYSTEM_IMAGE_URL="$ANDROID_SYSTEM_IMAGE_URL" \
     --env ANDROID_SYSTEM_IMAGE_SHA256="$ANDROID_SYSTEM_IMAGE_SHA256" \
     --volume "$socket:/run/docker.sock" \
@@ -412,7 +413,7 @@ build_emulator_image() {
     --volume "$BUILD_ROOT/generated:/generated" \
     "$GENERATOR_IMAGE" bash -euo pipefail -c '
       emulator_zip=/downloads/emulator-linux_x64-15917651.zip
-      system_zip=/downloads/x86_64-32_r08.zip
+      system_zip=/downloads/${ANDROID_SYSTEM_IMAGE_URL##*/}
       echo "$ANDROID_EMULATOR_SHA256  $emulator_zip" | sha256sum --check --strict >/dev/null 2>&1 \
         || curl --fail --location --retry 4 --retry-all-errors --retry-delay 2 \
           --continue-at - "$ANDROID_EMULATOR_URL" --output "$emulator_zip"
@@ -423,7 +424,7 @@ build_emulator_image() {
       echo "$ANDROID_SYSTEM_IMAGE_SHA256  $system_zip" | sha256sum --check --strict
       emu-docker create "$emulator_zip" "$system_zip" \
         --dest /generated --repo localhost/trackglance \
-        --name android-api32-generated --no-metrics
+        --name android-api${ANDROID_SYSTEM_API}-generated --no-metrics
     '
   local status=$?
   set -e
@@ -583,6 +584,8 @@ build_acceptance_all() {
 }
 
 require_published_ci_image_pins() {
+  [[ "$CI_ACCEPTANCE_ANDROID_API" =~ ^[0-9]+$ ]] || die "Invalid published Android API metadata."
+  [[ "$CI_ACCEPTANCE_SYSTEM_IMAGE_SHA256" =~ ^[a-f0-9]{64}$ ]] || die "Invalid published system-image metadata."
   local name value
   for name in ACCEPTANCE_RUNNER_IMAGE ACCEPTANCE_EMULATOR_IMAGE; do
     value=${!name}
@@ -603,6 +606,9 @@ prepare_published_acceptance_images() {
   acceptance_engine pull "$ACCEPTANCE_EMULATOR_IMAGE"
   BUILD_IMAGE=$ACCEPTANCE_RUNNER_IMAGE
   EMULATOR_IMAGE=$ACCEPTANCE_EMULATOR_IMAGE
+  ANDROID_SYSTEM_API=$CI_ACCEPTANCE_ANDROID_API
+  ANDROID_SYSTEM_IMAGE_SHA256=$CI_ACCEPTANCE_SYSTEM_IMAGE_SHA256
+  GOLDEN_VOLUME=trackglance-android-api${ANDROID_SYSTEM_API}-golden
   mkdir -p "$BUILD_ROOT/images"
   local -a security
   mapfile -t security < <(acceptance_security_args)
@@ -723,7 +729,7 @@ require_current_golden() {
   marker=$(golden_marker) || die "Golden Android state has no provenance marker; clean and bootstrap again."
   grep -qx "bootstrap_schema=$BOOTSTRAP_SCHEMA" <<<"$marker" \
     || die "Golden Android state uses a stale bootstrap schema; clean and bootstrap again."
-  grep -qx "api=32" <<<"$marker" || die "Golden Android state is not API 32."
+  grep -qx "api=$ANDROID_SYSTEM_API" <<<"$marker" || die "Golden Android state is not API $ANDROID_SYSTEM_API."
   grep -qx "emulator=$ANDROID_EMULATOR_VERSION" <<<"$marker" \
     || die "Golden Android state uses stale emulator inputs; clean and bootstrap again."
   grep -qx "system_image=$ANDROID_SYSTEM_IMAGE_SHA256" <<<"$marker" \
@@ -899,6 +905,8 @@ bootstrap() {
     --volume "$GOLDEN_VOLUME:/golden" \
     "$BUILD_IMAGE" bash -euo pipefail -c "
       source /workspace/tools/podman/device-lib.sh
+      actual_api=\$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+      test \"\$actual_api\" = '$ANDROID_SYSTEM_API'
       wait_status locus_available true 45
       wait_status recording_state STOPPED 15
       wait_nonempty_status locus_profiles 30 >/dev/null
@@ -912,7 +920,7 @@ bootstrap() {
       # partially written SQLite database.
       adb_device shell am force-stop menion.android.locus
       adb_device shell sync
-      printf 'bootstrap_schema=%s\\napi=32\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=$RELEASE_VERSION\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
+      printf 'bootstrap_schema=%s\\napi=$ANDROID_SYSTEM_API\\nemulator=%s\\nsystem_image=%s\\nemulator_config=%s\\ncore=%s\\ncore_apk=%s\\nbridge=$RELEASE_VERSION\\nlocus_fixture_config=%s\\nlocus=%s\\n' \\
         '$BOOTSTRAP_SCHEMA' '$ANDROID_EMULATOR_VERSION' '$ANDROID_SYSTEM_IMAGE_SHA256' \\
         \"\$emulator_config\" '$CORE_APP_COMMIT' \"\$core_apk\" \\
         \"\$fixture_config\" \"\$fingerprint\" \\
@@ -923,7 +931,7 @@ bootstrap() {
   ACTIVE_DATA_VOLUME=
   acceptance_engine volume rm --force "$ACTIVE_RUNTIME_VOLUME" >/dev/null
   ACTIVE_RUNTIME_VOLUME=
-  echo "Golden API 32 state is ready; Locus remains only in the private Android data volume."
+  echo "Golden API $ANDROID_SYSTEM_API state is ready; Locus remains only in the private Android data volume."
 }
 
 new_run() {
@@ -1248,6 +1256,11 @@ run_android_tests() {
     set -e
     python3 /workspace/tools/podman/assert-instrumentation-results.py \
       "$results"
+    if (( $(adb_device shell getprop ro.build.version.sdk) >= 34 )); then
+      # Connected tests uninstall their target APK during cleanup.
+      adb_device install -r /workspace/android/app/build/outputs/apk/debug/trackglance-bridge-debug.apk
+      SUPERVISION_TEST_DEVICE=1 bash /workspace/tools/podman/supervision-permission-stage.sh
+    fi
     if (( gradle_status != 0 )); then
       echo "AGP reported status $gradle_status despite complete passing instrumentation results; accepting the independently verified report." >&2
     fi

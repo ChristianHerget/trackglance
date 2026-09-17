@@ -1,13 +1,19 @@
 package io.github.christianherget.trackglance.bridge
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -19,6 +25,8 @@ import io.github.christianherget.trackglance.bridge.core.BridgeRuntime
 import io.github.christianherget.trackglance.bridge.core.BridgeState
 import io.github.christianherget.trackglance.bridge.core.Preferences
 import io.github.christianherget.trackglance.bridge.core.RecentDiagnostics
+import io.github.christianherget.trackglance.bridge.core.SupervisionMode
+import io.github.christianherget.trackglance.bridge.core.SupervisionSettings
 import io.github.christianherget.trackglance.bridge.core.withDiagnosticsSnapshot
 import io.github.christianherget.trackglance.bridge.core.withPebbleConnectionFailure
 import io.github.christianherget.trackglance.bridge.core.withPebbleSelection
@@ -42,9 +50,58 @@ class MainActivity : ComponentActivity() {
     private lateinit var refreshModePreference: RefreshModePreferenceState
     private lateinit var watchAppLauncher: WatchAppLauncher
     private val diagnosticsMutex = Mutex()
+    private var pendingSupervision: SupervisionSettings? = null
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            pendingSupervision?.let(::applySupervision)
+            pendingSupervision = null
+        }
+
+    override fun onResume() {
+        super.onResume()
+        applySupervision(SupervisionManager.get(this).machine.settings)
+    }
+
+    private fun selectSupervision(settings: SupervisionSettings) {
+        val selectingEnabledMode =
+            settings.mode != SupervisionMode.OFF &&
+                settings.mode != SupervisionManager.get(this).machine.settings.mode
+        if (
+            selectingEnabledMode &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSupervision = settings
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else applySupervision(settings)
+    }
+
+    private fun applySupervision(settings: SupervisionSettings) {
+        val notifications = SupervisionNotifications(this)
+        notifications.createChannels()
+        val manager = SupervisionManager.get(this)
+        manager.blocked =
+            !notifications.available() && (settings.mode != SupervisionMode.OFF || manager.blocked)
+        val effective = settings.withNotificationAvailability(notifications.available())
+        manager.configure(effective)
+        if (effective.mode != SupervisionMode.OFF)
+            ContextCompat.startForegroundService(this, Intent(this, SupervisionService::class.java))
+        else stopService(Intent(this, SupervisionService::class.java))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        savedInstanceState?.getString("pending_supervision_mode")?.let { name ->
+            pendingSupervision =
+                SupervisionSettings(
+                    SupervisionMode.valueOf(name),
+                    savedInstanceState.getInt(
+                        "pending_supervision_delay",
+                        SupervisionSettings.DEFAULT_DELAY_SECONDS,
+                    ),
+                )
+        }
         enableEdgeToEdge()
         val appContext = applicationContext
         refreshModePreference =
@@ -62,6 +119,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         handleLaunchIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingSupervision?.let {
+            outState.putString("pending_supervision_mode", it.mode.name)
+            outState.putInt("pending_supervision_delay", it.delaySeconds)
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -136,8 +201,11 @@ class MainActivity : ComponentActivity() {
         }
         BridgeState.update { it.withPebbleSelection(selected) }
         if (!coreSelected) BridgeRuntime.resetForCompanionTrustLoss()
+        val supervisor = SupervisionManager.get(this)
+        val observationToken = supervisor.observationToken()
         val snapshot =
             withContext(Dispatchers.IO) { LocusGateway(this@MainActivity).readSnapshot() }
+        supervisor.observed(snapshot, observationToken = observationToken)
         BridgeState.update {
             it.withDiagnosticsSnapshot(
                 recordingState = snapshot.state,
@@ -231,6 +299,19 @@ class MainActivity : ComponentActivity() {
                 lifecycleScope.launch(Dispatchers.IO) {
                     Preferences.setRefreshMode(this@MainActivity, mode)
                 }
+            },
+            onSupervisionSelected = ::selectSupervision,
+            onNotificationSettings = {
+                val settingsIntent =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    } else
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            "package:$packageName".toUri(),
+                        )
+                startActivity(settingsIntent)
             },
             onClearDiagnostics = RecentDiagnostics::clear,
             onOpenLegal = { startActivity(Intent(Intent.ACTION_VIEW, LEGAL_URL.toUri())) },

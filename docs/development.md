@@ -13,7 +13,7 @@ For the complete installation, QEMU/CoreApp setup, end-to-end acceptance procedu
 and containerization roadmap, see [End-to-end development and testing](end-to-end-testing.md).
 For the automated rootless Android 12L environment, see [Podman test environment](podman-testing.md).
 
-The bridge supports API 24 and newer. Android 12L/API 32 is the sole automated acceptance runtime,
+The bridge supports API 24 and newer. Android 14/API 34 is the sole automated acceptance runtime,
 not the product installation minimum. Platform 36 remains the compile and target SDK.
 
 ## Repository security merge gates

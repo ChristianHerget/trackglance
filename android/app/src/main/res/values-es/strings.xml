@@ -23,4 +23,30 @@
     <string name="section_settings">Ajustes</string>
     <string name="availability">Disponibilidad</string>
     <string name="refresh_interval">Intervalo de actualización</string>
+    <string name="supervision_title">Supervisión de la app del reloj</string>
+    <string name="supervision_off">Desactivada</string>
+    <string name="supervision_notify">Avisar</string>
+    <string name="supervision_auto">Inicio automático</string>
+    <plurals name="supervision_delay">
+        <item quantity="one">Espera: %1$d segundo</item>
+        <item quantity="many">Espera: %1$d segundos</item>
+        <item quantity="other">Espera: %1$d segundos</item>
+    </plurals>
+    <string name="supervision_waiting">Esperando datos de sensores</string>
+    <string name="supervision_paused">En pausa</string>
+    <string name="supervision_closed">App del reloj cerrada</string>
+    <string name="supervision_unavailable">Locus no está disponible o se desconoce la grabación. Las acciones de supervisión están suspendidas.</string>
+    <string name="supervision_active_both">Activa: frecuencia cardíaca y pasos</string>
+    <string name="supervision_active_hr">Activa: frecuencia cardíaca</string>
+    <string name="supervision_active_steps">Activa: pasos</string>
+    <string name="supervision_explanation">Aprende las fuentes de sensores de esta grabación mientras está habilitada. Solo protege ante un cierre explícito de la app del reloj. Un servicio continuo permite supervisar en segundo plano. Abre Bridge tras reiniciar o forzar la detención; el aprendizaje se reinicia al recrear el proceso.</string>
+    <string name="supervision_blocked">Notificaciones bloqueadas. Avisar se desactiva si se bloquean. El inicio automático puede continuar sin alertas de fallo.</string>
+    <string name="supervision_notification_settings">Ajustes de notificaciones</string>
+    <string name="supervision_channel_status">Estado de supervisión</string>
+    <string name="supervision_channel_alert">App del reloj cerrada durante la grabación</string>
+    <string name="supervision_ongoing">Supervisión habilitada; esperando o supervisando fuentes de sensores aprendidas.</string>
+    <string name="supervision_alert_both">App del reloj cerrada. Se interrumpieron la transferencia de frecuencia cardíaca y los pasos de TrackGlance.</string>
+    <string name="supervision_alert_hr">App del reloj cerrada. Se interrumpió la transferencia de frecuencia cardíaca.</string>
+    <string name="supervision_alert_steps">App del reloj cerrada. Se interrumpieron las actualizaciones de pasos de TrackGlance.</string>
+    <string name="supervision_start">Iniciar app del reloj</string>
 </resources>

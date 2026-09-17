@@ -11,8 +11,12 @@ release Android Bridge has no network permission for runtime operation: it decla
 and commands remain on the local path between Locus Map, the Android Bridge, the Pebble App,
 Bluetooth/AppMessage, and the watch.
 
-The Android Bridge refresh preference is stored only on the device and excluded from Android backup
-and device transfer. Its recent diagnostic history is limited to at most 20 entries in process
+The Android Bridge refresh preference and watchapp supervision mode and delay are stored only on
+the device and excluded from Android backup and device transfer. Learned sensor sources, recording
+expectations, and outage history remain in process memory. Optional supervision requests Android
+notification permission and uses an ongoing foreground service plus bounded wake locks during
+recovery. Notifications identify interrupted watch heart-rate or TrackGlance step updates and may
+be mirrored by the Pebble App according to its settings. Its recent diagnostic history is limited to at most 20 entries in process
 memory and disappears when that process ends. The Pebble App stores the watch configuration and
 last Locus profile catalog locally and builds the settings screen as an offline page. The watch
 persists only the active activity's small configuration projection and ordering counters, not the

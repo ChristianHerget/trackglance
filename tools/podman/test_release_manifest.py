@@ -70,6 +70,18 @@ class ReleaseManifestPolicyTest(unittest.TestCase):
         manifest = VALID_XMLTREE.replace("      E: application", f"{permission}      E: application")
         self.rejected("uses-permission set", manifest=manifest)
 
+    def test_supervision_components_must_remain_non_exported(self):
+        for name in ("SupervisionService", "SupervisionActionReceiver"):
+            with self.subTest(name=name):
+                marker = f'"io.github.christianherget.trackglance.bridge.{name}"'
+                before, after = VALID_XMLTREE.split(marker, 1)
+                manifest = before + marker + after.replace("exported(0x01010010)=false", "exported(0x01010010)=true", 1)
+                self.rejected("must exist and remain non-exported", manifest=manifest)
+
+    def test_special_use_type_and_explanation_are_required(self):
+        self.rejected("must use specialUse", manifest=VALID_XMLTREE.replace("foregroundServiceType(0x01010599)=0x40000000", "foregroundServiceType(0x01010599)=0x00000001"))
+        self.rejected("explanatory specialUse property", manifest=VALID_XMLTREE.replace("android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE", "unexpected.property"))
+
     def test_unprotected_exported_profile_receiver_is_rejected(self):
         permission = (
             '            A: http://schemas.android.com/apk/res/android:permission(0x01010006)='

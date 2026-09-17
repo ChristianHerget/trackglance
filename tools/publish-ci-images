@@ -3,6 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+source tools/podman/versions.env
 [[ $# -eq 0 ]] || { echo "Usage: $0" >&2; exit 2; }
 [[ ${GITHUB_REF:-} == refs/heads/main ]] || {
   echo 'CI images must be published by the protected workflow on main.' >&2
@@ -67,7 +68,6 @@ elif [[ ${states[codeql]} == missing ]]; then
 fi
 
 if [[ ${states[runner]} == missing || ${states[emulator]} == missing || ${states[codeql]} == missing ]]; then
-  source tools/podman/versions.env
   source tools/podman/release-metadata.sh
   load_release_metadata "$root"
   build_image="localhost/trackglance/build:${RELEASE_VERSION}"
@@ -80,7 +80,7 @@ if [[ ${states[runner]} == missing || ${states[emulator]} == missing || ${states
       --tag "${tags[runner]}" .
   fi
   if [[ ${states[emulator]} == missing ]]; then
-    docker tag "localhost/trackglance/android-api32:${ANDROID_EMULATOR_VERSION}" "${tags[emulator]}"
+    docker tag "localhost/trackglance/android-api${ANDROID_SYSTEM_API}:${ANDROID_EMULATOR_VERSION}" "${tags[emulator]}"
   fi
   if [[ ${states[codeql]} == missing ]]; then
     docker build \
@@ -153,5 +153,7 @@ done
   echo "ACCEPTANCE_RUNNER_IMAGE=${refs[runner]}"
   echo "ACCEPTANCE_EMULATOR_IMAGE=${refs[emulator]}"
   echo "CODEQL_KOTLIN_IMAGE=${refs[codeql]}"
+  echo "CI_ACCEPTANCE_ANDROID_API=$ANDROID_SYSTEM_API"
+  echo "CI_ACCEPTANCE_SYSTEM_IMAGE_SHA256=$ANDROID_SYSTEM_IMAGE_SHA256"
   printf '```\n'
 } >> "$summary"

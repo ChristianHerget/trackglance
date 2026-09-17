@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.update
 
 data class BridgeStatus(
     val watchAppOpen: Boolean = false,
+    val supervision: SupervisionStatus = SupervisionStatus(),
     val pebbleAppPackage: String? = null,
     val watchConnected: Boolean = false,
     val watchVersion: String? = null,

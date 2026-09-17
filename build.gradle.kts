@@ -151,6 +151,7 @@ tasks.register<Exec>("regenerateAndroidBridgeScreenshots") {
     outputs.files(
         layout.projectDirectory.file("docs/sphinx/_static/bridge_app_light.png"),
         layout.projectDirectory.file("docs/sphinx/_static/bridge_app_dark.png"),
+        layout.projectDirectory.file("docs/sphinx/_static/bridge_supervision.png"),
     )
 }
 

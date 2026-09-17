@@ -32,6 +32,7 @@ foreground_locus
 set_emulator_test_location
 adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
 adb_device_timeout 180 install -r "$bridge_apk" >/dev/null
+grant_bridge_test_notifications
 adb_device shell am force-stop app.trackglance.bridge
 adb_device shell am start -W -n "$bridge_activity" >/dev/null
 wait_status locus_available true 45
@@ -112,7 +113,39 @@ toggle_watch_steps_source() {
   wait_status watch_app_open true 30
 }
 
+enable_supervision() {
+  adb_device shell am start -W -n "$bridge_activity" >/dev/null
+  local scroll
+  for ((scroll = 0; scroll < 8; scroll++)); do
+    if tap_text "Auto-start" 2 exact; then
+      break
+    fi
+    adb_device shell input swipe 540 1800 540 600 350
+  done
+  wait_status supervision_mode AUTO_START 10
+}
+
+screen_off_supervision_recovery() {
+  local expected_sources=$1
+  wait_status supervision_sources "$expected_sources" 30
+  wait_status supervision_phase ACTIVE 15
+  watch_button back
+  wait_status watch_app_open false 10
+  wait_status supervision_phase CLOSED 10
+  adb_device shell input keyevent KEYCODE_HOME
+  adb_device shell input keyevent KEYCODE_SLEEP
+  # Do not query the debug provider or otherwise activate Bridge during this interval.
+  sleep 40
+  adb_device shell input keyevent KEYCODE_WAKEUP
+  adb_device shell wm dismiss-keyguard
+  wait_status watch_app_open true 10
+  wait_status supervision_phase ACTIVE 10
+  adb_device shell am start -W -n "$bridge_activity" >/dev/null
+  watch_screenshot "${PEBBLE_PLATFORM}-supervision-recovered"
+}
+
 run_step_acceptance() {
+  enable_supervision
   foreground_locus
   set_emulator_test_location
   relayctl steps 1000 >/dev/null
@@ -172,6 +205,7 @@ if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
     relayctl heart-rate 123 --quality excellent >/dev/null
   done
   wait_status locus_heart_rate 123 3
+  screen_off_supervision_recovery "HEART_RATE|STEPS"
 
   watch_button select
   sleep 1
@@ -225,6 +259,7 @@ else
   sleep 1
   watch_button select
   wait_status recording_state RECORDING 30
+  screen_off_supervision_recovery "STEPS"
   watch_button select
   sleep 1
   watch_button down

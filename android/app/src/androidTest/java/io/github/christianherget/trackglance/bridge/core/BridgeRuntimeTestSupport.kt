@@ -42,6 +42,7 @@ internal fun runtime(
     admissionCurrent: (TrustAdmission) -> Boolean = { true },
     stepAccumulator: StepAccumulator = StepAccumulator(),
     watchSessionAuthority: WatchSessionAuthority = WatchSessionAuthority(),
+    supervision: io.github.christianherget.trackglance.bridge.SupervisionEvents? = null,
 ): BridgeRuntime =
     BridgeRuntime(
         scope = scope,
@@ -67,6 +68,7 @@ internal fun runtime(
         admissionCurrent = admissionCurrent,
         stepAccumulator = stepAccumulator,
         watchSessionAuthority = watchSessionAuthority,
+        supervision = supervision,
     )
 
 internal class FakeLocus(

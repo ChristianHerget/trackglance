@@ -11,6 +11,14 @@ N: android=http://schemas.android.com/apk/res/android
         A: http://schemas.android.com/apk/res/android:protectionLevel(0x01010009)=0x00000002
       E: uses-permission
         A: http://schemas.android.com/apk/res/android:name(0x01010003)="app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" (Raw: "app.trackglance.bridge.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION")
+      E: uses-permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.FOREGROUND_SERVICE"
+      E: uses-permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+      E: uses-permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.POST_NOTIFICATIONS"
+      E: uses-permission
+        A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.WAKE_LOCK"
       E: application
         A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.BridgeApplication" (Raw: "io.github.christianherget.trackglance.bridge.BridgeApplication")
         A: http://schemas.android.com/apk/res/android:allowBackup(0x01010280)=false
@@ -27,3 +35,13 @@ N: android=http://schemas.android.com/apk/res/android
             A: http://schemas.android.com/apk/res/android:name(0x01010003)="androidx.profileinstaller.ProfileInstallReceiver" (Raw: "androidx.profileinstaller.ProfileInstallReceiver")
             A: http://schemas.android.com/apk/res/android:permission(0x01010006)="android.permission.DUMP" (Raw: "android.permission.DUMP")
             A: http://schemas.android.com/apk/res/android:exported(0x01010010)=true
+          E: service
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.SupervisionService"
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=false
+            A: http://schemas.android.com/apk/res/android:foregroundServiceType(0x01010599)=0x40000000
+            E: property
+              A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+              A: http://schemas.android.com/apk/res/android:value(0x01010024)="User-enabled watchapp supervision"
+          E: receiver
+            A: http://schemas.android.com/apk/res/android:name(0x01010003)="io.github.christianherget.trackglance.bridge.SupervisionActionReceiver"
+            A: http://schemas.android.com/apk/res/android:exported(0x01010010)=false
