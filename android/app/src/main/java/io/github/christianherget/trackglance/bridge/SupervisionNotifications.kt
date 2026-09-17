@@ -50,7 +50,7 @@ internal class SupervisionNotifications(private val context: Context) {
                 PendingIntent.getActivity(
                     context,
                     0,
-                    Intent(context, MainActivity::class.java),
+                    Intent().setClassName(context, MainActivity::class.java.name),
                     PendingIntent.FLAG_IMMUTABLE,
                 )
             )
@@ -93,7 +93,8 @@ internal class SupervisionNotifications(private val context: Context) {
         PendingIntent.getBroadcast(
             context,
             if (action == "start") 1 else 2,
-            Intent(context, SupervisionActionReceiver::class.java)
+            Intent()
+                .setClassName(context, SupervisionActionReceiver::class.java.name)
                 .setAction(action)
                 .setData("trackglance-supervision:$outage/$action".toUri())
                 .putExtra("outage", outage),
