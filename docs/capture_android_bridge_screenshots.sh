@@ -57,6 +57,12 @@ capture() {
 }
 
 capture no false "$OUTPUT_DIR/bridge_app_light.png"
+"${ADB[@]}" shell input swipe 540 1800 540 400 500
+"${ADB[@]}" shell input swipe 540 1800 540 400 500
+sleep 1
+"${ADB[@]}" shell input swipe 540 1800 540 400 500
+sleep 1
+"${ADB[@]}" exec-out screencap -p > "$OUTPUT_DIR/bridge_supervision.png"
 capture yes true "$OUTPUT_DIR/bridge_app_dark.png"
 python3 "$SCRIPT_DIR/validate_bridge_screenshots.py" "$OUTPUT_DIR"
 

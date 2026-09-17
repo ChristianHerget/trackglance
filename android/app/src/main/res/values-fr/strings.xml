@@ -29,4 +29,30 @@
     <string name="section_settings">Paramètres</string>
     <string name="availability">Disponibilité</string>
     <string name="refresh_interval">Intervalle d’actualisation</string>
+    <string name="supervision_title">Surveillance de l’application de la montre</string>
+    <string name="supervision_off">Désactivée</string>
+    <string name="supervision_notify">Notifier</string>
+    <string name="supervision_auto">Démarrage auto</string>
+    <plurals name="supervision_delay">
+        <item quantity="one">Délai : %1$d seconde</item>
+        <item quantity="many">Délai : %1$d secondes</item>
+        <item quantity="other">Délai : %1$d secondes</item>
+    </plurals>
+    <string name="supervision_waiting">En attente des données des capteurs</string>
+    <string name="supervision_paused">En pause</string>
+    <string name="supervision_closed">Application de la montre fermée</string>
+    <string name="supervision_unavailable">Locus est indisponible ou l’enregistrement est inconnu. Les actions de surveillance sont suspendues.</string>
+    <string name="supervision_active_both">Active : fréquence cardiaque et pas</string>
+    <string name="supervision_active_hr">Active : fréquence cardiaque</string>
+    <string name="supervision_active_steps">Active : pas</string>
+    <string name="supervision_explanation">Apprend les sources des capteurs de cet enregistrement lorsque la surveillance est activée. Protège uniquement contre une fermeture explicite de l’application de la montre. Un service continu permet la surveillance en arrière-plan. Ouvrez Bridge après un redémarrage ou un arrêt forcé ; l’apprentissage reprend à zéro après la recréation du processus.</string>
+    <string name="supervision_blocked">Notifications bloquées. Le mode Notifier est alors désactivé. Le démarrage automatique peut continuer sans alerte d’échec.</string>
+    <string name="supervision_notification_settings">Paramètres de notification</string>
+    <string name="supervision_channel_status">État de la surveillance</string>
+    <string name="supervision_channel_alert">Application de la montre fermée pendant l’enregistrement</string>
+    <string name="supervision_ongoing">Surveillance activée ; attente ou surveillance des sources de capteurs apprises.</string>
+    <string name="supervision_alert_both">Application de la montre fermée. Le transfert de fréquence cardiaque et les mises à jour des pas TrackGlance sont interrompus.</string>
+    <string name="supervision_alert_hr">Application de la montre fermée. Le transfert de fréquence cardiaque est interrompu.</string>
+    <string name="supervision_alert_steps">Application de la montre fermée. Les mises à jour des pas TrackGlance sont interrompues.</string>
+    <string name="supervision_start">Démarrer l’application de la montre</string>
 </resources>

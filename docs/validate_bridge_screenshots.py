@@ -13,13 +13,13 @@ def png_dimensions(path: pathlib.Path) -> tuple[int, int]:
 
 
 output_dir = pathlib.Path(sys.argv[1])
-paths = [output_dir / "bridge_app_light.png", output_dir / "bridge_app_dark.png"]
+paths = [output_dir / name for name in ("bridge_app_light.png", "bridge_app_dark.png", "bridge_supervision.png")]
 for path in paths:
     if not path.is_file() or path.stat().st_size < 10_000:
         raise ValueError(f"missing or implausibly small Android Bridge screenshot: {path}")
 
 dimensions = [png_dimensions(path) for path in paths]
-if dimensions[0] != dimensions[1]:
+if len(set(dimensions)) != 1:
     raise ValueError(f"light/dark screenshot dimensions differ: {dimensions}")
 if dimensions[0][0] < 720 or dimensions[0][1] < 1280:
     raise ValueError(f"Android Bridge screenshots are too small: {dimensions[0]}")

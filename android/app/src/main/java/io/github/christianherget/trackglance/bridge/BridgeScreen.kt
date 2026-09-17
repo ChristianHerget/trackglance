@@ -83,6 +83,10 @@ internal fun LifecycleAwareBridgeScreen(
     onRefreshModeSelected: (RefreshMode) -> Unit,
     onClearDiagnostics: () -> Unit,
     onOpenLegal: () -> Unit,
+    onSupervisionSelected:
+        (io.github.christianherget.trackglance.bridge.core.SupervisionSettings) -> Unit =
+        {},
+    onNotificationSettings: () -> Unit = {},
 ) {
     val status by statusFlow.collectAsStateWithLifecycle()
     val diagnosticEntries by diagnosticEntriesFlow.collectAsStateWithLifecycle()
@@ -95,6 +99,8 @@ internal fun LifecycleAwareBridgeScreen(
         onRefreshModeSelected = onRefreshModeSelected,
         onClearDiagnostics = onClearDiagnostics,
         onOpenLegal = onOpenLegal,
+        onSupervisionSelected = onSupervisionSelected,
+        onNotificationSettings = onNotificationSettings,
     )
 }
 
@@ -107,6 +113,10 @@ internal fun BridgeScreen(
     onRefreshModeSelected: (RefreshMode) -> Unit,
     onClearDiagnostics: () -> Unit,
     onOpenLegal: () -> Unit,
+    onSupervisionSelected:
+        (io.github.christianherget.trackglance.bridge.core.SupervisionSettings) -> Unit =
+        {},
+    onNotificationSettings: () -> Unit = {},
 ) {
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -212,6 +222,11 @@ internal fun BridgeScreen(
                 }
                 SectionHeading(stringResource(R.string.section_settings))
                 SettingsCard(refreshMode, onRefreshModeSelected)
+                SupervisionControls(
+                    status.supervision,
+                    onSupervisionSelected,
+                    onNotificationSettings,
+                )
                 DiagnosticsSection(diagnosticEntries, onClearDiagnostics)
                 TextButton(
                     onClick = onOpenLegal,

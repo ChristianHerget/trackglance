@@ -53,4 +53,29 @@
     <string name="section_settings">Einstellungen</string>
     <string name="availability">Verfügbarkeit</string>
     <string name="refresh_interval">Aktualisierungsintervall</string>
+    <string name="supervision_title">Überwachung der Watchapp</string>
+    <string name="supervision_off">Aus</string>
+    <string name="supervision_notify">Benachrichtigen</string>
+    <string name="supervision_auto">Autostart</string>
+    <plurals name="supervision_delay">
+        <item quantity="one">Verzögerung: %1$d Sekunde</item>
+        <item quantity="other">Verzögerung: %1$d Sekunden</item>
+    </plurals>
+    <string name="supervision_waiting">Warten auf Sensordaten</string>
+    <string name="supervision_paused">Pausiert</string>
+    <string name="supervision_closed">Watchapp geschlossen</string>
+    <string name="supervision_unavailable">Locus ist nicht verfügbar oder die Aufzeichnung ist unbekannt. Überwachungsaktionen sind ausgesetzt.</string>
+    <string name="supervision_active_both">Aktiv: Herzfrequenz und Schritte</string>
+    <string name="supervision_active_hr">Aktiv: Herzfrequenz</string>
+    <string name="supervision_active_steps">Aktiv: Schritte</string>
+    <string name="supervision_explanation">Erkennt bei aktivierter Überwachung die Sensorquellen dieser Aufzeichnung. Schützt nur bei ausdrücklich gemeldetem Schließen der Watchapp. Ein laufender Dienst ermöglicht die Überwachung im Hintergrund. Nach Neustart oder erzwungenem Beenden die Bridge öffnen; nach einem Prozessneustart beginnt das Lernen erneut.</string>
+    <string name="supervision_blocked">Benachrichtigungen blockiert. Benachrichtigen wird dann ausgeschaltet. Autostart kann ohne Fehlermeldungen fortfahren.</string>
+    <string name="supervision_notification_settings">Benachrichtigungseinstellungen</string>
+    <string name="supervision_channel_status">Überwachungsstatus</string>
+    <string name="supervision_channel_alert">Watchapp während der Aufzeichnung geschlossen</string>
+    <string name="supervision_ongoing">Überwachung aktiviert; wartet auf Sensorquellen oder überwacht erkannte Quellen.</string>
+    <string name="supervision_alert_both">Watchapp geschlossen. Herzfrequenzübertragung und TrackGlance-Schrittaktualisierungen sind unterbrochen.</string>
+    <string name="supervision_alert_hr">Watchapp geschlossen. Herzfrequenzübertragung ist unterbrochen.</string>
+    <string name="supervision_alert_steps">Watchapp geschlossen. TrackGlance-Schrittaktualisierungen sind unterbrochen.</string>
+    <string name="supervision_start">Watchapp starten</string>
 </resources>

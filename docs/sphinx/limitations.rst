@@ -17,3 +17,13 @@ non-destructive.
 
 The APK and PBW must be upgraded together. Protocol v4 remains in use, but release strings are also
 checked and mismatches are rejected.
+
+Supervision boundaries
+----------------------
+
+Watchapp supervision protects only recordings with a learned sensor source in the current Bridge
+process. It reacts only to explicit close callbacks from the Pebble App. Missing samples,
+disconnections, crashes without a close callback, and unavailable sensors do not trigger recovery.
+It cannot protect a recording before the first qualifying packet. Steps remain TrackGlance’s
+best-effort recording value; a supervision alert does not mean steps were forwarded to Locus.
+After reboot or force-stop, open the Bridge. Process recreation clears learned sources.

@@ -63,4 +63,29 @@
     <string name="section_settings">Settings</string>
     <string name="availability">Availability</string>
     <string name="refresh_interval">Refresh interval</string>
+    <string name="supervision_title">Watchapp supervision</string>
+    <string name="supervision_off">Off</string>
+    <string name="supervision_notify">Notify</string>
+    <string name="supervision_auto">Auto-start</string>
+    <plurals name="supervision_delay">
+        <item quantity="one">Delay: %1$d second</item>
+        <item quantity="other">Delay: %1$d seconds</item>
+    </plurals>
+    <string name="supervision_waiting">Waiting for sensor data</string>
+    <string name="supervision_paused">Paused</string>
+    <string name="supervision_closed">Watchapp closed</string>
+    <string name="supervision_unavailable">Locus is unavailable or the recording identity is unknown. Supervision actions are suspended.</string>
+    <string name="supervision_active_both">Active: Heart rate and steps</string>
+    <string name="supervision_active_hr">Active: Heart rate</string>
+    <string name="supervision_active_steps">Active: Steps</string>
+    <string name="supervision_explanation">Learns sensor sources for this recording while enabled. Protects only against explicit watchapp closure. An ongoing service keeps supervision available in the background. Open the Bridge after reboot or force-stop; learning starts again after process recreation.</string>
+    <string name="supervision_blocked">Notifications blocked. Notify requires notifications and switches Off when blocked. Auto-start can continue without failure alerts.</string>
+    <string name="supervision_notification_settings">Notification settings</string>
+    <string name="supervision_channel_status">Supervision status</string>
+    <string name="supervision_channel_alert">Watchapp closed during recording</string>
+    <string name="supervision_ongoing">Supervision enabled; waiting for or monitoring learned sensor sources.</string>
+    <string name="supervision_alert_both">Watchapp closed. Heart-rate transfer and TrackGlance step updates are interrupted.</string>
+    <string name="supervision_alert_hr">Watchapp closed. Heart-rate transfer is interrupted.</string>
+    <string name="supervision_alert_steps">Watchapp closed. TrackGlance step updates are interrupted.</string>
+    <string name="supervision_start">Start watchapp</string>
 </resources>

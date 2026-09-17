@@ -71,16 +71,32 @@ grant_locus_test_permissions() {
   adb_device shell pm grant menion.android.locus android.permission.ACCESS_COARSE_LOCATION
   adb_device shell pm grant menion.android.locus android.permission.ACCESS_FINE_LOCATION
   adb_device shell pm grant menion.android.locus android.permission.ACCESS_BACKGROUND_LOCATION
-  # The pinned fixture targets modern Android but retains legacy external storage on API 32. Without
-  # these grants its first-run screen reports that the working directory cannot be created.
-  adb_device shell pm grant menion.android.locus android.permission.READ_EXTERNAL_STORAGE
-  adb_device shell pm grant menion.android.locus android.permission.WRITE_EXTERNAL_STORAGE
+  local api
+  api=$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+  if (( api <= 32 )); then
+    adb_device shell pm grant menion.android.locus android.permission.READ_EXTERNAL_STORAGE
+    adb_device shell pm grant menion.android.locus android.permission.WRITE_EXTERNAL_STORAGE
+  else
+    adb_device shell pm grant menion.android.locus android.permission.POST_NOTIFICATIONS
+  fi
   # Locus otherwise opens the battery-optimization settings page on the first recording command
   # and rejects that background API request before the user can respond.
   adb_device shell dumpsys deviceidle whitelist +menion.android.locus >/dev/null
 }
 
+grant_bridge_test_notifications() {
+  local api
+  api=$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+  if (( api >= 33 )); then
+    adb_device shell pm grant app.trackglance.bridge android.permission.POST_NOTIFICATIONS
+  fi
+}
+
 grant_coreapp_test_permissions() {
+  adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_COARSE_LOCATION
+  adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_FINE_LOCATION
+  adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_BACKGROUND_LOCATION
+  adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_CONNECT
   adb_device shell cmd notification allow_listener \
     coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener
 }
@@ -98,7 +114,7 @@ complete_locus_onboarding() {
     elif grep -Fq 'text="Problem with working directory"' /tmp/trackglance-window.xml; then
       working_directory_retries=$((working_directory_retries + 1))
       if (( working_directory_retries > 3 )); then
-        echo "Locus could not initialize its API-32 working directory after three clean relaunches" >&2
+        echo "Locus could not initialize its working directory after three clean relaunches" >&2
         return 1
       fi
       tap_text CLOSE 10
@@ -207,15 +223,16 @@ dump_ui() {
 
 tap_text() {
   local needle=$1
-  local timeout=${2:-30}
+  local timeout=${2:-30} match=${3:-contains}
   local deadline=$((SECONDS + timeout)) coordinates
   while (( SECONDS < deadline )); do
     dump_ui || true
-    coordinates=$(python3 - "$needle" <<'PY'
+    coordinates=$(python3 - "$needle" "$match" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
 needle = sys.argv[1].casefold()
+match = sys.argv[2] if len(sys.argv) > 2 else "contains"
 try:
     root = ET.parse('/tmp/trackglance-window.xml').getroot()
 except Exception:
@@ -245,7 +262,7 @@ def intersect_bounds(first, second):
 
 for node in root.iter('node'):
     text = (node.attrib.get('text','') + ' ' + node.attrib.get('content-desc','')).casefold()
-    if needle in text:
+    if (needle == text.strip() if match == "exact" else needle in text):
         target = node
         while target is not None and target.attrib.get('clickable') != 'true':
             target = parents.get(target)

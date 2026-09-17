@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 PACKAGE_ID = "menion.android.locus"
-MAX_MIN_SDK = 32
+MAX_MIN_SDK = 34
 
 
 def read_properties(path: Path) -> dict[str, str]:
@@ -125,7 +125,7 @@ def main() -> None:
         minimum = int(capture(text, r"^sdkVersion:'(\d+)'", "minimum SDK"))
         target = int(capture(text, r"^targetSdkVersion:'(\d+)'", "target SDK"))
         if minimum > MAX_MIN_SDK:
-            raise ValueError("the supplied Locus build cannot run on API 32")
+            raise ValueError("the supplied Locus build cannot run on API 34")
         packages.add(package)
         versions.add(version)
         version_names.add(version_name)

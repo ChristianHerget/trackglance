@@ -14,7 +14,7 @@ EMULATOR_CONSOLE = ROOT / "tools" / "podman" / "emulator-console.py"
 
 
 class DeviceReadinessTest(unittest.TestCase):
-    def run_device(self, body, fail_command=""):
+    def run_device(self, body, fail_command="", api=32):
         with tempfile.TemporaryDirectory() as directory:
             token = Path(directory) / "token"
             token.write_text("private test token")
@@ -23,6 +23,7 @@ class DeviceReadinessTest(unittest.TestCase):
                 exec 3>&1
                 adb() {
                   { printf 'adb'; printf ' <%s>' "$@"; printf '\n'; } >&3
+                  if [[ "$*" == "-s test:5555 shell getprop ro.build.version.sdk" ]]; then printf "%s\n" "$TEST_API"; fi
                   [[ "$*" != "$FAIL_COMMAND" ]]
                 }
                 python3() {
@@ -32,7 +33,7 @@ class DeviceReadinessTest(unittest.TestCase):
             return subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", script],
                 env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB), "TEST_TOKEN": str(token),
-                     "FAIL_COMMAND": fail_command, "ADB_SERIAL": "test:5555"},
+                     "FAIL_COMMAND": fail_command, "ADB_SERIAL": "test:5555", "TEST_API": str(api)},
                 capture_output=True, text=True, check=False,
             )
 
@@ -226,10 +227,13 @@ class DeviceReadinessTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         expected = ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION",
                     "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
-        self.assertEqual(result.stdout.splitlines(), [
+        calls = [
             f"adb <-s> <test:5555> <shell> <pm> <grant> <menion.android.locus> <android.permission.{permission}>"
             for permission in expected
-        ] + ["adb <-s> <test:5555> <shell> <dumpsys> <deviceidle> <whitelist> <+menion.android.locus>"])
+        ]
+        calls.insert(3, "adb <-s> <test:5555> <shell> <getprop> <ro.build.version.sdk>")
+        calls.append("adb <-s> <test:5555> <shell> <dumpsys> <deviceidle> <whitelist> <+menion.android.locus>")
+        self.assertEqual(result.stdout.splitlines(), calls)
         # Every grant and the allowlist command must propagate failure.
         failed = self.run_device("grant_locus_test_permissions", "-s test:5555 shell dumpsys deviceidle whitelist +menion.android.locus")
         self.assertNotEqual(failed.returncode, 0, failed.stdout)
@@ -239,9 +243,20 @@ class DeviceReadinessTest(unittest.TestCase):
                     f"-s test:5555 shell pm grant menion.android.locus android.permission.{permission}")
                 self.assertNotEqual(failed.returncode, 0, failed.stdout)
 
-    def test_coreapp_onboarding_grants_only_its_notification_listener(self):
+    def test_api34_grants_notifications_without_obsolete_storage_permissions(self):
+        result = self.run_device("grant_locus_test_permissions; grant_bridge_test_notifications", api=34)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("EXTERNAL_STORAGE", result.stdout)
+        for package in ("menion.android.locus", "app.trackglance.bridge"):
+            self.assertIn(f"<grant> <{package}> <android.permission.POST_NOTIFICATIONS>", result.stdout)
+
+    def test_coreapp_onboarding_grants_location_and_its_notification_listener(self):
         result = self.run_device("grant_coreapp_test_permissions")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_COARSE_LOCATION>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_FINE_LOCATION>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_BACKGROUND_LOCATION>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_CONNECT>",
             "adb <-s> <test:5555> <shell> <cmd> <notification> <allow_listener> <coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener>",
         ])

@@ -3,6 +3,8 @@ package io.github.christianherget.trackglance.bridge.core
 import android.content.Context
 import android.os.SystemClock
 import androidx.core.content.edit
+import io.github.christianherget.trackglance.bridge.SupervisionEvents
+import io.github.christianherget.trackglance.bridge.SupervisionManager
 import io.github.christianherget.trackglance.bridge.locus.CommandExecution
 import io.github.christianherget.trackglance.bridge.locus.LocusBridgeGateway
 import io.github.christianherget.trackglance.bridge.locus.LocusGateway
@@ -59,6 +61,7 @@ internal constructor(
     private val admissionCurrent: (TrustAdmission) -> Boolean = { true },
     private val stepAccumulator: StepAccumulator = StepAccumulator(),
     private val watchSessionAuthority: WatchSessionAuthority = WatchSessionAuthority(),
+    private val supervision: SupervisionEvents? = null,
 ) : AutoCloseable {
     private val activeWatches = ActiveWatchSlot<AdmittedWatch>()
     private val recordingContextDelivery = RecordingContextDeliveryTracker<AdmittedWatch>()
@@ -72,7 +75,9 @@ internal constructor(
             read = ::readSnapshotForDelivery,
             updateStatus = { snapshot, targets ->
                 targets.singleAdmissionOrNull()?.let { admission ->
-                    publishIfCurrent(admission) { updateStatus(snapshot) }
+                    publishIfCurrent(admission) {
+                        updateStatus(snapshot)
+                    }
                 }
             },
             send = ::sendSnapshotAndContext,
@@ -109,7 +114,7 @@ internal constructor(
                 trustGeneration = admission.generation,
             )
         if (!accepted) return false
-        val sample = HeartRateSample(watch, bpm, admission)
+        val sample = HeartRateSample(watch, bpm, admission, supervision?.learningToken())
         if (heartRateSamples.trySend(sample).isFailure) return false
         return true
     }
@@ -128,6 +133,8 @@ internal constructor(
         if (activeWatches.snapshot().singleOrNull() != source) return false
         val sessionKey = WatchSessionAuthority.Key(watch.value, admission.generation)
         if (!watchSessionAuthority.isCurrent(sessionKey, sessionId)) return false
+        val learningToken = supervision?.learningToken()
+        val observationToken = supervision?.observationToken()
         val snapshot = readSnapshot(admission)
         if (
             snapshot.state != BridgeProtocol.RecordingState.RECORDING &&
@@ -139,6 +146,12 @@ internal constructor(
         if (!stepAccumulator.accept(key, sessionId, sequence, delta)) return false
         publishIfCurrent(admission) {
             BridgeState.update { it.copy(lastWatchSteps = stepAccumulator.steps(key)) }
+            supervision?.observed(
+                snapshot,
+                SupervisionSource.STEPS.takeIf { delta >= 0 },
+                learningToken,
+                observationToken,
+            )
         }
         return true
     }
@@ -152,9 +165,21 @@ internal constructor(
             }
         )
             return
+        val observationToken = supervision?.observationToken()
         val initial = readSnapshot(sample.admission)
-        if (initial.state != BridgeProtocol.RecordingState.RECORDING) return
         if (activeWatches.snapshot().singleOrNull()?.let { it != source } == true) return
+        if (
+            !publishIfCurrent(sample.admission) {
+                supervision?.observed(
+                    initial,
+                    SupervisionSource.HEART_RATE,
+                    sample.learningToken,
+                    observationToken,
+                )
+            }
+        )
+            return
+        if (initial.state != BridgeProtocol.RecordingState.RECORDING) return
         var forwarded = false
         val admitted =
             trustedMutationGate(sample.admission) {
@@ -186,6 +211,8 @@ internal constructor(
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ): Boolean {
+        if (!admissionCurrent(admission)) return false
+        supervision?.opened()
         val target = AdmittedWatch(watch, admission)
         synchronized(lifecycleLock) { watchesAwaitingSession += target }
         return observeWatch(target, markTransition = true)
@@ -267,8 +294,11 @@ internal constructor(
         watch: WatchIdentifier,
         admission: TrustAdmission,
     ) {
+        if (!admissionCurrent(admission)) return
         synchronized(lifecycleLock) {
             val target = AdmittedWatch(watch, admission)
+            if (activeWatches.snapshot().singleOrNull()?.let { it == target } != false)
+                supervision?.closed()
             if (activeWatches.closed(target)) recordingContextDelivery.invalidate(target)
             watchesAwaitingSession.remove(target)
             if (activeWatches.isEmpty()) {
@@ -678,7 +708,11 @@ internal constructor(
         targets: Collection<AdmittedWatch>
     ): BridgeProtocol.Snapshot? {
         val admission = targets.singleAdmissionOrNull() ?: return null
+        val token = supervision?.observationToken()
         val snapshot = readSnapshot(admission)
+        publishIfCurrent(admission) {
+            supervision?.observed(snapshot, observationToken = token)
+        }
         val next = reserveSnapshotEpoch(snapshot.sampledAtEpochSeconds, admission)
         return snapshot.copy(sampledAtEpochSeconds = next)
     }
@@ -807,6 +841,7 @@ internal constructor(
                 transport = ReliablePebbleTransport(DefaultPebbleDictionarySender(context)),
                 commandJournal = CommandJournal(),
                 refreshMode = { Preferences.refreshMode(context) },
+                supervision = SupervisionManager.get(context),
                 trustedMutationGate = { admission, block ->
                     TrustedPebbleCompanionProvider.withInboundAdmission(context, admission, block)
                 },
@@ -825,6 +860,7 @@ private data class HeartRateSample(
     val watch: WatchIdentifier,
     val bpm: Int,
     val admission: TrustAdmission,
+    val learningToken: Long?,
 )
 
 private data class AdmittedWatch(

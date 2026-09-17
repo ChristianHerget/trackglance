@@ -28,6 +28,22 @@ class WatchAppLauncherTest {
     }
 
     @Test
+    fun recoveryDuringLookupPreventsQueuedDispatch() = runBlocking {
+        var needed = true
+        var starts = 0
+        val launcher =
+            launcher(
+                watches = {
+                    needed = false
+                    listOf("watch-a")
+                },
+                start = { starts++ },
+            )
+        assertEquals(WatchAppLaunchResult.STALE_COMPANION, launcher.launch { needed })
+        assertEquals(0, starts)
+    }
+
+    @Test
     fun noConnectedWatchIsDistinctAndDoesNotStart() = runBlocking {
         var starts = 0
         val launcher = launcher(watches = { emptyList() }, start = { starts++ })

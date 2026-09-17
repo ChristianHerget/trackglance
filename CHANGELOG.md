@@ -7,6 +7,10 @@ release is published.
 
 ## 0.2.8 - 2026-09-01
 
+- Added optional watchapp supervision: learn heart-rate and step sources during a recording, then
+  notify or attempt recovery after the Pebble App reports that the watchapp closed. Choose a
+  15–90 second delay; supervision defaults to Off and works while the Bridge is in the background.
+
 - Added signed CycloneDX and SPDX software bills of materials for both release applications, so
   users and security tools can inspect the runtime components in the exact APK and PBW downloads.
 - Fixed the TrackGlance icon shown in Locus Map function pickers, add-on listings, and configured

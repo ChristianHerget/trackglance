@@ -27,7 +27,7 @@ available after recording begins.
 **Decision:** Starting with the first public release, use `applicationId` `app.trackglance.bridge`
 and keep `minSdk` 24. The `io.github...` Kotlin namespace does not change the installed identity.
 This intentionally does not migrate the unpublished old debug installation or its refresh
-preference; development installs under the former ID must be uninstalled. API 32 remains the
+preference; development installs under the former ID must be uninstalled. API 34 remains the
 acceptance emulator level, not the product installation minimum.
 
 ## 4. Verification levels

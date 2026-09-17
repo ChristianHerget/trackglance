@@ -19,6 +19,47 @@ Refresh mode controls how often the bridge asks Locus for updated recording info
 * **Every 5 seconds** provides consistently frequent updates.
 * **Every 10 seconds** reduces update frequency and battery use.
 
+Watchapp supervision
+--------------------
+
+.. image:: _static/bridge_supervision.png
+   :alt: Watchapp supervision controls with Off selected and a 30-second delay
+   :align: center
+   :width: 320px
+
+Choose **Off**, **Notify**, or **Auto-start** in the Android Bridge. New and upgraded installations
+start with **Off** and a **30-second** delay. The delay slider has six positions, from 15 to 90
+seconds. Turning supervision Off retains the selected delay.
+
+While enabled, supervision learns whether the current Locus recording receives valid watch heart
+rate, available step updates (including zero steps), or both. The status shows **Waiting for sensor
+data** until a source is learned, then identifies the active sources. Watch Settings still control
+which sensors the watch sends.
+
+An explicit watchapp-close callback starts the delay. **Notify** then posts one alert with a
+**Start watchapp** action. **Auto-start** first attempts to launch the watchapp and waits five seconds
+for its open callback. If recovery fails, it posts the alert and retries silently, up to three
+automatic attempts. Attempts start at least the selected delay apart. Manual starts do not consume
+or reset that budget. Dismissing an alert does not stop retries or cause another alert for the same
+outage. Tapping the notification opens the Bridge.
+
+An open callback clears the outage. Pausing clears its alert and pending work but retains learned
+sources. Resuming while the watchapp remains closed starts a fresh delay and retry budget. If Locus
+becomes unavailable or cannot identify the recording, actions are suspended; the alert and retry
+count remain. When the same recording becomes available, supervision waits a full delay again.
+Stopping, replacing the recording, or choosing Off clears the learned sources.
+
+An ongoing foreground service keeps supervision available while the Bridge is hidden, including
+while waiting for sensor data. Short, bounded wake locks cover outage deadlines and launch
+confirmation. After Android recreates the process, the selected settings remain but sensor learning
+starts again. After reboot or force-stop, open the Bridge to restart supervision.
+
+Android asks for notification permission when you select Notify or Auto-start. If permission or the
+outage notification channel is blocked, Notify switches Off with an explanation and a link to
+notification settings. Auto-start remains enabled, but failure alerts are blocked. The ongoing
+status and outage alerts use separate channels; Android sound and vibration settings remain
+authoritative.
+
 Connection Status and Troubleshooting
 -------------------------------------
 

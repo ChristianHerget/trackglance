@@ -22,4 +22,28 @@
     <string name="section_settings">設定</string>
     <string name="availability">可用性</string>
     <string name="refresh_interval">重新整理間隔</string>
+    <string name="supervision_title">手錶應用程式監護</string>
+    <string name="supervision_off">關閉</string>
+    <string name="supervision_notify">通知</string>
+    <string name="supervision_auto">自動啟動</string>
+    <plurals name="supervision_delay">
+        <item quantity="other">延遲：%1$d 秒</item>
+    </plurals>
+    <string name="supervision_waiting">等待感測器資料</string>
+    <string name="supervision_paused">已暫停</string>
+    <string name="supervision_closed">手錶應用程式已關閉</string>
+    <string name="supervision_unavailable">Locus 無法使用或無法識別目前記錄。監護操作已暫停。</string>
+    <string name="supervision_active_both">已啟用：心率和步數</string>
+    <string name="supervision_active_hr">已啟用：心率</string>
+    <string name="supervision_active_steps">已啟用：步數</string>
+    <string name="supervision_explanation">啟用後學習本次記錄的感測器來源。僅在收到明確的手錶應用程式關閉回呼時提供保護。持續執行的服務支援背景監護。重新啟動或強制停止後請開啟 Bridge；程序重建後將重新學習。</string>
+    <string name="supervision_blocked">通知遭封鎖。通知模式將關閉。自動啟動仍可執行，但無法傳送失敗提醒。</string>
+    <string name="supervision_notification_settings">通知設定</string>
+    <string name="supervision_channel_status">監護狀態</string>
+    <string name="supervision_channel_alert">記錄期間手錶應用程式已關閉</string>
+    <string name="supervision_ongoing">監護已啟用，正在等待或監控已學習的感測器來源。</string>
+    <string name="supervision_alert_both">手錶應用程式已關閉。心率傳輸和 TrackGlance 步數更新已中斷。</string>
+    <string name="supervision_alert_hr">手錶應用程式已關閉。心率傳輸已中斷。</string>
+    <string name="supervision_alert_steps">手錶應用程式已關閉。TrackGlance 步數更新已中斷。</string>
+    <string name="supervision_start">啟動手錶應用程式</string>
 </resources>

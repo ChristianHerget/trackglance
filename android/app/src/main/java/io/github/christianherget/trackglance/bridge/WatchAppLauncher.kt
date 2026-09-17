@@ -45,50 +45,60 @@ internal class WatchAppLauncher(
         require(timeoutMillis > 0)
     }
 
-    suspend fun launch(): WatchAppLaunchResult = launchMutex.withLock {
-        try {
-            withTimeout(timeoutMillis) {
-                if (!ensureTrusted()) return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
-                val admission =
-                    captureAdmission()
-                        ?: return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
-                when (
-                    val gated =
-                        underAdmission(admission) {
-                            val watchIds =
-                                try {
-                                    connectedWatchIds()
-                                } catch (error: CancellationException) {
-                                    throw error
-                                } catch (_: Exception) {
-                                    return@underAdmission WatchAppLaunchResult.LOOKUP_FAILED
+    suspend fun launch(stillNeeded: suspend () -> Boolean = { true }): WatchAppLaunchResult =
+        launchMutex.withLock {
+            try {
+                withTimeout(timeoutMillis) {
+                    if (!ensureTrusted())
+                        return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
+                    val admission =
+                        captureAdmission()
+                            ?: return@withTimeout WatchAppLaunchResult.UNTRUSTED_COMPANION
+                    when (
+                        val gated =
+                            underAdmission(admission) {
+                                val watchIds =
+                                    try {
+                                        connectedWatchIds()
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (_: Exception) {
+                                        return@underAdmission WatchAppLaunchResult.LOOKUP_FAILED
+                                    }
+                                if (watchIds.isEmpty()) {
+                                    return@underAdmission WatchAppLaunchResult.NO_CONNECTED_WATCH
                                 }
-                            if (watchIds.isEmpty()) {
-                                return@underAdmission WatchAppLaunchResult.NO_CONNECTED_WATCH
+                                dispatch(watchIds, stillNeeded)
                             }
-                            try {
-                                startWatchApp(watchIds)
-                                WatchAppLaunchResult.STARTED
-                            } catch (error: CancellationException) {
-                                throw error
-                            } catch (_: Exception) {
-                                WatchAppLaunchResult.LAUNCH_FAILED
-                            }
-                        }
-                ) {
-                    is TrustLeaseResult.Admitted -> gated.value
-                    TrustLeaseResult.Stale -> WatchAppLaunchResult.STALE_COMPANION
-                    TrustLeaseResult.Untrusted -> WatchAppLaunchResult.UNTRUSTED_COMPANION
+                    ) {
+                        is TrustLeaseResult.Admitted -> gated.value
+                        TrustLeaseResult.Stale -> WatchAppLaunchResult.STALE_COMPANION
+                        TrustLeaseResult.Untrusted -> WatchAppLaunchResult.UNTRUSTED_COMPANION
+                    }
                 }
+            } catch (_: TimeoutCancellationException) {
+                WatchAppLaunchResult.TIMED_OUT
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                WatchAppLaunchResult.LOOKUP_FAILED
             }
-        } catch (_: TimeoutCancellationException) {
-            WatchAppLaunchResult.TIMED_OUT
+        }
+
+    private suspend fun dispatch(
+        watchIds: List<String>,
+        stillNeeded: suspend () -> Boolean,
+    ): WatchAppLaunchResult =
+        try {
+            if (stillNeeded()) {
+                startWatchApp(watchIds)
+                WatchAppLaunchResult.STARTED
+            } else WatchAppLaunchResult.STALE_COMPANION
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            WatchAppLaunchResult.LOOKUP_FAILED
+            WatchAppLaunchResult.LAUNCH_FAILED
         }
-    }
 
     companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 5_000L
