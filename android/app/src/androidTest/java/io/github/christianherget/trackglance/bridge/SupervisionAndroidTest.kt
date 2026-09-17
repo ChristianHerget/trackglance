@@ -128,6 +128,11 @@ class SupervisionAndroidTest {
             assertNotNull(alert.contentIntent)
             assertNotNull(alert.deleteIntent)
             assertEquals(1, alert.actions.size)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                assertTrue(alert.contentIntent.isImmutable)
+                assertTrue(alert.deleteIntent.isImmutable)
+                assertTrue(alert.actions[0].actionIntent.isImmutable)
+            }
             assertEquals(context.getString(R.string.supervision_start), alert.actions[0].title)
         } finally {
             notifications.clear()

@@ -51,7 +51,7 @@ internal class SupervisionNotifications(private val context: Context) {
                     context,
                     0,
                     Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                    PendingIntent.FLAG_IMMUTABLE,
                 )
             )
 
@@ -97,7 +97,7 @@ internal class SupervisionNotifications(private val context: Context) {
                 .setAction(action)
                 .setData("trackglance-supervision:$outage/$action".toUri())
                 .putExtra("outage", outage),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            PendingIntent.FLAG_IMMUTABLE,
         )
 
     fun clear() {
