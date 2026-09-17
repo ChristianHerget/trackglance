@@ -257,5 +257,6 @@ class DeviceReadinessTest(unittest.TestCase):
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_COARSE_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_FINE_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_BACKGROUND_LOCATION>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_CONNECT>",
             "adb <-s> <test:5555> <shell> <cmd> <notification> <allow_listener> <coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener>",
         ])

@@ -15,6 +15,7 @@ test -s "$pbw"
 capture_artifacts() {
   local original_status=$? retention_status=0
   set +e
+  watch_screenshot "${PEBBLE_PLATFORM}-failure-watch"
   android_screenshot "${PEBBLE_PLATFORM}-failure-android"
   dump_ui
   cp /tmp/trackglance-window.xml "/artifacts/${PEBBLE_PLATFORM}-failure-ui.xml"
@@ -113,6 +114,47 @@ toggle_watch_steps_source() {
   wait_status watch_app_open true 30
 }
 
+mute_locus_watch_notifications() {
+  # API 34 Locus recording updates are mirrorable notifications. Keep its notification cards
+  # from covering TrackGlance controls; TrackGlance's own outage channel remains enabled.
+  local api coordinates attempt x y
+  api=$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+  (( api >= 34 )) || return 0
+  adb_device shell am start -W -n coredevices.coreapp/.MainActivity >/dev/null
+  tap_text "Notifications" 30 exact
+  tap_text "Search" 15 exact
+  adb_device shell input text Locus
+  tap_text "Locus Map" 15 exact
+  for ((attempt = 0; attempt < 5; attempt++)); do
+    dump_ui
+    coordinates=$(python3 - <<'PYCODE'
+import re
+import xml.etree.ElementTree as ET
+root = ET.parse('/tmp/trackglance-window.xml').getroot()
+assert any(n.get('text') == 'App Notifications' for n in root.iter('node'))
+assert any(n.get('text') == 'Locus Map' for n in root.iter('node'))
+control = next(n for n in root.iter('node') if n.get('checkable') == 'true')
+if control.get('checked') == 'false':
+    print('muted')
+else:
+    x1, y1, x2, y2 = map(int, re.findall(r'\d+', control.get('bounds')))
+    print((x1 + x2) // 2, (y1 + y2) // 2)
+PYCODE
+)
+    if [[ "$coordinates" == muted ]]; then
+      android_screenshot "${PEBBLE_PLATFORM}-locus-notifications-muted"
+      adb_device shell am start -W -a locus.api.android.INTENT_ITEM_MAIN_FUNCTION \
+        -n "$bridge_activity" >/dev/null
+      return 0
+    fi
+    read -r x y <<< "$coordinates"
+    adb_device shell input tap "$x" "$y"
+    sleep 1
+  done
+  echo 'Locus notification mirroring did not switch off' >&2
+  return 1
+}
+
 enable_supervision() {
   adb_device shell am start -W -n "$bridge_activity" >/dev/null
   local scroll
@@ -145,6 +187,7 @@ screen_off_supervision_recovery() {
 }
 
 run_step_acceptance() {
+  mute_locus_watch_notifications
   enable_supervision
   foreground_locus
   set_emulator_test_location
@@ -160,10 +203,13 @@ run_step_acceptance() {
 
   relayctl steps 1012 >/dev/null
   wait_status watch_steps 12 80
+  watch_screenshot "${PEBBLE_PLATFORM}-recording-dashboard"
 
   watch_button select
   sleep 1
+  watch_screenshot "${PEBBLE_PLATFORM}-pause-menu"
   watch_button select
+  watch_screenshot "${PEBBLE_PLATFORM}-pause-selected"
   wait_status recording_state PAUSED 30
   relayctl steps 5 >/dev/null
   wait_status watch_steps 17 80

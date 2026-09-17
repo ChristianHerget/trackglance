@@ -491,7 +491,10 @@ The single API 34 acceptance runtime exercises notification permission denial, l
 grants notification permission only for delivery and service checks; the isolated permission stage
 then clears the debug Bridge and tests the real permission dialog. Emery and Gabbro acceptance
 include a 40-second interval with the Bridge hidden and the phone screen off, without debug-provider
-queries during that interval.
+queries during that interval. The isolated Pebble App receives its location and Bluetooth connection
+permissions so its foreground service can run on Android 14. Locus notification mirroring is muted
+in that test profile to keep recording notifications from covering watch controls; TrackGlance
+outage notifications remain enabled.
 
 During image publication, `tools/ci-images.env` records the API and system-image checksum belonging
 to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks
