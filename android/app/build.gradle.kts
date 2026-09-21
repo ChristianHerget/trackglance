@@ -87,7 +87,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("io.rebble.pebblekit2:client:1.3.0")
+    implementation("io.rebble.pebblekit2:client:1.3.1")
     implementation("com.github.asamm.locus-api:locus-api-android:0.10.1")
 
     testImplementation("junit:junit:4.13.2")
