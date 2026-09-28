@@ -26,11 +26,14 @@ capture_artifacts() {
 }
 trap capture_artifacts EXIT
 
-wait_for_android 180
+# Settings/onboarding does not need GPS. Enable it in run_step_acceptance only after
+# Locus returns to the foreground for recording, avoiding the API 34 idle-map GNSS hang.
+wait_for_android 180 disabled
+system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+[[ "$system_server_pid" =~ ^[0-9]+$ ]]
 grant_locus_test_permissions
 grant_coreapp_test_permissions
 foreground_locus
-set_emulator_test_location
 adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
 adb_device_timeout 180 install -r "$bridge_apk" >/dev/null
 grant_bridge_test_notifications
@@ -315,6 +318,12 @@ else
   wait_status recording_state STOPPED 30
 fi
 
+# Reject a system restart even if later UI recovery made the behavioral assertions pass.
+final_system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+if [[ "$final_system_server_pid" != "$system_server_pid" ]]; then
+  echo "Android system_server restarted during watch acceptance" >&2
+  exit 1
+fi
 android_screenshot "${PEBBLE_PLATFORM}-final-android"
 adb_device_timeout 10 shell content query --uri "$STATUS_URI" > "/artifacts/${PEBBLE_PLATFORM}-final-status.txt"
 # The emulator uses a verbose boot log and can exceed the artifact timeout after all behavioral

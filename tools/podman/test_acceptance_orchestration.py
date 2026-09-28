@@ -48,6 +48,17 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
             bootstrap.index("foreground_locus 30"),
         )
 
+    def test_watch_setup_defers_gps_until_recording_and_rejects_system_restarts(self):
+        source = E2E_STAGE.read_text(encoding="utf-8")
+        setup, recording = source.split("run_step_acceptance() {", 1)
+        self.assertIn("wait_for_android 180 disabled", setup)
+        self.assertNotIn("set_emulator_test_location", setup)
+        self.assertLess(recording.index("foreground_locus"), recording.index("set_emulator_test_location"))
+        self.assertLess(recording.index("set_emulator_test_location"), recording.index("acceptance-start-recording"))
+        self.assertIn("system_server_pid=$(adb_device_timeout 5 shell pidof system_server", setup)
+        self.assertIn('if [[ "$final_system_server_pid" != "$system_server_pid" ]]', recording)
+        self.assertLess(recording.index("final_system_server_pid="), recording.index("trap - EXIT"))
+
     def test_acceptance_uses_the_manifest_activity_class_not_the_application_id(self):
         podman_test = PODMAN_TEST.read_text(encoding="utf-8")
         e2e_stage = E2E_STAGE.read_text(encoding="utf-8")
