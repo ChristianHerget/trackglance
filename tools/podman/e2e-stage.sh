@@ -26,11 +26,14 @@ capture_artifacts() {
 }
 trap capture_artifacts EXIT
 
-wait_for_android 180
+# Settings/onboarding does not need GPS. Enable it in run_step_acceptance only after
+# Locus returns to the foreground for recording, avoiding the API 34 idle-map GNSS hang.
+wait_for_android 180 disabled
+system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+[[ "$system_server_pid" =~ ^[0-9]+$ ]]
 grant_locus_test_permissions
 grant_coreapp_test_permissions
 foreground_locus
-set_emulator_test_location
 adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
 adb_device_timeout 180 install -r "$bridge_apk" >/dev/null
 grant_bridge_test_notifications
@@ -189,6 +192,7 @@ screen_off_supervision_recovery() {
 run_step_acceptance() {
   mute_locus_watch_notifications
   enable_supervision
+  adb_device_timeout 10 shell cmd location set-location-enabled true
   foreground_locus
   set_emulator_test_location
   relayctl steps 1000 >/dev/null
@@ -199,7 +203,8 @@ run_step_acceptance() {
   grep -Fq 'result=requested' <<<"$start_result"
   wait_status recording_state RECORDING 30
   wait_nonempty_status active_profile 15 >/dev/null
-  wait_status watch_steps 0 30
+  # The first available Health read can require the next one-minute sampling tick.
+  wait_status watch_steps 0 80
 
   relayctl steps 1012 >/dev/null
   wait_status watch_steps 12 80
@@ -315,6 +320,12 @@ else
   wait_status recording_state STOPPED 30
 fi
 
+# Reject a system restart even if later UI recovery made the behavioral assertions pass.
+final_system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+if [[ "$final_system_server_pid" != "$system_server_pid" ]]; then
+  echo "Android system_server restarted during watch acceptance" >&2
+  exit 1
+fi
 android_screenshot "${PEBBLE_PLATFORM}-final-android"
 adb_device_timeout 10 shell content query --uri "$STATUS_URI" > "/artifacts/${PEBBLE_PLATFORM}-final-status.txt"
 # The emulator uses a verbose boot log and can exceed the artifact timeout after all behavioral

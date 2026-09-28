@@ -31,15 +31,20 @@ set_emulator_test_location() {
 
 foreground_locus() {
   adb_device shell am start -W -n "$LOCUS_START_ACTIVITY" >/dev/null
-  local deadline=$((SECONDS + ${1:-30}))
+  local deadline=$((SECONDS + ${1:-30})) foreground settled=0
   while (( SECONDS < deadline )); do
-    if adb_device shell dumpsys activity activities \
-      | grep -Eq 'topResumedActivity=.* menion\.android\.locus/'; then
-      # A cold Locus activity can be resumed before its map and recording engine are ready. START
-      # is silently lost in that interval on slower API-32 hosts, so preserve the observed
-      # launch-wait-intent compatibility sequence after the observable foreground transition.
+    foreground=$(adb_device_timeout 5 shell dumpsys activity activities 2>/dev/null || true)
+    if grep -Eq 'topResumedActivity=.* menion\.android\.locus/' <<< "$foreground"; then
+      if (( settled )); then return 0; fi
+      # A cold map can be resumed before the recording engine is ready. Recheck after
+      # settling because Google Play services can place its location prompt above it.
       sleep "${LOCUS_FOREGROUND_SETTLE_SECONDS:-10}"
-      return 0
+      settled=1
+      continue
+    fi
+    if grep -Eq 'topResumedActivity=.* com\.google\.android\.gms/com\.google\.android\.location\.settings\.LocationSettingsCheckerActivity' <<< "$foreground"; then
+      # Decline this optional Google location prompt; GPS is controlled by the harness.
+      tap_text "No thanks" 5 exact || return 1
     fi
     sleep 0.25
   done
@@ -48,6 +53,11 @@ foreground_locus() {
 }
 
 wait_for_android() {
+  local location_mode=${2:-enabled}
+  case "$location_mode" in
+    enabled|disabled) ;;
+    *) echo "Unknown emulator location mode: $location_mode" >&2; return 1 ;;
+  esac
   local deadline=$((SECONDS + ${1:-180}))
   while (( SECONDS < deadline )); do
     # adb connect reports some connection failures with status zero. Retry it as part of
@@ -58,7 +68,11 @@ wait_for_android() {
       adb_device shell settings put global window_animation_scale 0
       adb_device shell settings put global transition_animation_scale 0
       adb_device shell settings put global animator_duration_scale 0
-      set_emulator_test_location
+      if [[ "$location_mode" == enabled ]]; then
+        set_emulator_test_location
+      else
+        adb_device_timeout 10 shell cmd location set-location-enabled false
+      fi
       return
     fi
     sleep 1
@@ -97,6 +111,7 @@ grant_coreapp_test_permissions() {
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_FINE_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_BACKGROUND_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_CONNECT
+  adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN
   adb_device shell cmd notification allow_listener \
     coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener
 }
