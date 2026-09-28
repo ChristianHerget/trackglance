@@ -203,7 +203,8 @@ run_step_acceptance() {
   grep -Fq 'result=requested' <<<"$start_result"
   wait_status recording_state RECORDING 30
   wait_nonempty_status active_profile 15 >/dev/null
-  wait_status watch_steps 0 30
+  # The first available Health read can require the next one-minute sampling tick.
+  wait_status watch_steps 0 80
 
   relayctl steps 1012 >/dev/null
   wait_status watch_steps 12 80

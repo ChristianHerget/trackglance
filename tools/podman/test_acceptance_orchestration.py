@@ -127,7 +127,7 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
         step_flow = e2e_stage.split("run_step_acceptance() {", 1)[1].split("\n}", 1)[0]
         for expected in (
             "relayctl steps 1000",
-            "wait_status watch_steps 0",
+            "wait_status watch_steps 0 80",
             "relayctl steps 1012",
             "wait_status watch_steps 12",
             "wait_status recording_state PAUSED",
