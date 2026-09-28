@@ -4,12 +4,14 @@ import io.github.christianherget.trackglance.bridge.core.BoundedAbandonableCallE
 import io.github.christianherget.trackglance.bridge.pebble.TrustAdmission
 import io.github.christianherget.trackglance.bridge.pebble.TrustLeaseResult
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -127,6 +129,18 @@ class WatchAppLauncherTest {
             assertTrue(lookupStarted.await(1, TimeUnit.SECONDS))
             releaseLookup.countDown()
             assertTrue(lookupExited.await(1, TimeUnit.SECONDS))
+            // The lookup's finally block runs before the executor releases its permit.
+            // A completed probe confirms release without racing the recovery assertion.
+            withTimeout(2_000) {
+                while (true) {
+                    try {
+                        workers.run {}
+                        break
+                    } catch (_: RejectedExecutionException) {
+                        delay(1)
+                    }
+                }
+            }
             assertEquals(
                 WatchAppLaunchResult.STARTED,
                 launcher(watches = { workers.run { listOf("recovered-watch") } }).launch(),

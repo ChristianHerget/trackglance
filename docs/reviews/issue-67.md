@@ -40,12 +40,22 @@ Missing tests or any test failure remain failures.
 
 The warm acceptance suite also exercises real watch closure and reopening with the Bridge hidden
 and phone screen off for 40 seconds. It performs no debug-provider queries during that interval.
-Emery covers learned heart rate and steps together; Gabbro covers steps.
+Emery covers learned heart rate and steps together; Gabbro covers steps. Both passed on API 34.
+Device logs show Emery reopening at 20:43:21 UTC before screen wake at 20:43:33, and Gabbro
+reopening at 20:51:15 before screen wake at 20:51:27 on 2026-09-17. Recovery therefore occurred
+while the screen was off, rather than being triggered by the test waking the device.
+
+A fresh source-image run also passed all 71 Android tests, the permission/service checks,
+and both watch platforms (Emery 455 seconds, Gabbro 443 seconds).
+CodeQL alert #8 is fixed: notification PendingIntents use explicit component setters and
+`FLAG_IMMUTABLE`, with Android assertions covering immutability. PR #80 passed every protected
+check and was squash-merged as `02f33883fa45551dd13ff2053bfcf2af9d59cafc`.
 
 ## Baseline rollout
 
-The existing protected hosted gate keeps its certified published emulator until the API 34 image
-has been built, signed, and attested by `Publish CI images` on main. The image metadata records the
+The protected [image publication run](https://github.com/ChristianHerget/trackglance/actions/runs/35275614386)
+built the API 34 images from the merged feature commit. All three images passed local keyless
+signature, provenance, and SPDX SBOM verification on 2026-09-28. The image metadata records the
 API and system-image checksum alongside its immutable digest, so bootstrap verifies the actual
-runtime. Adopt replacement pins only after comparing source and published acceptance. This is a
-single-baseline replacement; it does not add a permanent emulator matrix.
+runtime. The pin-update PR records the published acceptance comparison and must pass the protected
+hosted gate before merge. This replaces the single baseline without adding an emulator matrix.

@@ -176,7 +176,7 @@ def main() -> None:
                 raise ValueError(f"the APK does not match the pinned {description}")
         if expected["LOCUS_APK_ABI"] not in native_abis:
             raise ValueError("the APK does not contain the pinned native ABI")
-    print(f"Validated one API-32-compatible Locus Map install set ({len(apks)} APKs).")
+    print(f"Validated one API-{MAX_MIN_SDK}-compatible Locus Map install set ({len(apks)} APKs).")
 
 
 if __name__ == "__main__":
