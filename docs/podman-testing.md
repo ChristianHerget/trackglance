@@ -333,7 +333,18 @@ require KVM, emulator/WebRTC images, Locus APKs, golden state, screenshot genera
 
 `android` clones the golden Android data volume, enables the real Locus integration test, and runs
 every instrumentation test. Missing Locus Map, an active recording, missing profiles, any skipped
-test, or the absence of the Locus integration result fails the stage.
+test, or the absence of the Locus integration result fails the stage. This component disables
+location before opening Locus: its contract check does not record or need a GPS fix, and the API 34
+emulator can deadlock while stopping GNSS NMEA callbacks when the map moves to the background.
+Emery and Gabbro also keep GPS off during initial onboarding/settings, then enable real emulator
+GPS immediately before starting their recording flows. A system-server identity check rejects any
+Android system restart during the watch pass, even if subsequent UI recovery appears to succeed.
+Locus readiness declines the specific optional Google location-services prompt if it appears,
+then rechecks that the Locus map is foreground; emulator GPS remains controlled by the harness.
+Both the initial step total and subsequent updates allow 80 seconds for the one-minute Health
+sampling cadence; they still require the exact expected values.
+Their Pebble App fixture receives both Bluetooth connect and scan permissions before onboarding,
+so the nearby-device permission dialog cannot interrupt settings navigation. Notification-permission and foreground-service checks still run on the same API 34 device.
 
 `acceptance` (with `e2e` retained as a compatibility alias) places a protocol relay between Pebble
 App and PebbleOS QEMU. Its private Unix control socket injects button and heart-rate QEMU frames
