@@ -7,7 +7,7 @@ all automated Android tests on Android 14, API 34. API 34 is the acceptance runt
 bridge remains installable on Android 7.0 (API 24); Platform 36 remains the compile and target SDK.
 
 Three public, immutable CI images contain only the reproducible Android/Pebble toolchains, the API
-32 emulator, and the Pebble App APK built from its pinned public source. Locally, the Locus APK
+34 emulator, and the Pebble App APK built from its pinned public source. Locally, the Locus APK
 remains in a host directory. Hosted CI downloads the pinned public fixture into `$RUNNER_TEMP` for
 that job only. In both cases it is mounted read-only only for validation and bootstrap; it is never
 copied into an image, repository, test artifact, or persistent cache. Android's installed Locus
