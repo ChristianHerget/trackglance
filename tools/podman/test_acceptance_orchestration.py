@@ -53,6 +53,7 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
         setup, recording = source.split("run_step_acceptance() {", 1)
         self.assertIn("wait_for_android 180 disabled", setup)
         self.assertNotIn("set_emulator_test_location", setup)
+        self.assertLess(recording.index("set-location-enabled true"), recording.index("foreground_locus"))
         self.assertLess(recording.index("foreground_locus"), recording.index("set_emulator_test_location"))
         self.assertLess(recording.index("set_emulator_test_location"), recording.index("acceptance-start-recording"))
         self.assertIn("system_server_pid=$(adb_device_timeout 5 shell pidof system_server", setup)

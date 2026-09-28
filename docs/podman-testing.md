@@ -339,6 +339,8 @@ emulator can deadlock while stopping GNSS NMEA callbacks when the map moves to t
 Emery and Gabbro also keep GPS off during initial onboarding/settings, then enable real emulator
 GPS immediately before starting their recording flows. A system-server identity check rejects any
 Android system restart during the watch pass, even if subsequent UI recovery appears to succeed.
+Locus readiness declines the specific optional Google location-services prompt if it appears,
+then rechecks that the Locus map is foreground; emulator GPS remains controlled by the harness.
 Their Pebble App fixture receives both Bluetooth connect and scan permissions before onboarding,
 so the nearby-device permission dialog cannot interrupt settings navigation. Notification-permission and foreground-service checks still run on the same API 34 device.
 

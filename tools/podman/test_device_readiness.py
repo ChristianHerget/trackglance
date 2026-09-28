@@ -110,6 +110,39 @@ class DeviceReadinessTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_locus_readiness_dismisses_only_its_google_location_prompt(self):
+        script = r'''
+            state=$(mktemp)
+            dismissed=$(mktemp)
+            trap 'rm -f "$state" "$dismissed"' EXIT
+            echo 0 > "$state"
+            sleep() { :; }
+            adb_device_timeout() {
+                count=$(cat "$state")
+                echo $((count + 1)) > "$state"
+                if [[ "$count" == 1 ]]; then
+                    echo 'topResumedActivity= com.google.android.gms/com.google.android.location.settings.LocationSettingsCheckerActivity'
+                else
+                    echo 'topResumedActivity= menion.android.locus/MainActivity'
+                fi
+            }
+            tap_text() {
+                [[ "$*" == "No thanks 5 exact" ]]
+                echo dismissed > "$dismissed"
+            }
+            foreground_locus 2
+            cat "$dismissed"
+            cat "$state"
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("dismissed\n3\n", result.stdout)
+        unrelated = self.run_device(script.replace("LocationSettingsCheckerActivity", "OtherActivity"))
+        self.assertEqual(unrelated.returncode, 0, unrelated.stderr)
+        self.assertNotIn("dismissed", unrelated.stdout)
+        failed = self.run_device(script.replace('echo dismissed > "$dismissed"', 'return 1'))
+        self.assertNotEqual(failed.returncode, 0)
+
     def test_wait_for_android_retries_a_failed_initial_connect(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)

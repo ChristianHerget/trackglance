@@ -192,6 +192,7 @@ screen_off_supervision_recovery() {
 run_step_acceptance() {
   mute_locus_watch_notifications
   enable_supervision
+  adb_device_timeout 10 shell cmd location set-location-enabled true
   foreground_locus
   set_emulator_test_location
   relayctl steps 1000 >/dev/null
