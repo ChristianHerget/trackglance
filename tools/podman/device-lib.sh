@@ -32,10 +32,13 @@ set_emulator_test_location() {
 foreground_locus() {
   adb_device shell am start -W -n "$LOCUS_START_ACTIVITY" >/dev/null
   local deadline=$((SECONDS + ${1:-30})) foreground settled=0
-  while (( SECONDS < deadline )); do
+  while true; do
     foreground=$(adb_device_timeout 5 shell dumpsys activity activities 2>/dev/null || true)
+    if (( settled )) && grep -Eq 'topResumedActivity=.* menion\.android\.locus/' <<< "$foreground"; then
+      return 0
+    fi
+    (( SECONDS < deadline )) || break
     if grep -Eq 'topResumedActivity=.* menion\.android\.locus/' <<< "$foreground"; then
-      if (( settled )); then return 0; fi
       # A cold map can be resumed before the recording engine is ready. Recheck after
       # settling because Google Play services can place its location prompt above it.
       sleep "${LOCUS_FOREGROUND_SETTLE_SECONDS:-10}"
@@ -44,7 +47,10 @@ foreground_locus() {
     fi
     if grep -Eq 'topResumedActivity=.* com\.google\.android\.gms/com\.google\.android\.location\.settings\.LocationSettingsCheckerActivity' <<< "$foreground"; then
       # Decline this optional Google location prompt; GPS is controlled by the harness.
-      tap_text "No thanks" 5 exact || return 1
+      # Play services can restart after a module update and remove the prompt while
+      # UI automation reads it. Always recheck foreground, even after a failed tap
+      # or a call that consumed the remaining deadline; never infer readiness from it.
+      tap_text "No thanks" 5 exact || true
     fi
     sleep 0.25
   done

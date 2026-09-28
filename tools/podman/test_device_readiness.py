@@ -140,8 +140,18 @@ class DeviceReadinessTest(unittest.TestCase):
         unrelated = self.run_device(script.replace("LocationSettingsCheckerActivity", "OtherActivity"))
         self.assertEqual(unrelated.returncode, 0, unrelated.stderr)
         self.assertNotIn("dismissed", unrelated.stdout)
-        failed = self.run_device(script.replace('echo dismissed > "$dismissed"', 'return 1'))
-        self.assertNotEqual(failed.returncode, 0)
+        disappeared = self.run_device(script.replace('echo dismissed > "$dismissed"', 'return 1'))
+        self.assertEqual(disappeared.returncode, 0, disappeared.stderr)
+        self.assertNotIn("dismissed", disappeared.stdout)
+        # A bounded UI dump can finish after the outer deadline. Confirm the final
+        # foreground instead of discarding a recovered Locus activity at that boundary.
+        late = self.run_device(script.replace('echo dismissed > "$dismissed"', 'SECONDS=$((SECONDS + 3)); return 1'))
+        self.assertEqual(late.returncode, 0, late.stderr)
+        for foreground in ("com.google.android.gms/com.google.android.location.settings.LocationSettingsCheckerActivity", "other.package/OtherActivity"):
+            blocked = script.replace("menion.android.locus/MainActivity", foreground)
+            blocked = blocked.replace('echo dismissed > "$dismissed"', 'SECONDS=$((SECONDS + 3)); return 1')
+            failed = self.run_device(blocked)
+            self.assertNotEqual(failed.returncode, 0)
 
     def test_wait_for_android_retries_a_failed_initial_connect(self):
         with tempfile.TemporaryDirectory() as directory:

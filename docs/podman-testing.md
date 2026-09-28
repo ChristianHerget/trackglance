@@ -341,6 +341,8 @@ GPS immediately before starting their recording flows. A system-server identity 
 Android system restart during the watch pass, even if subsequent UI recovery appears to succeed.
 Locus readiness declines the specific optional Google location-services prompt if it appears,
 then rechecks that the Locus map is foreground; emulator GPS remains controlled by the harness.
+If Play services removes that prompt during a module restart, readiness still requires a fresh
+foreground check. A missing button alone neither fails setup nor proves Locus is ready.
 Both the initial step total and subsequent updates allow 80 seconds for the one-minute Health
 sampling cadence; they still require the exact expected values.
 Their Pebble App fixture receives both Bluetooth connect and scan permissions before onboarding,
