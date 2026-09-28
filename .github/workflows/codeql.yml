@@ -45,23 +45,12 @@ jobs:
       image: ghcr.io/christianherget/trackglance-codeql-kotlin@sha256:4271e25523576b81663b25b5ae5bdaa202fbf5c062d5951ba1a88a14f0ec38d4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Download the checksum-pinned CodeQL Kotlin nightly
-        env:
-          CODEQL_NIGHTLY_URL: https://github.com/dsp-testing/codeql-cli-nightlies/releases/download/codeql-bundle-20260914/codeql-bundle-linux64.tar.gz
-          CODEQL_NIGHTLY_SHA256: 0e368291ce2fa5cc28017293a56ae902b29c52fe42ea71bfbc3abce4bd6b6b34
-        run: |
-          curl --fail --location --proto '=https' --tlsv1.2 --retry 4 \
-            "$CODEQL_NIGHTLY_URL" \
-            --output "$RUNNER_TEMP/codeql-bundle-linux64.tar.gz"
-          echo "$CODEQL_NIGHTLY_SHA256  $RUNNER_TEMP/codeql-bundle-linux64.tar.gz" \
-            | sha256sum --check --strict
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: java-kotlin
           build-mode: manual
           queries: security-extended
-          tools: ${{ runner.temp }}/codeql-bundle-linux64.tar.gz
       - name: Trace the Kotlin and Gradle build
         run: ./gradlew --no-daemon :android:app:assembleDebug
       - name: Analyze
