@@ -279,5 +279,14 @@ class DeviceReadinessTest(unittest.TestCase):
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_FINE_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_BACKGROUND_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_CONNECT>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_SCAN>",
             "adb <-s> <test:5555> <shell> <cmd> <notification> <allow_listener> <coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener>",
         ])
+
+    def test_coreapp_scan_permission_failure_stops_onboarding_setup(self):
+        result = self.run_device(
+            "grant_coreapp_test_permissions",
+            "-s test:5555 shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("<allow_listener>", result.stdout)

@@ -106,6 +106,7 @@ grant_coreapp_test_permissions() {
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_FINE_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_BACKGROUND_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_CONNECT
+  adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN
   adb_device shell cmd notification allow_listener \
     coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener
 }

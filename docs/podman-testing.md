@@ -337,7 +337,8 @@ test, or the absence of the Locus integration result fails the stage. This compo
 location before opening Locus: its contract check does not record or need a GPS fix, and the API 34
 emulator can deadlock while stopping GNSS NMEA callbacks when the map moves to the background.
 The Emery and Gabbro recording components keep real emulator GPS enabled and verify the recording
-flows. Notification-permission and foreground-service checks still run on the same API 34 device.
+flows. Their Pebble App fixture receives both Bluetooth connect and scan permissions before
+onboarding, so the nearby-device permission dialog cannot interrupt settings navigation. Notification-permission and foreground-service checks still run on the same API 34 device.
 
 `acceptance` (with `e2e` retained as a compatibility alias) places a protocol relay between Pebble
 App and PebbleOS QEMU. Its private Unix control socket injects button and heart-rate QEMU frames
