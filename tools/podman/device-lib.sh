@@ -48,6 +48,11 @@ foreground_locus() {
 }
 
 wait_for_android() {
+  local location_mode=${2:-enabled}
+  case "$location_mode" in
+    enabled|disabled) ;;
+    *) echo "Unknown emulator location mode: $location_mode" >&2; return 1 ;;
+  esac
   local deadline=$((SECONDS + ${1:-180}))
   while (( SECONDS < deadline )); do
     # adb connect reports some connection failures with status zero. Retry it as part of
@@ -58,7 +63,11 @@ wait_for_android() {
       adb_device shell settings put global window_animation_scale 0
       adb_device shell settings put global transition_animation_scale 0
       adb_device shell settings put global animator_duration_scale 0
-      set_emulator_test_location
+      if [[ "$location_mode" == enabled ]]; then
+        set_emulator_test_location
+      else
+        adb_device_timeout 10 shell cmd location set-location-enabled false
+      fi
       return
     fi
     sleep 1

@@ -1237,13 +1237,14 @@ run_android_tests() {
       exit "$original_status"
     }
     trap capture_artifacts EXIT
-    wait_for_android 180
+    # Instrumentation uses fake location data and a non-recording Locus contract check.
+    # Keep GNSS off before opening Locus: the API 34 emulator can deadlock in stopNmea
+    # when instrumentation backgrounds its map. Real GPS recording is covered by both
+    # watch components, which retain the default enabled location mode.
+    wait_for_android 180 disabled
     adb_device uninstall app.trackglance.bridge >/dev/null 2>&1 || true
     grant_locus_test_permissions
     foreground_locus
-    # Refresh the boot-time console fix after Locus is active. The emulator retains it until the
-    # recording service registers its real GPS listener.
-    set_emulator_test_location
     # AGP/ddmlib opens the emulator console while finalizing connected-test results. Give it the
     # same pod-private token used above; AGP 9.4 treats an unauthenticated console as a failed run.
     install -m 600 "$EMULATOR_CONSOLE_TOKEN" /root/.emulator_console_auth_token

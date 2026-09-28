@@ -196,6 +196,27 @@ class DeviceReadinessTest(unittest.TestCase):
         self.assertNotEqual(failed.returncode, 0, failed.stdout)
         self.assertNotIn("python3", failed.stdout)
 
+    def test_instrumentation_can_disable_location_without_injecting_a_fix(self):
+        script = '''timeout() {
+            if [[ "$*" == *sys.boot_completed* ]]; then printf '1\n';
+            elif [[ "$*" == *set-location-enabled* ]]; then shift; "$@"; fi
+        }
+        wait_for_android 2 disabled
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("<set-location-enabled> <false>", result.stdout)
+        self.assertNotIn("<set-location-enabled> <true>", result.stdout)
+        self.assertNotIn("emulator-console.py", result.stdout)
+        failed = self.run_device(script, "-s test:5555 shell cmd location set-location-enabled false")
+        self.assertNotEqual(failed.returncode, 0, failed.stdout)
+
+    def test_unknown_location_mode_fails_before_connecting(self):
+        result = self.run_device("wait_for_android 2 unknown")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unknown emulator location mode", result.stderr)
+        self.assertNotIn("adb", result.stdout)
+
     def test_emulator_console_token_stays_in_the_private_runtime_volume(self):
         entrypoint = EMULATOR_ENTRYPOINT.read_text(encoding="utf-8")
         helper = EMULATOR_CONSOLE.read_text(encoding="utf-8")

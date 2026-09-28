@@ -333,7 +333,11 @@ require KVM, emulator/WebRTC images, Locus APKs, golden state, screenshot genera
 
 `android` clones the golden Android data volume, enables the real Locus integration test, and runs
 every instrumentation test. Missing Locus Map, an active recording, missing profiles, any skipped
-test, or the absence of the Locus integration result fails the stage.
+test, or the absence of the Locus integration result fails the stage. This component disables
+location before opening Locus: its contract check does not record or need a GPS fix, and the API 34
+emulator can deadlock while stopping GNSS NMEA callbacks when the map moves to the background.
+The Emery and Gabbro recording components keep real emulator GPS enabled and verify the recording
+flows. Notification-permission and foreground-service checks still run on the same API 34 device.
 
 `acceptance` (with `e2e` retained as a compatibility alias) places a protocol relay between Pebble
 App and PebbleOS QEMU. Its private Unix control socket injects button and heart-rate QEMU frames

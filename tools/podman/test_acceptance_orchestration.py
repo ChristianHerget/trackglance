@@ -31,7 +31,9 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
         uninstall_bridge = "adb_device uninstall app.trackglance.bridge"
         self.assertIn(launch, android_body)
         self.assertIn(launch, e2e_stage)
-        self.assertLess(android_body.index(launch), android_body.index("set_emulator_test_location"))
+        self.assertIn("wait_for_android 180 disabled", android_body)
+        self.assertLess(android_body.index("wait_for_android 180 disabled"), android_body.index(launch))
+        self.assertNotIn("set_emulator_test_location", android_body)
         self.assertIn("grant_locus_test_permissions", android_body)
         self.assertIn("grant_locus_test_permissions", e2e_stage)
         self.assertIn(uninstall_bridge, android_body)
