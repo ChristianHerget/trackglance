@@ -110,6 +110,70 @@ class DeviceReadinessTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_locus_readiness_dismisses_only_its_google_location_prompt(self):
+        script = r'''
+            state=$(mktemp)
+            dismissed=$(mktemp)
+            trap 'rm -f "$state" "$dismissed"' EXIT
+            echo 0 > "$state"
+            sleep() { :; }
+            adb_device_timeout() {
+                count=$(cat "$state")
+                echo $((count + 1)) > "$state"
+                if [[ "$count" == 1 ]]; then
+                    echo 'topResumedActivity= com.google.android.gms/com.google.android.location.settings.LocationSettingsCheckerActivity'
+                else
+                    echo 'topResumedActivity= menion.android.locus/MainActivity'
+                fi
+            }
+            tap_text() {
+                [[ "$*" == "No thanks 5 exact" ]]
+                echo dismissed > "$dismissed"
+            }
+            foreground_locus 2
+            cat "$dismissed"
+            cat "$state"
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("dismissed\n3\n", result.stdout)
+        unrelated = self.run_device(script.replace("LocationSettingsCheckerActivity", "OtherActivity"))
+        self.assertEqual(unrelated.returncode, 0, unrelated.stderr)
+        self.assertNotIn("dismissed", unrelated.stdout)
+        disappeared = self.run_device(script.replace('echo dismissed > "$dismissed"', 'return 1'))
+        self.assertEqual(disappeared.returncode, 0, disappeared.stderr)
+        self.assertNotIn("dismissed", disappeared.stdout)
+        # A bounded UI dump can finish after the outer deadline. Confirm the final
+        # foreground instead of discarding a recovered Locus activity at that boundary.
+        late = self.run_device(script.replace('echo dismissed > "$dismissed"', 'SECONDS=$((SECONDS + 3)); return 1'))
+        self.assertEqual(late.returncode, 0, late.stderr)
+        for foreground in ("com.google.android.gms/com.google.android.location.settings.LocationSettingsCheckerActivity", "other.package/OtherActivity"):
+            blocked = script.replace("menion.android.locus/MainActivity", foreground)
+            blocked = blocked.replace('echo dismissed > "$dismissed"', 'SECONDS=$((SECONDS + 3)); return 1')
+            failed = self.run_device(blocked)
+            self.assertNotEqual(failed.returncode, 0)
+
+    def test_working_directory_recovery_does_not_require_a_remaining_close_button(self):
+        script = r'''
+            dumps=0
+            dump_ui() { dumps=$((dumps + 1)); }
+            sleep() { :; }
+            grep() {
+                if [[ "$*" == *drawer_layout* ]]; then (( dumps > 1 ));
+                else [[ "$*" == *'Problem with working directory'* ]]; fi
+            }
+            tap_text() { echo 'Unexpected button tap' >&2; return 1; }
+            complete_locus_onboarding 2
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("<am> <force-stop> <menion.android.locus>"), 1)
+        self.assertIn("<monkey> <-p> <menion.android.locus> <1>", result.stdout)
+        persistent = self.run_device(script.replace("(( dumps > 1 ))", "false"))
+        self.assertNotEqual(persistent.returncode, 0)
+        self.assertEqual(persistent.stdout.count("<am> <force-stop> <menion.android.locus>"), 3)
+        self.assertIn("after three clean relaunches", persistent.stderr)
+
     def test_wait_for_android_retries_a_failed_initial_connect(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
@@ -196,6 +260,27 @@ class DeviceReadinessTest(unittest.TestCase):
         self.assertNotEqual(failed.returncode, 0, failed.stdout)
         self.assertNotIn("python3", failed.stdout)
 
+    def test_instrumentation_can_disable_location_without_injecting_a_fix(self):
+        script = '''timeout() {
+            if [[ "$*" == *sys.boot_completed* ]]; then printf '1\n';
+            elif [[ "$*" == *set-location-enabled* ]]; then shift; "$@"; fi
+        }
+        wait_for_android 2 disabled
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("<set-location-enabled> <false>", result.stdout)
+        self.assertNotIn("<set-location-enabled> <true>", result.stdout)
+        self.assertNotIn("emulator-console.py", result.stdout)
+        failed = self.run_device(script, "-s test:5555 shell cmd location set-location-enabled false")
+        self.assertNotEqual(failed.returncode, 0, failed.stdout)
+
+    def test_unknown_location_mode_fails_before_connecting(self):
+        result = self.run_device("wait_for_android 2 unknown")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unknown emulator location mode", result.stderr)
+        self.assertNotIn("adb", result.stdout)
+
     def test_emulator_console_token_stays_in_the_private_runtime_volume(self):
         entrypoint = EMULATOR_ENTRYPOINT.read_text(encoding="utf-8")
         helper = EMULATOR_CONSOLE.read_text(encoding="utf-8")
@@ -258,5 +343,28 @@ class DeviceReadinessTest(unittest.TestCase):
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_FINE_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_BACKGROUND_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_CONNECT>",
+            "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_SCAN>",
+            "adb <-s> <test:5555> <shell> <getprop> <ro.build.version.sdk>",
             "adb <-s> <test:5555> <shell> <cmd> <notification> <allow_listener> <coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener>",
         ])
+
+    def test_coreapp_scan_permission_failure_stops_onboarding_setup(self):
+        result = self.run_device(
+            "grant_coreapp_test_permissions",
+            "-s test:5555 shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("<allow_listener>", result.stdout)
+
+    def test_coreapp_notification_permission_is_granted_only_on_api33_and_newer(self):
+        for api in (32, 33, 34):
+            result = self.run_device("grant_coreapp_test_permissions", api=api)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual("<android.permission.POST_NOTIFICATIONS>" in result.stdout, api >= 33)
+        failed = self.run_device(
+            "grant_coreapp_test_permissions",
+            fail_command="-s test:5555 shell pm grant coredevices.coreapp android.permission.POST_NOTIFICATIONS",
+            api=34,
+        )
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn("<allow_listener>", failed.stdout)
