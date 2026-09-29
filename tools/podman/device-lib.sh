@@ -138,7 +138,8 @@ complete_locus_onboarding() {
         echo "Locus could not initialize its working directory after three clean relaunches" >&2
         return 1
       fi
-      tap_text CLOSE 10
+      # Force-stop closes the error dialog too. Its button may already have vanished
+      # since the UI dump, so do not make recovery depend on tapping it first.
       adb_device shell am force-stop menion.android.locus
       sleep 2
       adb_device shell monkey -p menion.android.locus 1 >/dev/null

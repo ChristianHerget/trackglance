@@ -153,6 +153,27 @@ class DeviceReadinessTest(unittest.TestCase):
             failed = self.run_device(blocked)
             self.assertNotEqual(failed.returncode, 0)
 
+    def test_working_directory_recovery_does_not_require_a_remaining_close_button(self):
+        script = r'''
+            dumps=0
+            dump_ui() { dumps=$((dumps + 1)); }
+            sleep() { :; }
+            grep() {
+                if [[ "$*" == *drawer_layout* ]]; then (( dumps > 1 ));
+                else [[ "$*" == *'Problem with working directory'* ]]; fi
+            }
+            tap_text() { echo 'Unexpected button tap' >&2; return 1; }
+            complete_locus_onboarding 2
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("<am> <force-stop> <menion.android.locus>"), 1)
+        self.assertIn("<monkey> <-p> <menion.android.locus> <1>", result.stdout)
+        persistent = self.run_device(script.replace("(( dumps > 1 ))", "false"))
+        self.assertNotEqual(persistent.returncode, 0)
+        self.assertEqual(persistent.stdout.count("<am> <force-stop> <menion.android.locus>"), 3)
+        self.assertIn("after three clean relaunches", persistent.stderr)
+
     def test_wait_for_android_retries_a_failed_initial_connect(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
