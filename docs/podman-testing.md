@@ -54,7 +54,7 @@ and all test runs publish no ports.
 | Pebble App source | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Pebble Tool / SDK | 5.0.40 / 4.33.1 |
 | uv bootstrap | 0.12.4, SHA-256 `c8c60f47e6f88d18dbf6f33d7279fb1fbf7ae76631768152cf5578c3d65729b4` |
-| Public Locus fixture | 4.35.0 (1215), SHA-256 `d8bf8fe208193f0e491caf742956681bb8992541c1e51c1e9616772e40d431aa` |
+| Public Locus fixture | 4.36.0 (1217), SHA-256 `8968b25633594fa45ab60b8336328fec2dffd5d07ed29a0996d9cedf55898c12` |
 
 `tools/locus-test-apk.properties` is the fixture source of truth. Besides its official public URL
 and SHA-256, it pins size, package, version, x86_64 ABI, minimum/target SDK, and signing-certificate

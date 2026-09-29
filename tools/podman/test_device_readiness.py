@@ -174,6 +174,41 @@ class DeviceReadinessTest(unittest.TestCase):
         self.assertEqual(persistent.stdout.count("<am> <force-stop> <menion.android.locus>"), 3)
         self.assertIn("after three clean relaunches", persistent.stderr)
 
+    def test_onboarding_rechecks_after_start_button_disappears(self):
+        script = r'''
+            dumps=0
+            dump_ui() {
+                dumps=$((dumps + 1))
+                if (( dumps == 1 )); then
+                    echo '<node text="START" />' > /tmp/trackglance-window.xml
+                else
+                    echo '<node resource-id="menion.android.locus:id/drawer_layout" />' > /tmp/trackglance-window.xml
+                fi
+            }
+            tap_text() { [[ "$*" == 'START 5 exact' ]]; return 1; }
+            sleep() { :; }
+            complete_locus_onboarding 2
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Timed out waiting", result.stderr)
+        persistent = self.run_device(script.replace(
+            "if (( dumps == 1 )); then", "if (( dumps > 0 )); then"
+        ).replace("tap_text() { [[ \"$*\" == 'START 5 exact' ]]; return 1; }",
+                  "tap_text() { SECONDS=$((SECONDS + 3)); return 1; }"))
+        self.assertNotEqual(persistent.returncode, 0)
+        self.assertIn("Locus onboarding did not reach the map", persistent.stderr)
+
+    def test_failed_ui_dump_clears_stale_local_xml(self):
+        script = r'''
+            echo stale > /tmp/trackglance-window.xml
+            adb_device_timeout() { return 1; }
+            if dump_ui; then exit 42; fi
+            test ! -e /tmp/trackglance-window.xml
+        '''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_wait_for_android_retries_a_failed_initial_connect(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
