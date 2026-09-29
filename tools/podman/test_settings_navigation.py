@@ -7,7 +7,7 @@ from script_test_support import ROOT
 
 
 class SettingsNavigationTest(unittest.TestCase):
-    def navigate(self, scenario):
+    def navigate(self, scenario, timeout="15"):
         with tempfile.TemporaryDirectory() as directory:
             script = r'''
 source "$1"
@@ -15,7 +15,11 @@ tick=0
 page=bridge
 opens=0
 declare -A missed=()
-sleep() { tick=$((tick + 1)); SECONDS=$((SECONDS + 1)); }
+sleep() {
+  tick=$((tick + 1))
+  if [[ "$SCENARIO" == cold ]]; then SECONDS=$((SECONDS + 40));
+  else SECONDS=$((SECONDS + 1)); fi
+}
 relayctl() {
   if [[ "$SCENARIO" == connection && "$tick" -lt 2 ]]; then
     echo '{"phone_connected":true,"qemu_connected":false,"session_id":1}'
@@ -74,7 +78,7 @@ tap_text() {
     Settings) page=settings ;;
   esac
 }
-open_trackglance_settings 15
+open_trackglance_settings "$NAV_TIMEOUT"
 if [[ "$SCENARIO" == reopen ]]; then
   page=bridge
   open_trackglance_settings 15
@@ -85,7 +89,8 @@ fi
             result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script, 'test',
                                      str(ROOT / 'tools/podman/settings-navigation.sh')],
                                     env={**os.environ, 'SETTINGS_TRACE': str(trace), 'CALLS': str(calls),
-                                         'SCENARIO': scenario, 'STATUS_URI': 'content://test'},
+                                         'SCENARIO': scenario, 'STATUS_URI': 'content://test',
+                                         'NAV_TIMEOUT': timeout},
                                     capture_output=True, text=True, timeout=10)
             return result, trace.read_text(), calls.read_text() if calls.exists() else ''
 
@@ -96,6 +101,14 @@ fi
         self.assertIn('bridge=false', trace)
         self.assertIn('launch:3', calls)
         self.assertIn('settings-webview-passed', trace)
+
+    def test_cold_navigation_can_finish_after_two_minutes_but_respects_an_explicit_limit(self):
+        result, trace, _ = self.navigate('cold', timeout="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('settings-webview-passed', trace)
+        limited, trace, _ = self.navigate('cold', timeout="120")
+        self.assertNotEqual(limited.returncode, 0)
+        self.assertNotIn('settings-webview-passed', trace)
 
     def test_foreground_drift_relaunches_apps(self):
         result, trace, calls = self.navigate('drift')

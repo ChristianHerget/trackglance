@@ -32,10 +32,13 @@ set_emulator_test_location() {
 foreground_locus() {
   adb_device shell am start -W -n "$LOCUS_START_ACTIVITY" >/dev/null
   local deadline=$((SECONDS + ${1:-30})) foreground settled=0
-  while (( SECONDS < deadline )); do
+  while true; do
     foreground=$(adb_device_timeout 5 shell dumpsys activity activities 2>/dev/null || true)
+    if (( settled )) && grep -Eq 'topResumedActivity=.* menion\.android\.locus/' <<< "$foreground"; then
+      return 0
+    fi
+    (( SECONDS < deadline )) || break
     if grep -Eq 'topResumedActivity=.* menion\.android\.locus/' <<< "$foreground"; then
-      if (( settled )); then return 0; fi
       # A cold map can be resumed before the recording engine is ready. Recheck after
       # settling because Google Play services can place its location prompt above it.
       sleep "${LOCUS_FOREGROUND_SETTLE_SECONDS:-10}"
@@ -44,7 +47,10 @@ foreground_locus() {
     fi
     if grep -Eq 'topResumedActivity=.* com\.google\.android\.gms/com\.google\.android\.location\.settings\.LocationSettingsCheckerActivity' <<< "$foreground"; then
       # Decline this optional Google location prompt; GPS is controlled by the harness.
-      tap_text "No thanks" 5 exact || return 1
+      # Play services can restart after a module update and remove the prompt while
+      # UI automation reads it. Always recheck foreground, even after a failed tap
+      # or a call that consumed the remaining deadline; never infer readiness from it.
+      tap_text "No thanks" 5 exact || true
     fi
     sleep 0.25
   done
@@ -112,6 +118,11 @@ grant_coreapp_test_permissions() {
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_BACKGROUND_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_CONNECT
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN
+  local api
+  api=$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+  if (( api >= 33 )); then
+    adb_device shell pm grant coredevices.coreapp android.permission.POST_NOTIFICATIONS
+  fi
   adb_device shell cmd notification allow_listener \
     coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener
 }
@@ -132,7 +143,8 @@ complete_locus_onboarding() {
         echo "Locus could not initialize its working directory after three clean relaunches" >&2
         return 1
       fi
-      tap_text CLOSE 10
+      # Force-stop closes the error dialog too. Its button may already have vanished
+      # since the UI dump, so do not make recovery depend on tapping it first.
       adb_device shell am force-stop menion.android.locus
       sleep 2
       adb_device shell monkey -p menion.android.locus 1 >/dev/null

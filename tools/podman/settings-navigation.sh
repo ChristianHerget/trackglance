@@ -5,7 +5,9 @@ settings_checkpoint() {
 }
 
 open_trackglance_settings() {
-  local deadline=$((SECONDS + ${1:-120})) foreground='' relay='' bridge='' control
+  # Cold first-run onboarding and WebView startup can consume more than two minutes.
+  # This is a deadline, not a delay: return as soon as the settings marker is observed.
+  local deadline=$((SECONDS + ${1:-180})) foreground='' relay='' bridge='' control
   local launched=0 last_launch=0 matched=0 next_control=Apps
   local -a controls=()
   settings_checkpoint begin
