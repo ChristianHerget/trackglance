@@ -118,6 +118,11 @@ grant_coreapp_test_permissions() {
   adb_device shell pm grant coredevices.coreapp android.permission.ACCESS_BACKGROUND_LOCATION
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_CONNECT
   adb_device shell pm grant coredevices.coreapp android.permission.BLUETOOTH_SCAN
+  local api
+  api=$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
+  if (( api >= 33 )); then
+    adb_device shell pm grant coredevices.coreapp android.permission.POST_NOTIFICATIONS
+  fi
   adb_device shell cmd notification allow_listener \
     coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener
 }

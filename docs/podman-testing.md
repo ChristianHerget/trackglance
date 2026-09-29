@@ -343,6 +343,9 @@ Locus readiness declines the specific optional Google location-services prompt i
 then rechecks that the Locus map is foreground; emulator GPS remains controlled by the harness.
 If Play services removes that prompt during a module restart, readiness still requires a fresh
 foreground check. A missing button alone neither fails setup nor proves Locus is ready.
+The Pebble App fixture receives notification permission on API 33 and newer before onboarding.
+Settings navigation allows up to three minutes for cold onboarding and WebView startup, returning
+as soon as the settings page is verified.
 Both the initial step total and subsequent updates allow 80 seconds for the one-minute Health
 sampling cadence; they still require the exact expected values.
 Their Pebble App fixture receives both Bluetooth connect and scan permissions before onboarding,

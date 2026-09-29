@@ -344,6 +344,7 @@ class DeviceReadinessTest(unittest.TestCase):
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.ACCESS_BACKGROUND_LOCATION>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_CONNECT>",
             "adb <-s> <test:5555> <shell> <pm> <grant> <coredevices.coreapp> <android.permission.BLUETOOTH_SCAN>",
+            "adb <-s> <test:5555> <shell> <getprop> <ro.build.version.sdk>",
             "adb <-s> <test:5555> <shell> <cmd> <notification> <allow_listener> <coredevices.coreapp/io.rebble.libpebblecommon.notification.LibPebbleNotificationListener>",
         ])
 
@@ -354,3 +355,16 @@ class DeviceReadinessTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("<allow_listener>", result.stdout)
+
+    def test_coreapp_notification_permission_is_granted_only_on_api33_and_newer(self):
+        for api in (32, 33, 34):
+            result = self.run_device("grant_coreapp_test_permissions", api=api)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual("<android.permission.POST_NOTIFICATIONS>" in result.stdout, api >= 33)
+        failed = self.run_device(
+            "grant_coreapp_test_permissions",
+            fail_command="-s test:5555 shell pm grant coredevices.coreapp android.permission.POST_NOTIFICATIONS",
+            api=34,
+        )
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn("<allow_listener>", failed.stdout)
