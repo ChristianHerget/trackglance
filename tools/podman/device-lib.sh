@@ -130,13 +130,18 @@ grant_coreapp_test_permissions() {
 complete_locus_onboarding() {
   local deadline=$((SECONDS + ${1:-90})) working_directory_retries=0
   while (( SECONDS < deadline )); do
-    dump_ui || true
+    if ! dump_ui; then
+      sleep 0.5
+      continue
+    fi
     if grep -Fq 'resource-id="menion.android.locus:id/drawer_layout"' \
       /tmp/trackglance-window.xml; then
       return 0
     fi
     if grep -Fq 'text="START"' /tmp/trackglance-window.xml; then
-      tap_text START 10
+      # The intro screen may advance after the dump and before tap_text finds its button.
+      # Recheck the map rather than failing the whole bootstrap on a vanished button.
+      tap_text START 5 exact || true
     elif grep -Fq 'text="Problem with working directory"' /tmp/trackglance-window.xml; then
       working_directory_retries=$((working_directory_retries + 1))
       if (( working_directory_retries > 3 )); then
@@ -244,7 +249,10 @@ android_screenshot() {
 }
 
 dump_ui() {
-  adb_device_timeout 15 shell uiautomator dump /sdcard/trackglance-window.xml >/dev/null
+  rm -f /tmp/trackglance-window.xml
+  adb_device_timeout 15 shell \
+    'rm -f /sdcard/trackglance-window.xml && uiautomator dump /sdcard/trackglance-window.xml' \
+    >/dev/null
   adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null
 }
 
