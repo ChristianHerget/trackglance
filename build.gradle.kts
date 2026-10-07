@@ -21,7 +21,8 @@ spotless {
     java {
         target("**/*.java")
         targetExclude("**/build/**")
-        googleJavaFormat("1.36.1")
+        // The pinned development image runs JDK 17; newer formatters require JDK 21.
+        googleJavaFormat("1.28.0")
     }
 }
 
