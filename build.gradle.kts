@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application") version "9.4.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.20" apply false
-    id("com.diffplug.spotless") version "8.10.2"
+    id("com.diffplug.spotless") version "8.10.3"
     id("dev.detekt") version "2.0.0-alpha.6" apply false
     id("org.cyclonedx.bom") version "3.4.1" apply false
     id("org.spdx.sbom") version "0.12.0" apply false
@@ -21,7 +21,8 @@ spotless {
     java {
         target("**/*.java")
         targetExclude("**/build/**")
-        googleJavaFormat("1.36.1")
+        // The pinned development image runs JDK 17; newer formatters require JDK 21.
+        googleJavaFormat("1.28.0")
     }
 }
 
