@@ -191,6 +191,8 @@ The main push always creates a lightweight exact-commit certification from trust
 It records reuse or the full-suite result, source run and attempt, tested tree, inputs, check links,
 fallback reason, and timing. The record receives a GitHub attestation. The release gate verifies the
 record and latest attempt before signing; the release artifacts remain bound to the release SHA.
+The `Main commit certification` job summary shows the decision and check links. Its
+`main-certification-<run-id>-<attempt>` artifact retains the JSON record for 90 days.
 The policy change itself forces a full main suite when first merged. A later same-repository canary
 PR proves the reuse path without changing protected PR checks.
 
