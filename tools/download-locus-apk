@@ -6,8 +6,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html.parser
+import http.client
 import os
+import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,6 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = ROOT / "tools" / "locus-test-apk.properties"
 USER_AGENT = "trackglance-acceptance/1"
 MAX_WARNING_BYTES = 1024 * 1024
+RETRY_DELAYS = (2, 4)
+RETRYABLE_HTTP_STATUSES = {500, 502, 503, 504}
 
 
 def read_properties(path: Path) -> dict[str, str]:
@@ -103,40 +108,45 @@ def response_is_html(response: urllib.response.addinfourl, first: bytes) -> bool
     )
 
 
-def download(source_url: str, output: Path, expected_sha256: str, timeout: int) -> tuple[int, str]:
+def download_once(source_url: str, output: Path, expected_sha256: str, timeout: int) -> tuple[int, str]:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary_name: str | None = None
     try:
         response = request(initial_url(source_url), timeout)
-        first = response.read(8192)
-        if response_is_html(response, first):
-            warning = first + response.read(MAX_WARNING_BYTES + 1)
-            response.close()
-            if len(warning) > MAX_WARNING_BYTES:
-                raise ValueError("download returned an oversized HTML response instead of an APK")
-            response = request(confirmed_drive_url(warning), timeout)
+        try:
             first = response.read(8192)
-        if response_is_html(response, first):
-            raise ValueError("download returned HTML instead of an APK")
-        if not first.startswith(b"PK\x03\x04"):
-            raise ValueError("download is not an APK/ZIP object")
+            if response_is_html(response, first):
+                warning = first + response.read(MAX_WARNING_BYTES + 1)
+                response.close()
+                if len(warning) > MAX_WARNING_BYTES:
+                    raise ValueError("download returned an oversized HTML response instead of an APK")
+                response = request(confirmed_drive_url(warning), timeout)
+                first = response.read(8192)
+            if response_is_html(response, first):
+                raise ValueError("download returned HTML instead of an APK")
+            if not first.startswith(b"PK\x03\x04"):
+                raise ValueError("download is not an APK/ZIP object")
 
-        digest = hashlib.sha256()
-        size = 0
-        with tempfile.NamedTemporaryFile(
-            mode="wb", prefix=f".{output.name}.", dir=output.parent, delete=False
-        ) as destination:
-            temporary_name = destination.name
-            destination.write(first)
-            digest.update(first)
-            size += len(first)
-            while chunk := response.read(1024 * 1024):
-                destination.write(chunk)
-                digest.update(chunk)
-                size += len(chunk)
-            destination.flush()
-            os.fsync(destination.fileno())
-        response.close()
+            digest = hashlib.sha256()
+            size = 0
+            with tempfile.NamedTemporaryFile(
+                mode="wb", prefix=f".{output.name}.", dir=output.parent, delete=False
+            ) as destination:
+                temporary_name = destination.name
+                destination.write(first)
+                digest.update(first)
+                size += len(first)
+                while chunk := response.read(1024 * 1024):
+                    destination.write(chunk)
+                    digest.update(chunk)
+                    size += len(chunk)
+                content_length = response.headers.get("Content-Length")
+                if content_length is not None and size != int(content_length):
+                    raise http.client.IncompleteRead(b"", int(content_length) - size)
+                destination.flush()
+                os.fsync(destination.fileno())
+        finally:
+            response.close()
         actual_sha256 = digest.hexdigest()
         if actual_sha256 != expected_sha256.lower():
             raise ValueError("downloaded APK SHA-256 does not match the pinned fixture")
@@ -146,6 +156,47 @@ def download(source_url: str, output: Path, expected_sha256: str, timeout: int) 
     finally:
         if temporary_name is not None:
             Path(temporary_name).unlink(missing_ok=True)
+
+
+def retryable_failure(error: Exception) -> str | None:
+    if isinstance(error, urllib.error.HTTPError):
+        error.close()
+        return f"HTTP {error.code}" if error.code in RETRYABLE_HTTP_STATUSES else None
+    if isinstance(error, urllib.error.URLError):
+        error = error.reason
+    if isinstance(error, TimeoutError):
+        return "network timeout"
+    if isinstance(error, ConnectionError):
+        return "network connection error"
+    if isinstance(error, http.client.IncompleteRead):
+        return "incomplete HTTP response"
+    return None
+
+
+def download(source_url: str, output: Path, expected_sha256: str, timeout: int) -> tuple[int, str]:
+    attempts = len(RETRY_DELAYS) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return download_once(source_url, output, expected_sha256, timeout)
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.IncompleteRead,
+        ) as error:
+            failure = retryable_failure(error)
+            if failure is None:
+                raise
+            if attempt == attempts:
+                raise ValueError(f"{failure} after {attempts} attempts") from error
+            delay = RETRY_DELAYS[attempt - 1]
+            print(
+                f"Locus APK download attempt {attempt}/{attempts} failed ({failure}); "
+                f"retrying in {delay}s.",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    raise AssertionError("download retry loop ended unexpectedly")
 
 
 def main() -> None:
