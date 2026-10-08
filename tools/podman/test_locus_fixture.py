@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from collections import Counter
 from pathlib import Path
 
 
@@ -11,11 +12,28 @@ ROOT = Path(__file__).resolve().parents[2]
 DOWNLOADER = ROOT / "tools" / "download-locus-apk"
 VALIDATOR = ROOT / "tools" / "podman" / "validate-locus-apks.py"
 APK_BYTES = b"PK\x03\x04" + b"fixture payload"
+INTERRUPTED_APK_BYTES = b"PK\x03\x04" + b"fixture payload" * 1000
 
 
 class FixtureHandler(http.server.BaseHTTPRequestHandler):
+    request_counts = Counter()
+    request_lock = threading.Lock()
+
     def do_GET(self):
-        if self.path == "/fixture.apk":
+        with self.request_lock:
+            self.request_counts[self.path] += 1
+            attempt = self.request_counts[self.path]
+        if self.path == "/temporary.apk" and attempt == 1:
+            body, content_type, status = b"unavailable", "text/plain", 503
+        elif self.path == "/unavailable.apk":
+            body, content_type, status = b"unavailable", "text/plain", 503
+        elif self.path == "/interrupted.apk" and attempt == 1:
+            body = INTERRUPTED_APK_BYTES[:9000]
+            content_type, status = "application/vnd.android.package-archive", 200
+        elif self.path == "/interrupted.apk":
+            body = INTERRUPTED_APK_BYTES
+            content_type, status = "application/vnd.android.package-archive", 200
+        elif self.path in {"/fixture.apk", "/temporary.apk"}:
             body, content_type, status = APK_BYTES, "application/vnd.android.package-archive", 200
         elif self.path == "/corrupt.apk":
             body, content_type, status = APK_BYTES + b"changed", "application/octet-stream", 200
@@ -25,9 +43,12 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
             body, content_type, status = b"missing", "text/plain", 404
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        content_length = len(INTERRUPTED_APK_BYTES) if self.path == "/interrupted.apk" else len(body)
+        self.send_header("Content-Length", str(content_length))
         self.end_headers()
         self.wfile.write(body)
+        if self.path == "/interrupted.apk" and attempt == 1:
+            self.close_connection = True
 
     def log_message(self, *_args):
         pass
@@ -45,6 +66,10 @@ class DownloaderTest(unittest.TestCase):
         cls.server.shutdown()
         cls.thread.join()
         cls.server.server_close()
+
+    def setUp(self):
+        with FixtureHandler.request_lock:
+            FixtureHandler.request_counts.clear()
 
     def run_download(self, path: str, checksum: str, output: Path):
         url = f"http://127.0.0.1:{self.server.server_port}{path}"
@@ -73,12 +98,41 @@ class DownloaderTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(output.read_bytes(), APK_BYTES)
 
+    def test_recovers_from_a_temporary_http_503(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "locus.apk"
+            checksum = hashlib.sha256(APK_BYTES).hexdigest()
+            result = self.run_download("/temporary.apk", checksum, output)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/temporary.apk"], 2)
+            self.assertEqual(output.read_bytes(), APK_BYTES)
+
+    def test_recovers_from_an_interrupted_transfer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "locus.apk"
+            checksum = hashlib.sha256(INTERRUPTED_APK_BYTES).hexdigest()
+            result = self.run_download("/interrupted.apk", checksum, output)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/interrupted.apk"], 2)
+            self.assertEqual(output.read_bytes(), INTERRUPTED_APK_BYTES)
+            self.assertEqual(list(Path(directory).iterdir()), [output])
+
+    def test_stops_after_three_http_503_responses_without_leaving_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "locus.apk"
+            result = self.run_download("/unavailable.apk", "0" * 64, output)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("HTTP 503 after 3 attempts", result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/unavailable.apk"], 3)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_rejects_html_instead_of_an_apk(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "locus.apk"
             result = self.run_download("/warning.html", "0" * 64, output)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("HTML", result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/warning.html"], 1)
             self.assertFalse(output.exists())
 
     def test_rejects_a_checksum_mismatch_without_leaving_output(self):
@@ -87,6 +141,7 @@ class DownloaderTest(unittest.TestCase):
             result = self.run_download("/corrupt.apk", "0" * 64, output)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("SHA-256", result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/corrupt.apk"], 1)
             self.assertFalse(output.exists())
 
     def test_rejects_an_http_failure(self):
@@ -95,6 +150,7 @@ class DownloaderTest(unittest.TestCase):
             result = self.run_download("/missing", "0" * 64, output)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("HTTP Error 404", result.stderr)
+            self.assertEqual(FixtureHandler.request_counts["/missing"], 1)
             self.assertFalse(output.exists())
 
 

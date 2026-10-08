@@ -59,8 +59,9 @@ and all test runs publish no ports.
 `tools/locus-test-apk.properties` is the fixture source of truth. Besides its official public URL
 and SHA-256, it pins size, package, version, x86_64 ABI, minimum/target SDK, and signing-certificate
 SHA-256. `tools/download-locus-apk` handles Google's unattended confirmation form, writes
-atomically, and rejects HTTP errors, HTML, non-APK bytes, and checksum mismatches. Bootstrap then
-validates the Android metadata and signature inside the pinned build image.
+atomically, and retries temporary HTTP or connection failures up to three times before failing.
+It immediately rejects other HTTP errors, HTML, non-APK bytes, and checksum mismatches. Bootstrap
+then validates the Android metadata and signature inside the pinned build image.
 
 Android SDK packages are installed by Google's
 [`sdkmanager`](https://developer.android.com/tools/sdkmanager), after accepting the SDK licenses.
