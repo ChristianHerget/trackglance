@@ -18,13 +18,18 @@ VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
-    def test_validation_uses_protected_pull_requests_and_certifies_main_pushes(self):
+    def test_validation_keeps_protected_pr_checks_and_certifies_main_pushes(self):
         ci = CI_WORKFLOW.read_text(encoding="utf-8")
         ci_events = ci.split("permissions:\n", 1)[0]
         self.assertIn("  push:\n    branches: [main]", ci_events)
         self.assertIn("  pull_request:\n    branches: [main]", ci_events)
         self.assertIn("  workflow_dispatch:", ci_events)
-        self.assertNotIn("if: github.event_name", ci)
+        self.assertIn("  plan:\n    name: Select main CI evidence", ci)
+        self.assertIn("tools/ci-evidence decide", ci)
+        self.assertIn("name: Main commit certification", ci)
+        self.assertIn("tools/ci-evidence certify", ci)
+        self.assertIn("predicate-path: build/ci-certification.json", ci)
+        self.assertIn("if: always() && github.event_name == 'push'", ci)
         self.assertIn("ci-${{ github.event_name }}-${{ github.workflow }}-${{ github.ref }}", ci)
 
         codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
@@ -78,7 +83,8 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("branches: [main]", source)
         self.assertNotIn("tags: ['v*']", source)
         self.assertIn("  acceptance-hosted:\n    name: Hosted full-stack acceptance", source)
-        self.assertNotIn("if: github.event_name", source)
+        self.assertIn("if: always() && needs.plan.outputs.mode != 'reuse'", source)
+        self.assertIn("if: success() && github.event_name == 'pull_request'", source)
         self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
         self.assertIn("tools/podman-test acceptance-suite", source)
         self.assertIn('source) run_suite Source --fresh', source)
@@ -146,15 +152,18 @@ class AcceptanceComponentsPolicyTest(unittest.TestCase):
         watch = source.split("  acceptance-watch:", 1)[1].split("  acceptance-hosted:", 1)[0]
         aggregate = source.split("  acceptance-hosted:", 1)[1]
         self.assertIn("ACCEPTANCE_COMPONENT: android", android)
-        self.assertIn("needs: acceptance-android", watch)
+        self.assertIn("needs: [plan, acceptance-android]", watch)
         self.assertIn("fail-fast: false", watch)
         self.assertIn("component: [emery, gabbro]", watch)
         self.assertNotIn("max-parallel: 1", watch)
-        self.assertIn("needs: [acceptance-android, acceptance-watch]", aggregate)
+        self.assertIn("needs: [plan, acceptance-android, acceptance-watch]", aggregate)
         self.assertIn("if: always()", aggregate)
         self.assertIn('test "$ANDROID_RESULT" = success', aggregate)
         self.assertIn('test "$WATCH_RESULT" = success', aggregate)
         self.assertEqual(source.count("name: Hosted full-stack acceptance"), 1)
+        self.assertEqual(source.count("- name: Upload tested checkout evidence"), 4)
+        self.assertEqual(source.count("tools/ci-evidence capture"), 4)
+        self.assertEqual(source.count("tools/ci-evidence finalize"), 4)
         for job in (android, watch):
             self.assertIn("acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-", job)
             self.assertIn("retention-days: 7", job)

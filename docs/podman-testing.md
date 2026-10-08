@@ -168,15 +168,40 @@ not a manual-lab provisioning path.
 
 ## GitHub-hosted acceptance
 
-Fast CI runs `static`, documentation, and the release check on GitHub-hosted Ubuntu without KVM or
-Locus. Every pull request and push to `main` also runs hosted acceptance on `ubuntu-24.04` with
-Docker and `/dev/kvm`.
-It verifies and pulls the digest-pinned published runner and emulator, downloads the official public
-fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden volume
-from scratch, runs every Android/Locus instrumentation test, and runs Emery plus Gabbro acceptance
-once. The check is required before merging to `main`. The exact `main` push run certifies a tag
-build; CodeQL and dependency review remain protected pull-request gates and are not repeated
-after merge.
+Pull requests run `static`, documentation, the release check, and hosted acceptance on
+`ubuntu-24.04` with Docker and `/dev/kvm`. The checks remain required before merging to `main`.
+Hosted acceptance verifies the digest-pinned published runner and emulator, downloads the official
+public fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden
+volume from scratch, runs Android/Locus instrumentation, and runs Emery plus Gabbro once. CodeQL
+and dependency review remain protected pull-request gates.
+
+A push to `main` first checks whether it can reuse the newest CI run for the merged, same-repository
+PR. Each PR test job records its actual checkout, including GitHub's synthetic merge commit and
+tree, plus effective settings and pinned inputs. The main job verifies those records against the
+GitHub run, latest complete attempt, artifact digests, recomputed merge tree, required job results,
+current source tree, runner image and Docker versions, fixture, and toolchain fingerprints. Pebble
+Tool can update `watchapp/package-lock.json` during a build; the evidence also records its observed
+post-build fingerprint and rejects unrelated tracked changes or disagreement between test jobs.
+Evidence must be no older than 24 hours. A changed workflow, test policy, fixture, external-input definition,
+or toolchain forces the complete main suite. Missing, failed, skipped, cancelled, partial, fork, or
+unverifiable evidence does the same. Manual dispatches always run the selected suite. Mutable
+hosted packages remain bounded by the 24-hour window; the runner image version must match.
+
+The main push always creates a lightweight exact-commit certification from trusted main context.
+It records reuse or the full-suite result, source run and attempt, tested tree, inputs, check links,
+fallback reason, and timing. The record receives a GitHub attestation. The release gate verifies the
+record and latest attempt before signing; the release artifacts remain bound to the release SHA.
+The policy change itself forces a full main suite when first merged. A later same-repository canary
+PR proves the reuse path without changing protected PR checks.
+
+For the completed PR #89, PR CI took 30m52s and 62m54s of summed job time; the unchanged
+main push repeated five test components in 31m28s and 63m03s of summed job time. These are the
+pre-change baseline from [PR run 36504113460](https://github.com/ChristianHerget/trackglance/actions/runs/36504113460)
+and [main run 36506588022](https://github.com/ChristianHerget/trackglance/actions/runs/36506588022).
+After the canary merge, compare its main certification summary and run job timestamps with this
+baseline: elapsed time to certification, summed runner time, repeated component count, and any
+fallback reason. A reused tree should report zero repeated test components; changed or untrusted
+inputs must report the full-suite reason and run all five.
 
 The workflow prints `df -h`, `docker system df`, and relevant directory sizes after each major
 stage. On failure it uploads a seven-day diagnostic bundle containing only bounded logs, JUnit/XML

@@ -1,127 +1,110 @@
-import json
 import os
 import pathlib
-import shutil
-import subprocess
-import tempfile
+import runpy
+import sys
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-REQUIRED = [
-    "Android, Pebble, protocol, and helpers",
-    "Committed documentation",
-    "Hosted full-stack acceptance",
-]
+SCRIPT = ROOT / "tools/release-certification"
+sys.path.insert(0, str(ROOT / "tools"))
+COMMIT = "a" * 40
+
+
+class FakeGitHub:
+    def __init__(self, run, states):
+        self.run = run
+        self.states = list(states)
+
+    def pages(self, endpoint, key):
+        assert key == "workflow_runs"
+        return [self.run]
+
+    def json(self, endpoint):
+        assert endpoint == f"actions/runs/{self.run['id']}"
+        return self.states.pop(0) if len(self.states) > 1 else self.states[0]
 
 
 class ReleaseCertificationTest(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
-        base = pathlib.Path(self.temporary.name)
-        self.repo = base / "repo"
-        self.bin = base / "bin"
-        self.state = base / "state.json"
-        (self.repo / "tools").mkdir(parents=True)
-        self.bin.mkdir()
-        shutil.copy2(ROOT / "tools/release-certification", self.repo / "tools/release-certification")
-        subprocess.run(["git", "init", "-b", "main"], cwd=self.repo, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=self.repo, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=self.repo, check=True)
-        (self.repo / "source").write_text("release\n")
-        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
-        subprocess.run(["git", "commit", "-m", "release"], cwd=self.repo, check=True, capture_output=True)
-        subprocess.run(["git", "tag", "v1.0.0"], cwd=self.repo, check=True)
-        self.commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=self.repo, check=True, capture_output=True, text=True
-        ).stdout.strip()
-        gh = self.bin / "gh"
-        gh.write_text(
-            """#!/usr/bin/env python3
-import json, os, pathlib, sys
-state_path = pathlib.Path(os.environ['FAKE_GH_STATE'])
-state = json.loads(state_path.read_text())
-endpoint = sys.argv[-1]
-kind = 'runs' if '/workflows/ci.yml/runs?' in endpoint else ('jobs' if endpoint.endswith('/jobs?per_page=100') else 'run')
-values = state[kind]
-value = values.pop(0) if len(values) > 1 else values[0]
-state_path.write_text(json.dumps(state))
-print(json.dumps(value))
-"""
-        )
-        gh.chmod(0o755)
+        self.namespace = runpy.run_path(str(SCRIPT), run_name="release_test")
+        self.main = self.namespace["main"]
+        self.globals = self.main.__globals__
+        self.run = {"id": 42, "event": "push", "head_branch": "main", "head_sha": COMMIT,
+                    "path": ".github/workflows/ci.yml", "status": "completed",
+                    "conclusion": "success", "run_attempt": 1,
+                    "html_url": "https://example.invalid/runs/42"}
+        self.output = pathlib.Path(self.id().replace(".", "_"))
+        self.addCleanup(self.output.unlink, missing_ok=True)
 
-    def tearDown(self):
-        self.temporary.cleanup()
+    def test_repository_accepts_exact_github_remote(self):
+        for remote in ("https://github.com/owner/repo.git", "git@github.com:owner/repo.git",
+                       "ssh://git@github.com/owner/repo"):
+            with self.subTest(remote=remote), mock.patch.dict(self.globals, {
+                "run": lambda *args: remote,
+            }), mock.patch.dict(os.environ, {"GH_REPOSITORY": "", "GITHUB_REPOSITORY": ""}):
+                self.assertEqual(self.namespace["repository"](), "owner/repo")
 
-    def invoke(self, runs, run_states, jobs, creation="0.2", completion="0.2"):
-        self.state.write_text(json.dumps({"runs": runs, "run": run_states, "jobs": jobs}))
-        environment = os.environ.copy()
-        environment.update({
-            "PATH": f"{self.bin}:{environment['PATH']}",
-            "FAKE_GH_STATE": str(self.state),
-            "GH_REPOSITORY": "ChristianHerget/trackglance",
-            "RELEASE_CERTIFICATION_CREATION_TIMEOUT": creation,
-            "RELEASE_CERTIFICATION_COMPLETION_TIMEOUT": completion,
-            "RELEASE_CERTIFICATION_POLL_INTERVAL": "0.01",
-        })
-        return subprocess.run(
-            [str(self.repo / "tools/release-certification"), "v1.0.0"],
-            cwd=self.repo, env=environment, capture_output=True, text=True,
-        )
+    def test_repository_rejects_github_substring_outside_exact_host(self):
+        for remote in ("https://evil.example/github.com/owner/repo",
+                       "https://github.com.evil.example/owner/repo",
+                       "https://github.com/owner/repo/extra",
+                       "https://github.com:invalid/owner/repo",
+                       "http://github.com/owner/repo"):
+            with self.subTest(remote=remote), mock.patch.dict(self.globals, {
+                "run": lambda *args: remote,
+            }), mock.patch.dict(os.environ, {"GH_REPOSITORY": "", "GITHUB_REPOSITORY": ""}), \
+                    self.assertRaisesRegex(SystemExit, "not a GitHub repository"):
+                self.namespace["repository"]()
 
-    def run_record(self, **overrides):
-        record = {
-            "id": 42, "event": "push", "head_branch": "main", "head_sha": self.commit,
-            "status": "queued", "conclusion": None, "html_url": "https://example.invalid/run/42",
-        }
-        record.update(overrides)
-        return record
+    def invoke(self, run=None, states=None, record=None, verify_error=None, creation="0.1", completion="0.1"):
+        run = run or self.run
+        states = states or [run]
+        fake = FakeGitHub(run, states)
+        record = record or {"decision": "reuse", "source": {
+            "run_id": 7, "run_url": "https://example.invalid/runs/7"}}
+        with mock.patch.dict(self.globals, {
+            "run": lambda *args: COMMIT,
+            "repository": lambda: "ChristianHerget/trackglance",
+            "GitHub": lambda repo: fake,
+            "verify_main_record": mock.Mock(side_effect=verify_error) if verify_error else mock.Mock(return_value=record),
+        }), mock.patch.object(self.globals["sys"], "argv", [str(SCRIPT), "v1.0.0"]), \
+             mock.patch.dict(os.environ, {
+                 "GITHUB_OUTPUT": str(self.output),
+                 "RELEASE_CERTIFICATION_CREATION_TIMEOUT": creation,
+                 "RELEASE_CERTIFICATION_COMPLETION_TIMEOUT": completion,
+                 "RELEASE_CERTIFICATION_POLL_INTERVAL": "0.001",
+             }), mock.patch.object(self.globals["time"], "sleep", return_value=None):
+            self.main()
+        return self.output.read_text()
 
-    def successful_jobs(self):
-        return {"jobs": [{"name": name, "conclusion": "success"} for name in REQUIRED]}
+    def test_exact_main_certification_supplies_release_outputs(self):
+        output = self.invoke()
+        self.assertIn("run_id=42", output)
+        self.assertIn("source_run_id=7", output)
+        self.assertIn("decision=reuse", output)
 
-    def test_delayed_creation_and_pending_run_succeed(self):
-        run = self.run_record()
-        result = self.invoke(
-            [{"workflow_runs": []}, {"workflow_runs": [run]}],
-            [run, self.run_record(status="in_progress"), self.run_record(status="completed", conclusion="success")],
-            [self.successful_jobs()],
-        )
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("run 42", result.stdout)
+    def test_wrong_event_branch_and_sha_are_ignored(self):
+        for update in ({"event": "pull_request"}, {"head_branch": "feature"},
+                       {"head_sha": "0" * 40}):
+            with self.subTest(update=update), self.assertRaisesRegex(SystemExit, "no CI push run"):
+                self.invoke(run=dict(self.run, **update), creation="0")
 
-    def test_wrong_event_branch_and_sha_are_ignored_until_timeout(self):
-        wrong = [
-            self.run_record(event="pull_request"), self.run_record(head_branch="feature"),
-            self.run_record(head_sha="0" * 40),
-        ]
-        result = self.invoke([{"workflow_runs": wrong}], [self.run_record()], [self.successful_jobs()], creation="0.03")
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("no CI push run", result.stderr)
-
-    def test_missing_or_skipped_job_fails(self):
-        complete = self.run_record(status="completed", conclusion="success")
-        missing = {"jobs": [{"name": name, "conclusion": "success"} for name in REQUIRED[:-1]]}
-        result = self.invoke([{"workflow_runs": [complete]}], [complete], [missing])
-        self.assertIn("missing required jobs", result.stderr)
-        skipped = self.successful_jobs()
-        skipped["jobs"][-1]["conclusion"] = "skipped"
-        result = self.invoke([{"workflow_runs": [complete]}], [complete], [skipped])
-        self.assertIn("=skipped", result.stderr)
-
-    def test_failure_and_cancellation_fail_immediately(self):
+    def test_failed_or_cancelled_main_run_fails(self):
         for conclusion in ("failure", "cancelled"):
-            failed = self.run_record(status="completed", conclusion=conclusion)
-            result = self.invoke([{"workflow_runs": [failed]}], [failed], [self.successful_jobs()])
-            self.assertIn(f"concluded {conclusion}", result.stderr)
+            with self.subTest(conclusion=conclusion), self.assertRaisesRegex(SystemExit, conclusion):
+                self.invoke(states=[dict(self.run, conclusion=conclusion)])
 
-    def test_pending_run_times_out(self):
-        pending = self.run_record(status="in_progress")
-        result = self.invoke(
-            [{"workflow_runs": [pending]}], [pending], [self.successful_jobs()], completion="0.03"
-        )
-        self.assertIn("did not complete", result.stderr)
+    def test_missing_or_invalid_signed_record_fails(self):
+        error = self.namespace["EvidenceError"]("missing main certification record")
+        with self.assertRaisesRegex(SystemExit, "missing main certification record"):
+            self.invoke(verify_error=error)
+
+    def test_pending_main_run_times_out(self):
+        pending = dict(self.run, status="in_progress", conclusion=None)
+        with self.assertRaisesRegex(SystemExit, "did not complete"):
+            self.invoke(states=[pending], completion="0")
 
 
 if __name__ == "__main__":

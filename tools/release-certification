@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Require a successful exact-commit main-push CI run before a release build."""
+"""Require a verified main-commit CI certification before release signing."""
 
-import json
 import os
+import re
 import subprocess
 import sys
 import time
+from typing import NoReturn
+from urllib.parse import urlsplit
 
-
-REQUIRED_JOBS = {
-    "Android, Pebble, protocol, and helpers",
-    "Committed documentation",
-    "Hosted full-stack acceptance",
-}
+from ci_certification import EvidenceError, GitHub, verify_main_record
 
 
 def fail(message: str) -> "NoReturn":
@@ -26,21 +23,25 @@ def run(*arguments: str) -> str:
     return completed.stdout
 
 
-def gh_json(endpoint: str) -> dict:
-    return json.loads(run("gh", "api", "--method", "GET", endpoint))
-
-
 def repository() -> str:
     configured = os.environ.get("GH_REPOSITORY") or os.environ.get("GITHUB_REPOSITORY")
     if configured:
         return configured
     remote = run("git", "remote", "get-url", "origin").strip()
-    remote = remote.removesuffix(".git")
-    if remote.startswith("git@github.com:"):
-        return remote.split(":", 1)[1]
-    marker = "github.com/"
-    if marker in remote:
-        return remote.split(marker, 1)[1]
+    scp = re.fullmatch(r"git@github\.com:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?", remote)
+    if scp:
+        return scp.group(1)
+    try:
+        parsed = urlsplit(remote)
+        if parsed.scheme in {"https", "ssh"} and parsed.hostname == "github.com" \
+                and parsed.username == ("git" if parsed.scheme == "ssh" else None) \
+                and parsed.password is None and parsed.port is None \
+                and not parsed.query and not parsed.fragment:
+            path = parsed.path.removeprefix("/").removesuffix(".git")
+            if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", path):
+                return path
+    except ValueError:
+        pass
     fail("set GH_REPOSITORY when origin is not a GitHub repository")
 
 
@@ -50,6 +51,7 @@ def main() -> None:
     tag = sys.argv[1]
     commit = run("git", "rev-parse", f"{tag}^{{commit}}").strip()
     repo = repository()
+    gh = GitHub(repo)
     creation_timeout = float(os.environ.get("RELEASE_CERTIFICATION_CREATION_TIMEOUT", "300"))
     completion_timeout = float(os.environ.get("RELEASE_CERTIFICATION_COMPLETION_TIMEOUT", "14400"))
     poll_interval = float(os.environ.get("RELEASE_CERTIFICATION_POLL_INTERVAL", "15"))
@@ -57,17 +59,15 @@ def main() -> None:
     selected = None
 
     while selected is None:
-        payload = gh_json(
-            f"repos/{repo}/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha={commit}&per_page=100"
+        runs = gh.pages(
+            f"actions/workflows/ci.yml/runs?event=push&branch=main&head_sha={commit}",
+            "workflow_runs",
         )
-        candidates = [
-            item for item in payload.get("workflow_runs", [])
-            if item.get("event") == "push"
-            and item.get("head_branch") == "main"
-            and item.get("head_sha") == commit
-        ]
+        candidates = [item for item in runs if item.get("event") == "push"
+                      and item.get("head_branch") == "main" and item.get("head_sha") == commit
+                      and str(item.get("path", "")).startswith(".github/workflows/ci.yml")]
         if candidates:
-            selected = max(candidates, key=lambda item: (item.get("run_attempt", 0), item.get("id", 0)))
+            selected = max(candidates, key=lambda item: item["id"])
             break
         if time.monotonic() >= creation_deadline:
             fail(f"no CI push run for main at {commit} appeared within {creation_timeout:g}s")
@@ -78,23 +78,38 @@ def main() -> None:
     print(f"Certification run: {run_id} {run_url}", flush=True)
     completion_deadline = time.monotonic() + completion_timeout
     while True:
-        current = gh_json(f"repos/{repo}/actions/runs/{run_id}")
+        current = gh.json(f"actions/runs/{run_id}")
         conclusion = current.get("conclusion")
         if conclusion in {"failure", "cancelled", "timed_out", "action_required", "startup_failure"}:
             fail(f"CI run {run_id} concluded {conclusion}: {run_url}")
         if current.get("status") == "completed":
-            jobs_payload = gh_json(f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100")
-            jobs = {job.get("name"): job.get("conclusion") for job in jobs_payload.get("jobs", [])}
-            missing = sorted(REQUIRED_JOBS - jobs.keys())
-            if missing:
-                fail(f"CI run {run_id} is missing required jobs: {', '.join(missing)} ({run_url})")
-            unsuccessful = sorted(f"{name}={jobs[name]}" for name in REQUIRED_JOBS if jobs[name] != "success")
-            if unsuccessful:
-                fail(f"CI run {run_id} has unsuccessful required jobs: {', '.join(unsuccessful)} ({run_url})")
-            print(f"Release certification passed for {tag} at {commit} using run {run_id}: {run_url}")
+            if conclusion != "success":
+                fail(f"CI run {run_id} concluded {conclusion}: {run_url}")
+            if current.get("event") != "push" or current.get("head_branch") != "main" \
+                    or current.get("head_sha") != commit:
+                fail(f"CI run {run_id} identity changed: {run_url}")
+            latest_runs = gh.pages(
+                f"actions/workflows/ci.yml/runs?event=push&branch=main&head_sha={commit}",
+                "workflow_runs",
+            )
+            latest = [item for item in latest_runs if item.get("event") == "push"
+                      and item.get("head_branch") == "main" and item.get("head_sha") == commit
+                      and str(item.get("path", "")).startswith(".github/workflows/ci.yml")]
+            if not latest or max(item["id"] for item in latest) != run_id:
+                fail(f"CI run {run_id} was superseded by a newer main push run: {run_url}")
+            try:
+                record = verify_main_record(gh, commit, current)
+            except (EvidenceError, KeyError, TypeError, ValueError) as error:
+                fail(f"CI run {run_id} has invalid certification: {error} ({run_url})")
+            print(f"Release certification passed for {tag} at {commit} "
+                  f"using {record['decision']} in run {run_id}: {run_url}")
             if os.environ.get("GITHUB_OUTPUT"):
+                source = record.get("source") or {}
                 with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-                    output.write(f"run_id={run_id}\nrun_url={run_url}\nsource_commit={commit}\n")
+                    output.write(f"run_id={run_id}\nrun_url={run_url}\nsource_commit={commit}\n"
+                                 f"source_run_id={source.get('run_id', '')}\n"
+                                 f"source_run_url={source.get('run_url', '')}\n"
+                                 f"decision={record['decision']}\n")
             return
         if time.monotonic() >= completion_deadline:
             fail(f"CI run {run_id} did not complete within {completion_timeout:g}s: {run_url}")
