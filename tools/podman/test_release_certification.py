@@ -38,6 +38,26 @@ class ReleaseCertificationTest(unittest.TestCase):
         self.output = pathlib.Path(self.id().replace(".", "_"))
         self.addCleanup(self.output.unlink, missing_ok=True)
 
+    def test_repository_accepts_exact_github_remote(self):
+        for remote in ("https://github.com/owner/repo.git", "git@github.com:owner/repo.git",
+                       "ssh://git@github.com/owner/repo"):
+            with self.subTest(remote=remote), mock.patch.dict(self.globals, {
+                "run": lambda *args: remote,
+            }), mock.patch.dict(os.environ, {"GH_REPOSITORY": "", "GITHUB_REPOSITORY": ""}):
+                self.assertEqual(self.namespace["repository"](), "owner/repo")
+
+    def test_repository_rejects_github_substring_outside_exact_host(self):
+        for remote in ("https://evil.example/github.com/owner/repo",
+                       "https://github.com.evil.example/owner/repo",
+                       "https://github.com/owner/repo/extra",
+                       "https://github.com:invalid/owner/repo",
+                       "http://github.com/owner/repo"):
+            with self.subTest(remote=remote), mock.patch.dict(self.globals, {
+                "run": lambda *args: remote,
+            }), mock.patch.dict(os.environ, {"GH_REPOSITORY": "", "GITHUB_REPOSITORY": ""}), \
+                    self.assertRaisesRegex(SystemExit, "not a GitHub repository"):
+                self.namespace["repository"]()
+
     def invoke(self, run=None, states=None, record=None, verify_error=None, creation="0.1", completion="0.1"):
         run = run or self.run
         states = states or [run]

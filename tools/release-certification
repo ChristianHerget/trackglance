@@ -2,10 +2,12 @@
 """Require a verified main-commit CI certification before release signing."""
 
 import os
+import re
 import subprocess
 import sys
 import time
 from typing import NoReturn
+from urllib.parse import urlsplit
 
 from ci_certification import EvidenceError, GitHub, verify_main_record
 
@@ -25,11 +27,21 @@ def repository() -> str:
     configured = os.environ.get("GH_REPOSITORY") or os.environ.get("GITHUB_REPOSITORY")
     if configured:
         return configured
-    remote = run("git", "remote", "get-url", "origin").strip().removesuffix(".git")
-    if remote.startswith("git@github.com:"):
-        return remote.split(":", 1)[1]
-    if "github.com/" in remote:
-        return remote.split("github.com/", 1)[1]
+    remote = run("git", "remote", "get-url", "origin").strip()
+    scp = re.fullmatch(r"git@github\.com:([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?", remote)
+    if scp:
+        return scp.group(1)
+    try:
+        parsed = urlsplit(remote)
+        if parsed.scheme in {"https", "ssh"} and parsed.hostname == "github.com" \
+                and parsed.username == ("git" if parsed.scheme == "ssh" else None) \
+                and parsed.password is None and parsed.port is None \
+                and not parsed.query and not parsed.fragment:
+            path = parsed.path.removeprefix("/").removesuffix(".git")
+            if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", path):
+                return path
+    except ValueError:
+        pass
     fail("set GH_REPOSITORY when origin is not a GitHub repository")
 
 
