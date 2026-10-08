@@ -41,11 +41,12 @@ analyses.
 
 ## Release environment prerequisites
 
-Every push to `main` runs the complete `CI` suite on the exact squash commit. Before tagging,
-confirm its three jobs succeeded, fetch `main`, and create `vMAJOR.MINOR.PATCH` at that exact HEAD.
-The tag-triggered draft job waits for that exact-SHA certification before entering the protected
-GitHub `release` environment. Confirm that the environment contains the signing secrets and a working
-`VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
+Every push to `main` produces a signed certification for the exact squash commit. It either
+verifies matching, fresh, complete PR evidence or runs the full static, documentation, and hosted
+acceptance suite. Before tagging, confirm `Main commit certification` succeeded, fetch `main`,
+and create `vMAJOR.MINOR.PATCH` at that exact HEAD. The tag-triggered draft job verifies the
+certification record before entering the protected GitHub `release` environment. Confirm that
+the environment contains the signing secrets and a working `VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
 argument or log:
 
 ```sh

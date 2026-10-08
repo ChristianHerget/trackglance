@@ -16,18 +16,22 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       actions: read
+      attestations: read
       contents: read
     outputs:
       certification-run-id: ${{ steps.certification.outputs.run_id }}
       certification-run-url: ${{ steps.certification.outputs.run_url }}
       source-commit: ${{ steps.certification.outputs.source_commit }}
+      source-run-id: ${{ steps.certification.outputs.source_run_id }}
+      source-run-url: ${{ steps.certification.outputs.source_run_url }}
+      certification-decision: ${{ steps.certification.outputs.decision }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Require tag at current main HEAD
         run: tools/release-preflight "${GITHUB_REF_NAME}"
-      - name: Require exact-SHA main-push certification
+      - name: Require signed exact-SHA main certification
         id: certification
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,16 +151,27 @@ jobs:
           CERTIFICATION_RUN_ID: ${{ needs.preflight.outputs.certification-run-id }}
           CERTIFICATION_RUN_URL: ${{ needs.preflight.outputs.certification-run-url }}
           SOURCE_COMMIT: ${{ needs.preflight.outputs.source-commit }}
+          SOURCE_RUN_ID: ${{ needs.preflight.outputs.source-run-id }}
+          SOURCE_RUN_URL: ${{ needs.preflight.outputs.source-run-url }}
+          CERTIFICATION_DECISION: ${{ needs.preflight.outputs.certification-decision }}
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > build/releases.json
           tools/release-notes "${GITHUB_REF_NAME#v}" \
             --releases-json build/releases.json > build/release-notes.md
+          pr_evidence=
+          if [[ -n "$SOURCE_RUN_ID" ]]; then
+            pr_evidence="PR evidence: [$SOURCE_RUN_ID]($SOURCE_RUN_URL)"
+          fi
           cat >> build/release-notes.md <<EOF
 
           Source commit: \`$SOURCE_COMMIT\`
 
           Certification: [$CERTIFICATION_RUN_ID]($CERTIFICATION_RUN_URL)
+
+          Certification decision: \`$CERTIFICATION_DECISION\`
+
+          $pr_evidence
 
           Draft build: [$GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
 

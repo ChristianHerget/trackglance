@@ -114,11 +114,12 @@ not a release-blocking defect.
 
 ## 11. Release certification and artifact-only builds
 
-**Decision:** A distributable build is authorized by the successful `CI` push workflow for the
-exact squash-merged commit, rather than by repeating general tests in the signing job. Every push
-to `main` runs static/release checks, committed-documentation validation, and hosted Android,
-Emery, and Gabbro acceptance. A release tag must equal the current `main` HEAD both before access
-to signing secrets and immediately before the draft is changed.
+**Decision:** A distributable build is authorized by signed certification from the successful
+`CI` push workflow for the exact squash-merged commit. The main workflow reuses a fresh, verified,
+complete same-repository PR run when its tested merge tree and effective inputs match. Otherwise it
+runs static/release checks, committed-documentation validation, and hosted Android, Emery, and
+Gabbro acceptance. The protected PR checks always run. A release tag must equal the current `main`
+HEAD both before access to signing secrets and immediately before the draft is changed.
 
 The protected tag build verifies the signed and attested, digest-pinned acceptance runner and uses
 it only as an immutable build toolchain. It freshly builds and validates the signed APK, generated
@@ -140,7 +141,9 @@ protected `release` environment, then downloads and verifies everything again be
 It does not require the older reviewed tag to remain the current `main` HEAD. Published releases
 are not mutated; a correction requires a new patch release.
 
-**Rationale:** This binds artifacts to tested post-merge source while keeping signing access short
+**Rationale:** This binds artifacts to the certified main commit while avoiding duplicate acceptance
+for an unchanged, recently tested tree. The signed main record names the source run and attempt,
+checks, workflow and toolchain inputs, and fallback reason. It keeps signing access short
 and compilation-only. A durable documentation asset makes the deployed manual independently
 reviewable, and explicit publication removes the fragile automatic publish chain without weakening
 artifact identity or human approval.

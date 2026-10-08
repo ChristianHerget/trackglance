@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Collect tested checkout evidence and certify main CI decisions."""
+
+from ci_certification import main
+
+
+if __name__ == "__main__":
+    main()
