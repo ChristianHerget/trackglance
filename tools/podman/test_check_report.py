@@ -329,6 +329,10 @@ fi
                                      74 if capture else 0)
                     test_stage = "android-instrumentation" if platform == "android" else f"{platform}-acceptance"
                     self.assertEqual(statuses[test_stage], original)
+                    if platform != "android":
+                        self.assertEqual(statuses[f"{platform}-startup"], original)
+                        if original:
+                            self.assertNotIn(f"[pass] {platform}-startup".encode(), result.stdout)
                     if capture and not original:
                         self.assertIn(f"[FAIL 74] {platform}-diagnostics-and-cleanup".encode(), result.stdout)
                         self.assertIn(b"capture-detail", result.stdout)

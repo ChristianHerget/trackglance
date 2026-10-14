@@ -1324,9 +1324,16 @@ start_e2e_platform() {
 
 run_e2e_phase() {
   local platform=$1 artifacts=$2 phase=$3
+  local status restore_errexit=false
+  case "$-" in *e*) restore_errexit=true ;; esac
   check_stage "${platform}-${phase}"
+  set +e
   runner_in_pod "$artifacts" env PEBBLE_PLATFORM="$platform" \
     bash /workspace/tools/podman/e2e-stage.sh "$phase"
+  status=$?
+  check_result "$status"
+  if [[ "$restore_errexit" == true ]]; then set -e; fi
+  return "$status"
 }
 
 run_e2e_platform() {
@@ -1341,10 +1348,10 @@ run_e2e_platform() {
     fi
   )
   local status=$?
-  local watch_stage=acceptance
-  [[ "$ACCEPTANCE_STARTUP_ONLY" != true ]] || watch_stage=startup
-  check_stage "${platform}-${watch_stage}"
-  check_result "$status"
+  if [[ "$ACCEPTANCE_STARTUP_ONLY" != true ]]; then
+    check_stage "${platform}-acceptance"
+    check_result "$status"
+  fi
   finish_e2e_platform "$platform" "$artifacts" "$status"
 }
 

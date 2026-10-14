@@ -14,6 +14,7 @@ source "$1"
 tick=0
 page=bridge
 opens=0
+permission_index=0
 declare -A missed=()
 sleep() {
   tick=$((tick + 1))
@@ -41,7 +42,7 @@ adb_device_timeout() {
   elif [[ "$*" == *'am start'* ]]; then
     opens=$((opens + 1)); page=apps
     if [[ "$SCENARIO" == onboarding && "$opens" == 1 ]]; then page=intro; fi
-    if [[ "$SCENARIO" == call-log || "$SCENARIO" == vanished-call-log || "$SCENARIO" == unrelated-permission ]]; then page=permission; fi
+    if [[ "$SCENARIO" == call-log || "$SCENARIO" == permission-sequence || "$SCENARIO" == vanished-call-log || "$SCENARIO" == unrelated-permission ]]; then page=permission; fi
     echo "launch:$tick" >> "$CALLS"
   elif [[ "$*" == *'input swipe'* ]]; then
     if [[ "$page" == carousel ]]; then page=configure; else page=finish; fi
@@ -62,7 +63,8 @@ dump_ui() {
       if [[ "$SCENARIO" == unrelated-permission ]]; then
         echo '<hierarchy><node text="Allow another app to access your camera?"/><node text="Don’t allow"/></hierarchy>'
       else
-        echo '<hierarchy><node text="Allow Pebble to access your phone call logs?"/><node text="Don’t allow"/></hierarchy>'
+        prompts=('Allow Pebble to access your phone call logs?' 'Allow Pebble to access your calendar?' 'Allow Pebble to access your contacts?' 'Allow Pebble to make and manage phone calls?')
+        printf '<hierarchy><node text="%s"/><node text="Don’t allow"/></hierarchy>\n' "${prompts[$permission_index]}"
       fi ;;
     intro) echo '<node text="Get Started"/>' ;;
     choice) echo '<hierarchy><node text="I have a:"/><node text="Watch"/></hierarchy>' ;;
@@ -83,6 +85,10 @@ tap_text() {
   case "$1" in
     'Don’t allow')
       page=apps
+      if [[ "$SCENARIO" == permission-sequence ]]; then
+        permission_index=$((permission_index + 1))
+        if (( permission_index < 4 )); then page=permission; fi
+      fi
       if [[ "$SCENARIO" == vanished-call-log ]]; then return 1; fi ;;
     'Get Started') page=choice ;;
     Watch) page=carousel ;;
@@ -125,13 +131,21 @@ fi
     def test_optional_call_log_prompt_is_denied_before_navigation(self):
         result, trace, calls = self.navigate('call-log')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('optional-call-log-denied', trace)
+        self.assertIn('optional-permission-denied', trace)
         self.assertEqual(calls.count('tap:Don’t allow'), 1)
 
     def test_disappearing_optional_prompt_is_rechecked(self):
         result, trace, _ = self.navigate('vanished-call-log')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('optional-call-log-disappeared', trace)
+        self.assertIn('optional-permission-disappeared', trace)
+
+    def test_all_pinned_optional_requests_are_declined_in_one_onboarding(self):
+        result, trace, calls = self.navigate('permission-sequence')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls.count('tap:Don’t allow'), 4)
+        for feature in ('phone call logs', 'calendar', 'contacts', 'make and manage phone calls'):
+            self.assertIn(feature, trace)
+        self.assertIn('settings-webview-passed', trace)
 
     def test_unrelated_permission_prompt_is_never_answered(self):
         result, trace, calls = self.navigate('unrelated-permission')

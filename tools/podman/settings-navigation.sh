@@ -7,7 +7,7 @@ settings_checkpoint() {
 open_trackglance_settings() {
   # Cold first-run onboarding and WebView startup can consume more than two minutes.
   # This is a deadline, not a delay: return as soon as the settings marker is observed.
-  local deadline=$((SECONDS + ${1:-180})) foreground='' relay='' bridge='' control
+  local deadline=$((SECONDS + ${1:-180})) foreground='' relay='' bridge='' control optional_prompt
   local launched=0 last_launch=0 matched=0 next_control=Apps
   local -a controls=()
   settings_checkpoint begin
@@ -26,14 +26,23 @@ open_trackglance_settings() {
     if [[ "$foreground" == *' com.google.android.permissioncontroller/'* \
       || "$foreground" == *' com.android.permissioncontroller/'* ]]; then
       settings_checkpoint permission-controller
-      # Call-log access belongs to the Pebble App's optional phone features, not this suite.
-      # Recheck this exact prompt in tap_text's fresh dump so a replaced dialog is not answered.
-      if dump_ui && grep -Fq 'text="Allow Pebble to access your phone call logs?"' /tmp/trackglance-window.xml; then
-        if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs?'; then
-          settings_checkpoint optional-call-log-denied
-        else
-          settings_checkpoint optional-call-log-disappeared
-        fi
+      # These are the pinned Pebble App's optional after-connection permissions.
+      # Recheck the exact prompt in tap_text's fresh dump before declining it.
+      if dump_ui; then
+        for optional_prompt in \
+          'Allow Pebble to access your phone call logs?' \
+          'Allow Pebble to access your calendar?' \
+          'Allow Pebble to access your contacts?' \
+          'Allow Pebble to make and manage phone calls?'; do
+          if grep -Fq "text=\"$optional_prompt\"" /tmp/trackglance-window.xml; then
+            if tap_text "Don’t allow" 1 exact "$optional_prompt"; then
+              settings_checkpoint "optional-permission-denied $optional_prompt"
+            else
+              settings_checkpoint "optional-permission-disappeared $optional_prompt"
+            fi
+            break
+          fi
+        done
       fi
       sleep 1
       continue
