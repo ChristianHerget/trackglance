@@ -4,7 +4,7 @@ from script_test_support import PODMAN_TEST
 
 
 class AcceptanceComponentsTest(unittest.TestCase):
-    def run_suite(self, *options, failure=''):
+    def run_suite(self, *options, failure='', startup=False):
         script = r'''
 source "$1"
 shift
@@ -13,6 +13,7 @@ check_stage() { :; }
 check_result() { :; }
 parse_locus_apk_options() { LOCUS_INPUT_DIR=/private; }
 doctor_acceptance() { echo warm; }
+select_warm_acceptance_images() { :; }
 report_acceptance_resources() { :; }
 assert_no_active_acceptance_runtime() { :; }
 run_android_tests() { echo android; [[ "$FAILURE" != android ]]; }
@@ -22,11 +23,31 @@ build_acceptance_all() { echo build; }
 prepare_published_acceptance_images() { echo published; }
 bootstrap() { echo bootstrap; }
 stage_acceptance_diagnostics() { echo diagnostics; }
-acceptance_suite "$@"
+if [[ "$STARTUP" == true ]]; then
+  ACCEPTANCE_STARTUP_ONLY=true
+  startup_suite "$@"
+else
+  acceptance_suite "$@"
+fi
 '''
         import os
         return subprocess.run(['bash', '-euo', 'pipefail', '-c', script, 'test', str(PODMAN_TEST), *options],
-                              env={**os.environ, 'FAILURE': failure}, capture_output=True, text=True, timeout=10)
+                              env={**os.environ, 'FAILURE': failure, 'STARTUP': str(startup).lower()},
+                              capture_output=True, text=True, timeout=10)
+
+    def test_startup_all_selects_watches_without_android_or_full_acceptance(self):
+        result = self.run_suite(startup=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('android', result.stdout)
+        self.assertNotIn('plan:emery-acceptance', result.stdout)
+        self.assertIn('plan:emery-startup-pass-1', result.stdout)
+        self.assertIn('plan:gabbro-startup-pass-1', result.stdout)
+
+    def test_startup_rejects_android_and_repeated_passes_before_provisioning(self):
+        for options in (('--component', 'android'), ('--watch-passes', '2')):
+            result = self.run_suite(*options, startup=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('warm', result.stdout)
 
     def test_all_component_values_and_default_select_only_expected_plans(self):
         for component in (None, 'all', 'android', 'emery', 'gabbro'):

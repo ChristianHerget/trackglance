@@ -168,5 +168,15 @@ class AcceptanceComponentsPolicyTest(unittest.TestCase):
             self.assertIn("acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-", job)
             self.assertIn("retention-days: 7", job)
             self.assertIn("if: failure()", job)
-            self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', job)
-            self.assertIn('"$GITHUB_STEP_SUMMARY"', job)
+        self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', android)
+        phase_helper = (ROOT / 'tools/ci-watch-phase').read_text()
+        self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', phase_helper)
+        self.assertIn('"$GITHUB_STEP_SUMMARY"', phase_helper)
+        for mode in ('source', 'published'):
+            self.assertIn(f'tools/ci-watch-phase prepare {mode}', watch)
+            self.assertIn(f'Close {mode} watch session', watch)
+            for number in (1, 2):
+                start = f'tools/ci-watch-phase startup {mode} {number}'
+                behavior = f'tools/ci-watch-phase behavior {mode} {number}'
+                self.assertLess(watch.index(start), watch.index(behavior))
+        self.assertNotIn('tools/podman-test acceptance-suite', watch)

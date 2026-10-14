@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Read and validate local acceptance metadata; never execute its contents."""
+
+import json
+from pathlib import Path
+import re
+import sys
+
+
+def require(condition, message="session identity or phase order differs"):
+    if not condition:
+        raise ValueError(message)
+
+
+def save(path, state):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, sort_keys=True) + "\n")
+    temporary.replace(path)
+
+
+def main():
+    operation, filename, *args = sys.argv[1:]
+    path = Path(filename)
+    if operation == "create":
+        keys = ("root", "commit", "inputs", "engine", "component", "passes", "run", "build_image",
+                "emulator_image", "fixture", "provisioning", "started", "build_id", "emulator_id")
+        state = dict(zip(keys, args, strict=True))
+        state.update(schema=1, passes=int(state["passes"]), started=int(state["started"]),
+                     completed=[], runtime=None, closed=False)
+        save(path, state)
+        return
+    state = json.loads(path.read_text())
+    if operation == "read":
+        value = state
+        for part in args[0].split("."):
+            value = value[part]
+        if len(args) > 1 and args[1] == "lines":
+            print("\n".join(value))
+        else:
+            print(value if isinstance(value, str) else json.dumps(value))
+    elif operation == "patch":
+        for key, value in zip(args[::2], args[1::2], strict=True):
+            state[key] = json.loads(value)
+        save(path, state)
+    elif operation == "runtime":
+        pod, android, data, watch, runtime, artifacts = args
+        state["runtime"] = dict(pod=pod, android=android, data=data, watch=watch, runtime=runtime, artifacts=artifacts,
+                                containers=[android, pod + "-watch"] if state["engine"] == "docker" else [],
+                                ids=[entry["Id"] for entry in json.load(sys.stdin)])
+        save(path, state)
+    elif operation == "validate":
+        root, engine, build, emulator, published_build, published_emulator = args
+        require(state['schema'] == 1 and state['root'] == root and (state['engine'] == engine))
+        require(state['component'] in ('emery', 'gabbro') and state['passes'] in (1, 2))
+        require(re.fullmatch('\\d{8}T\\d{6}Z-session-\\d+', state['run']))
+        require((state['build_image'], state['emulator_image']) in ((build, emulator), (published_build, published_emulator)))
+        require(state['completed'] == list(range(1, len(state['completed']) + 1)))
+        require(len(state['completed']) <= state['passes'])
+        runtime = state["runtime"]
+        if runtime:
+            platform, number = state["active_platform"], state["active_pass"]
+            require(platform in ('emery', 'gabbro') and number in (1, 2))
+            name = "trackglance-" + state["run"] + "-" + platform
+            expected = dict(pod=name, android=name + "-android", data=name + "-android", watch=name + "-watch",
+                            runtime=name + "-runtime", artifacts=f"{root}/build/podman/{state['run']}-{platform}-pass-{number}",
+                            containers=[name + "-android", name + "-watch"] if engine == "docker" else [])
+            require(all((runtime[key] == value for key, value in expected.items())))
+            require(len(runtime['ids']) == 2 and all((re.fullmatch('[a-f0-9]{64}', value) for value in runtime['ids'])))
+    elif operation == "compare-ids":
+        require([entry['Id'] for entry in json.load(sys.stdin)] == state['runtime']['ids'], 'containers were replaced')
+    elif operation == "complete":
+        number = int(args[0])
+        require(state['startup_complete'] and state['active_pass'] == number)
+        require(state['completed'] == list(range(1, number)))
+        state["completed"].append(number)
+        state.update(runtime=None, startup_complete=False)
+        save(path, state)
+    elif operation == "receipt":
+        number, mode, destination = args
+        require(int(number) in state['completed'])
+        target = Path(destination)
+        receipts = json.loads(target.read_text()) if target.exists() else []
+        receipts.append(dict(provisioning=mode, pass_=int(number), phases=["startup", "behavior"],
+                             commit=state["commit"], inputs=state["inputs"]))
+        receipts[-1]["pass"] = receipts[-1].pop("pass_")
+        save(target, receipts)
+    else:
+        raise ValueError(f"Unknown state operation: {operation}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AssertionError) as error:
+        print(f"Invalid acceptance session: {error}", file=sys.stderr)
+        sys.exit(1)

@@ -70,7 +70,9 @@ wait_for_android() {
     # readiness polling so a runner that races the emulator proxy does not keep an
     # unregistered TCP serial for the entire timeout.
     timeout 10 adb connect "$ADB_SERIAL" >/dev/null 2>&1 || true
-    if [[ "$(adb_device_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+    if [[ "$(adb_device_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] \
+      && adb_device_timeout 5 shell 'test -d /sdcard && test -w /sdcard && touch /sdcard/.trackglance-ready && rm /sdcard/.trackglance-ready' >/dev/null 2>&1 \
+      && (( SECONDS < deadline )); then
       adb_device shell settings put global window_animation_scale 0
       adb_device shell settings put global transition_animation_scale 0
       adb_device shell settings put global animator_duration_scale 0
@@ -83,7 +85,8 @@ wait_for_android() {
     fi
     sleep 1
   done
-  echo "Android did not finish booting within ${1:-180} seconds" >&2
+  echo "Android boot/storage readiness expired within ${1:-180} seconds" >&2
+  adb_device_timeout 5 shell 'getprop sys.boot_completed; ls -ld /sdcard; dumpsys mount' >&2 || true
   return 1
 }
 
@@ -226,6 +229,25 @@ relayctl() {
   python3 /workspace/tools/podman/relayctl.py --socket /run/trackglance/relay.sock "$@"
 }
 
+wait_for_relay_network() {
+  local deadline=$((SECONDS + ${1:-45})) routes='' relay=''
+  while (( SECONDS < deadline )); do
+    routes=$(adb_device_timeout 5 shell 'ip -4 route show table all' 2>&1 || true)
+    relay=$(relayctl status 2>&1 || true)
+    if (( SECONDS < deadline )) \
+      && grep -Eq '^10\.0\.2\.0/24 .*dev ' <<< "$routes" \
+      && grep -Eq '^default via 10\.0\.2\.2 .*dev ' <<< "$routes" \
+      && python3 -c 'import json,sys; s=json.load(sys.stdin); sys.exit(type(s.get("session_id")) is not int)' \
+        <<< "$relay" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "Relay network readiness expired; last Android routes: $routes; relay: $relay" >&2
+  adb_device_timeout 5 shell dumpsys connectivity >&2 || true
+  return 1
+}
+
 watch_button() {
   relayctl button "$1" >/dev/null
   # The relay can inject consecutive presses much faster than PebbleOS can apply menu-window
@@ -252,8 +274,15 @@ dump_ui() {
   rm -f /tmp/trackglance-window.xml
   adb_device_timeout 15 shell \
     'rm -f /sdcard/trackglance-window.xml && uiautomator dump /sdcard/trackglance-window.xml' \
-    >/dev/null
-  adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null
+    >/dev/null || return 1
+  if ! adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null; then
+    rm -f /tmp/trackglance-window.xml
+    return 1
+  fi
+  if ! python3 -c 'import sys,xml.etree.ElementTree as E; sys.exit(E.parse("/tmp/trackglance-window.xml").getroot().tag != "hierarchy")' 2>/dev/null; then
+    rm -f /tmp/trackglance-window.xml
+    return 1
+  fi
 }
 
 tap_text() {

@@ -33,6 +33,8 @@ adb_device_timeout() {
   if [[ "$*" == *'dumpsys activity'* ]]; then
     if [[ "$page" == bridge || ( "$SCENARIO" == drift && "$tick" == 2 ) ]]; then
       echo 'topResumedActivity=ActivityRecord{ app.trackglance.bridge/MainActivity}'
+    elif [[ "$SCENARIO" == permission && "$tick" == 2 ]]; then
+      echo 'topResumedActivity=ActivityRecord{ com.google.android.permissioncontroller/GrantPermissionsActivity}'
     else
       echo 'topResumedActivity=ActivityRecord{ coredevices.coreapp/MainActivity}'
     fi
@@ -48,6 +50,8 @@ adb_device_timeout() {
   fi
 }
 dump_ui() {
+  if [[ "$SCENARIO" == deadline && "$page" == settings ]]; then SECONDS=$((SECONDS + 30)); fi
+  if [[ "$SCENARIO" == stale && "$tick" -lt 3 ]]; then return 1; fi
   if [[ "$SCENARIO" == failure ]]; then
     echo '<hierarchy><node text="Unrelated control"/></hierarchy>' > /tmp/trackglance-window.xml
     return
@@ -101,6 +105,22 @@ fi
         self.assertIn('bridge=false', trace)
         self.assertIn('launch:3', calls)
         self.assertIn('settings-webview-passed', trace)
+
+    def test_permission_controller_does_not_trigger_repeated_deep_links(self):
+        result, trace, calls = self.navigate('permission')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('permission-controller', trace)
+        self.assertEqual(calls.count('launch:'), 1)
+
+    def test_failed_dumps_are_recovered_before_settings_is_verified(self):
+        result, trace, _ = self.navigate('stale')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('settings-webview-passed', trace)
+
+    def test_marker_returned_after_deadline_is_rejected(self):
+        result, trace, _ = self.navigate('deadline')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('settings-webview-passed', trace)
 
     def test_cold_navigation_can_finish_after_two_minutes_but_respects_an_explicit_limit(self):
         result, trace, _ = self.navigate('cold', timeout="")

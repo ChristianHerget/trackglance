@@ -11,6 +11,9 @@ pbw=/workspace/watchapp/build/watchapp.pbw
 bridge_activity=app.trackglance.bridge/io.github.christianherget.trackglance.bridge.MainActivity
 test -s "$bridge_apk"
 test -s "$pbw"
+phase=${1:-full}
+case "$phase" in full|startup|behavior) ;; *) echo "Unknown watch phase: $phase" >&2; exit 2 ;; esac
+phase_state=/artifacts/watch-startup.json
 
 capture_artifacts() {
   local original_status=$? retention_status=0
@@ -25,6 +28,8 @@ capture_artifacts() {
   exit "$original_status"
 }
 trap capture_artifacts EXIT
+
+if [[ "$phase" != behavior ]]; then
 
 # Settings/onboarding does not need GPS. Enable it in run_step_acceptance only after
 # Locus returns to the foreground for recording, avoiding the API 34 idle-map GNSS hang.
@@ -45,11 +50,7 @@ wait_status bridge_version "$RELEASE_ANDROID_VERSION" 15
 wait_status bridge_version_code "$RELEASE_ANDROID_CODE" 15
 wait_status protocol_version "$RELEASE_PROTOCOL_VERSION" 15
 
-relay_deadline=$((SECONDS + 45))
-until relayctl status >/dev/null 2>&1; do
-  (( SECONDS < relay_deadline )) || { echo "Pebble QEMU relay did not become ready" >&2; exit 1; }
-  sleep 0.5
-done
+wait_for_relay_network 45
 
 adb_device shell am broadcast \
   -a coredevices.coreapp.ADD_QEMU_WATCH \
@@ -84,6 +85,34 @@ watch_screenshot "${PEBBLE_PLATFORM}-dashboard"
 open_trackglance_settings
 cp /tmp/trackglance-window.xml "/artifacts/${PEBBLE_PLATFORM}-settings.xml"
 android_screenshot "${PEBBLE_PLATFORM}-settings"
+wait_status recording_state STOPPED 15
+observed_system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+if [[ "$observed_system_server_pid" != "$system_server_pid" ]]; then
+  echo "Android system_server changed during startup: expected $system_server_pid, observed $observed_system_server_pid" >&2
+  exit 1
+fi
+python3 /workspace/tools/podman/watch-phase-state.py write "$phase_state" \
+  "$PEBBLE_PLATFORM" "$system_server_pid" "$recording_profile"
+if [[ "$phase" == startup ]]; then
+  echo "$PEBBLE_PLATFORM startup passed; recording and supervision have not run"
+  trap - EXIT
+  exit 0
+fi
+else
+  mapfile -d '' -t startup_values < <(python3 /workspace/tools/podman/watch-phase-state.py read \
+    "$phase_state" "$PEBBLE_PLATFORM")
+  [[ ${#startup_values[@]} == 2 ]] || { echo "Missing valid startup state" >&2; exit 1; }
+  system_server_pid=${startup_values[0]}
+  recording_profile=${startup_values[1]}
+  observed_system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
+  if [[ "$observed_system_server_pid" != "$system_server_pid" ]]; then
+    echo "Android system_server changed before behavior: expected $system_server_pid, observed $observed_system_server_pid" >&2
+    exit 1
+  fi
+  wait_status recording_state STOPPED 15
+  wait_status watch_connected true 15
+  open_trackglance_settings
+fi
 
 tap_text "$recording_profile" 30
 tap_text "Use watch steps for this activity" 30

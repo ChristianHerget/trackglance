@@ -239,6 +239,10 @@ class DeviceReadinessTest(unittest.TestCase):
                     if [ "$1" = -s ] && [ "$3" = shell ] && [ "$4" = settings ]; then
                       exit 0
                     fi
+                    if [ "$1" = -s ] && [ "$3" = shell ] && [ "$4" != getprop ]; then
+                      [ -f "$ADB_STATE" ]
+                      exit $?
+                    fi
                     if [ "$1" = -s ] && [ "$3" = shell ] && { [ "$4" = appops ] || [ "$4" = cmd ]; }; then
                       exit 0
                     fi

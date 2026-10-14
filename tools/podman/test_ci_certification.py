@@ -63,6 +63,9 @@ class FakeGitHub:
                   "watch_passes": "1", "acceptance_provisioning": "published",
                   "runner": {"image_os": "ubuntu24", "image_version": "20261001.1", "docker_version": "28.0"},
                   "finalized": True, "tracked_changes": [], "observed_lock_sha256": "0" * 64}
+        if component in {"emery", "gabbro"}:
+            record["watch_completion"] = [{"provisioning": "published", "pass": 1,
+                                           "phases": ["startup", "behavior"], "commit": MERGE, "inputs": "test"}]
         record.update(changes)
         name = f"ci-evidence-{component}-99-1"
         item = next((entry for entry in self.artifacts if entry["name"] == name), None)
@@ -90,6 +93,34 @@ class FakeGitHub:
 
 
 class CaptureEvidenceTest(unittest.TestCase):
+    def test_watch_finalization_requires_all_selected_behavior_receipts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            directory = root / "build/ci-evidence"
+            directory.mkdir(parents=True)
+            record = {"component": "emery", "checkout_sha": MERGE, "checkout_tree": TREE,
+                      "finalized": False, "watch_passes": "2", "acceptance_provisioning": "compare"}
+            receipt = {"provisioning": "source", "pass": 1, "phases": ["startup", "behavior"],
+                       "commit": MERGE, "inputs": "fingerprint"}
+            target = directory / "emery.json"
+            proof = directory / "watch-emery-completion.json"
+            with mock.patch.object(ci, "ROOT", root), \
+                 mock.patch.object(ci, "current_checkout", return_value=(MERGE, TREE)), \
+                 mock.patch.object(ci, "git", return_value=""), \
+                 mock.patch.object(ci, "sha256", return_value="lock"), \
+                 mock.patch.object(ci, "command", return_value="fingerprint"):
+                target.write_text(json.dumps(record))
+                with self.assertRaisesRegex(ci.EvidenceError, "no completed behavior receipts"):
+                    ci.finalize("emery")
+                proof.write_text(json.dumps([receipt]))
+                with self.assertRaisesRegex(ci.EvidenceError, "incomplete or inputs changed"):
+                    ci.finalize("emery")
+                expected = [{**receipt, "provisioning": mode, "pass": number}
+                            for mode in ("source", "published") for number in (1, 2)]
+                proof.write_text(json.dumps(expected))
+                ci.finalize("emery")
+                self.assertEqual(json.loads(target.read_text())["watch_completion"], expected)
+
     def test_capture_and_finalize_record_actual_checkout_and_post_build_lock(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -119,6 +150,12 @@ class CaptureEvidenceTest(unittest.TestCase):
 
 
 class ReusePolicyTest(unittest.TestCase):
+    def test_startup_only_results_cannot_certify_a_watch(self):
+        for completion in ([], [{"provisioning": "published", "pass": 1, "phases": ["startup"], "commit": MERGE}]):
+            self.gh.set_record("emery", watch_completion=completion)
+            with self.assertRaisesRegex(ci.EvidenceError, "lacks full startup and behavior"):
+                self.assess()
+
     def setUp(self):
         self.gh = FakeGitHub()
         patches = [

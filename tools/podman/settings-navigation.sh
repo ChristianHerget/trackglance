@@ -23,6 +23,12 @@ open_trackglance_settings() {
       sleep 1
       continue
     fi
+    if [[ "$foreground" == *' com.google.android.permissioncontroller/'* \
+      || "$foreground" == *' com.android.permissioncontroller/'* ]]; then
+      settings_checkpoint permission-controller
+      sleep 1
+      continue
+    fi
     if [[ "$foreground" != *' coredevices.coreapp/'* ]] || (( ! launched )); then
       adb_device_timeout 10 shell am start -W -a android.intent.action.VIEW \
         -d pebble://navbar/apps -n coredevices.coreapp/.MainActivity >/dev/null || true
@@ -36,7 +42,7 @@ open_trackglance_settings() {
     # Never interpret a stale dump as a newly rendered WebView.
     rm -f /tmp/trackglance-window.xml
     if dump_ui; then
-      if grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
+      if (( SECONDS < deadline )) && grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
         settings_checkpoint settings-webview-passed
         return 0
       fi

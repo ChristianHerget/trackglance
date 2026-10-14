@@ -231,6 +231,52 @@ Android runs once, while `--watch-passes 1|2` applies only to selected watches (
 with `--component android`). `--fresh` and `--published` are mutually exclusive. Each selected
 component uses the same fixture validation, provisioning, diagnostics, and cleanup rules.
 
+### Focused startup validation
+
+Use `startup` when diagnosing provisioning, permissions, connectivity, onboarding, or settings
+loading. It installs the current bridge and watch application and verifies the settings WebView
+on Emery and Gabbro, then exits with recording stopped. It omits recording, metrics, commands,
+and supervision scenarios and does not provide full acceptance certification.
+
+```sh
+./tools/podman-test startup --component emery --locus-apks /absolute/private/path
+GH_TOKEN="$(gh auth token)" ./tools/podman-test startup --published \
+  --locus-apks /absolute/private/path
+```
+
+The default component is `all`; `--component gabbro` selects the other watch. `--fresh` rebuilds
+and provisions source images, while `--published` verifies the pinned images and provisions fresh
+golden state. Without either flag, startup reuses validated golden state and available source or
+published images. Add `--cleanup` to remove generated provisioning state after diagnosis.
+Record the revision, image and fixture fingerprints, lifecycle, and result when comparing runs.
+
+Hosted watch jobs expose preparation, startup, and behavior as separate steps. A local JSON
+session under `build/acceptance-sessions/` identifies the checkout, images, fixture, owned containers,
+and completed passes. Startup retains the emulator for behavior; behavior verifies the same
+session, checks for Android restarts, and removes its runtime. Cancellation and failures retain
+bounded diagnostics and use the always-run cleanup step. Session files and emulator state are
+never uploaded. Both phases must pass before watch evidence can be finalized.
+
+For deliberate phase-by-phase diagnosis, choose a new absolute session filename:
+
+```sh
+./tools/podman-test acceptance-session prepare --component emery --published \
+  --session "$PWD/build/acceptance-sessions/emery-diagnosis.json" \
+  --locus-apks /absolute/private/path
+./tools/podman-test acceptance-session startup \
+  --session "$PWD/build/acceptance-sessions/emery-diagnosis.json"
+./tools/podman-test acceptance-session behavior \
+  --session "$PWD/build/acceptance-sessions/emery-diagnosis.json"
+./tools/podman-test acceptance-session cleanup \
+  --session "$PWD/build/acceptance-sessions/emery-diagnosis.json"
+```
+
+Published preparation requires `GH_TOKEN` for attestation verification. Always call session cleanup
+when stopping after startup; it removes the disposable runtime while retaining golden provisioning
+for further local diagnosis. `clean` removes the remaining provisioning state. Preparation accepts
+`--watch-passes 2`; run startup then behavior with `--pass 2` after pass 1 has completed.
+Each hosted provisioning mode retains its existing total 110-minute budget across all phases.
+
 Hosted CI runs Android instrumentation first, then Emery and Gabbro in parallel jobs with
 `fail-fast: false`. The final `Hosted full-stack acceptance` check requires all three components
 to succeed. Each failed component uploads a distinct diagnostics artifact for seven days;

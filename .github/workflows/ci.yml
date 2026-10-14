@@ -270,32 +270,42 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
-      - name: Run selected acceptance component
-        run: |
-          run_suite() {
-            local label=$1 provisioning=$2 started elapsed report
-            sudo setfacl -m "u:${USER}:rw" /dev/kvm
-            test -r /dev/kvm
-            test -w /dev/kvm
-            started=$SECONDS
-            timeout 110m tools/podman-test acceptance-suite \
-              "$provisioning" --cleanup --watch-passes "$WATCH_PASSES" \
-              --component "$ACCEPTANCE_COMPONENT"
-            elapsed=$((SECONDS - started))
-            echo "- $ACCEPTANCE_COMPONENT: $label provisioning, ${elapsed}s, all selected checkpoints passed" >> "$GITHUB_STEP_SUMMARY"
-            report=$(cat build/check-logs/latest)
-            awk -F '\t' '$3 == 0 { print "  - Passed: " $2 }' "$report/manifest.tsv" >> "$GITHUB_STEP_SUMMARY"
-          }
-          case "$ACCEPTANCE_PROVISIONING" in
-            source) run_suite Source --fresh ;;
-            published) run_suite Published --published ;;
-            compare)
-              echo '## Acceptance provisioning comparison' >> "$GITHUB_STEP_SUMMARY"
-              run_suite Source --fresh
-              run_suite Published --published
-              ;;
-            *) echo "Unknown provisioning path: $ACCEPTANCE_PROVISIONING" >&2; exit 2 ;;
-          esac
+      - name: Prepare source watch session
+        if: env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase prepare source
+      - name: Watch startup (source, pass 1)
+        if: env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase startup source 1
+      - name: Watch behavior (source, pass 1)
+        if: env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase behavior source 1
+      - name: Watch startup (source, pass 2)
+        if: (env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare') && env.WATCH_PASSES == '2'
+        run: tools/ci-watch-phase startup source 2
+      - name: Watch behavior (source, pass 2)
+        if: (env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare') && env.WATCH_PASSES == '2'
+        run: tools/ci-watch-phase behavior source 2
+      - name: Close source watch session
+        if: always() && (env.ACCEPTANCE_PROVISIONING == 'source' || env.ACCEPTANCE_PROVISIONING == 'compare')
+        run: tools/ci-watch-phase cleanup source
+      - name: Prepare published watch session
+        if: env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase prepare published
+      - name: Watch startup (published, pass 1)
+        if: env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase startup published 1
+      - name: Watch behavior (published, pass 1)
+        if: env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare'
+        run: tools/ci-watch-phase behavior published 1
+      - name: Watch startup (published, pass 2)
+        if: (env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare') && env.WATCH_PASSES == '2'
+        run: tools/ci-watch-phase startup published 2
+      - name: Watch behavior (published, pass 2)
+        if: (env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare') && env.WATCH_PASSES == '2'
+        run: tools/ci-watch-phase behavior published 2
+      - name: Close published watch session
+        if: always() && (env.ACCEPTANCE_PROVISIONING == 'published' || env.ACCEPTANCE_PROVISIONING == 'compare')
+        run: tools/ci-watch-phase cleanup published
       - name: Print bounded failure diagnostics
         if: failure()
         run: tools/check-diagnostics

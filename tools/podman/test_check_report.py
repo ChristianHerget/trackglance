@@ -344,6 +344,7 @@ mkdir -p "$CHECK_LOG_DIR"
 : > "$CHECK_LOG_DIR/runs.txt"
 parse_locus_apk_options() { LOCUS_INPUT_DIR=/fixture; }
 doctor_acceptance() { :; }
+select_warm_acceptance_images() { :; }
 run_android_tests() {
   new_run android
   echo current-log > "$RUN_ARTIFACTS/android.log"
