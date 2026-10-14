@@ -303,11 +303,11 @@ dump_ui() {
 
 tap_text() {
   local needle=$1
-  local timeout=${2:-30} match=${3:-contains}
+  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
   local deadline=$((SECONDS + timeout)) coordinates
   while (( SECONDS < deadline )); do
     dump_ui || true
-    coordinates=$(python3 - "$needle" "$match" <<'PY'
+    coordinates=$(python3 - "$needle" "$match" "$required_text" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -318,6 +318,10 @@ try:
 except Exception:
     raise SystemExit
 parents = {child: parent for parent in root.iter() for child in parent}
+if len(sys.argv) > 3 and sys.argv[3] and not any(
+    node.attrib.get('text', '') == sys.argv[3] for node in root.iter('node')
+):
+    raise SystemExit
 
 def node_bounds(node):
     values = [int(value) for value in re.findall(r'\d+', node.attrib.get('bounds',''))]

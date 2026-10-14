@@ -258,6 +258,8 @@ bounded diagnostics and use the always-run cleanup step. Session files and emula
 never uploaded. Both phases must pass before watch evidence can be finalized.
 The SDK runner uses ADB port 5038 for both the client and ddmlib, separately from the emulator
 image's older server on port 5037. This prevents a shared-port server startup/version race.
+Settings recovery declines the Pebble App's optional call-log request. It verifies the exact
+prompt again before tapping and leaves unrelated permission dialogs unanswered.
 
 For deliberate phase-by-phase diagnosis, choose a new absolute session filename:
 

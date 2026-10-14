@@ -33,7 +33,7 @@ adb_device_timeout() {
   if [[ "$*" == *'dumpsys activity'* ]]; then
     if [[ "$page" == bridge || ( "$SCENARIO" == drift && "$tick" == 2 ) ]]; then
       echo 'topResumedActivity=ActivityRecord{ app.trackglance.bridge/MainActivity}'
-    elif [[ "$SCENARIO" == permission && "$tick" == 2 ]]; then
+    elif [[ ( "$SCENARIO" == permission && "$tick" == 2 ) || "$page" == permission ]]; then
       echo 'topResumedActivity=ActivityRecord{ com.google.android.permissioncontroller/GrantPermissionsActivity}'
     else
       echo 'topResumedActivity=ActivityRecord{ coredevices.coreapp/MainActivity}'
@@ -41,6 +41,7 @@ adb_device_timeout() {
   elif [[ "$*" == *'am start'* ]]; then
     opens=$((opens + 1)); page=apps
     if [[ "$SCENARIO" == onboarding && "$opens" == 1 ]]; then page=intro; fi
+    if [[ "$SCENARIO" == call-log || "$SCENARIO" == vanished-call-log || "$SCENARIO" == unrelated-permission ]]; then page=permission; fi
     echo "launch:$tick" >> "$CALLS"
   elif [[ "$*" == *'input swipe'* ]]; then
     if [[ "$page" == carousel ]]; then page=configure; else page=finish; fi
@@ -57,6 +58,12 @@ dump_ui() {
     return
   fi
   case "$page" in
+    permission)
+      if [[ "$SCENARIO" == unrelated-permission ]]; then
+        echo '<hierarchy><node text="Allow another app to access your camera?"/><node text="Don’t allow"/></hierarchy>'
+      else
+        echo '<hierarchy><node text="Allow Pebble to access your phone call logs?"/><node text="Don’t allow"/></hierarchy>'
+      fi ;;
     intro) echo '<node text="Get Started"/>' ;;
     choice) echo '<hierarchy><node text="I have a:"/><node text="Watch"/></hierarchy>' ;;
     carousel) echo '<node text="Get Started!"/>' ;;
@@ -74,6 +81,9 @@ tap_text() {
     missed[$1]=1; return 1
   fi
   case "$1" in
+    'Don’t allow')
+      page=apps
+      if [[ "$SCENARIO" == vanished-call-log ]]; then return 1; fi ;;
     'Get Started') page=choice ;;
     Watch) page=carousel ;;
     Finished) page=apps ;;
@@ -111,6 +121,23 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('permission-controller', trace)
         self.assertEqual(calls.count('launch:'), 1)
+
+    def test_optional_call_log_prompt_is_denied_before_navigation(self):
+        result, trace, calls = self.navigate('call-log')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('optional-call-log-denied', trace)
+        self.assertEqual(calls.count('tap:Don’t allow'), 1)
+
+    def test_disappearing_optional_prompt_is_rechecked(self):
+        result, trace, _ = self.navigate('vanished-call-log')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('optional-call-log-disappeared', trace)
+
+    def test_unrelated_permission_prompt_is_never_answered(self):
+        result, trace, calls = self.navigate('unrelated-permission')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('permission-controller', trace)
+        self.assertNotIn('tap:Don’t allow', calls)
 
     def test_failed_dumps_are_recovered_before_settings_is_verified(self):
         result, trace, _ = self.navigate('stale')

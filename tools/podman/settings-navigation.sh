@@ -26,6 +26,15 @@ open_trackglance_settings() {
     if [[ "$foreground" == *' com.google.android.permissioncontroller/'* \
       || "$foreground" == *' com.android.permissioncontroller/'* ]]; then
       settings_checkpoint permission-controller
+      # Call-log access belongs to the Pebble App's optional phone features, not this suite.
+      # Recheck this exact prompt in tap_text's fresh dump so a replaced dialog is not answered.
+      if dump_ui && grep -Fq 'text="Allow Pebble to access your phone call logs?"' /tmp/trackglance-window.xml; then
+        if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs?'; then
+          settings_checkpoint optional-call-log-denied
+        else
+          settings_checkpoint optional-call-log-disappeared
+        fi
+      fi
       sleep 1
       continue
     fi
