@@ -34,6 +34,8 @@ def main():
         value = state
         for part in args[0].split("."):
             value = value[part]
+        if args[0] in {"started", "passes", "active_pass"}:
+            require(type(value) is int and value >= 0, "session counters must be nonnegative integers")
         if len(args) > 1 and args[1] == "lines":
             print("\n".join(value))
         else:

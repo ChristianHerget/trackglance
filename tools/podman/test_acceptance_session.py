@@ -8,6 +8,15 @@ from script_test_support import PODMAN_TEST
 
 
 class AcceptanceSessionTest(unittest.TestCase):
+    def test_session_counters_cannot_be_shell_expressions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            path.write_text(json.dumps({"started": "counter[$(touch unexpected-file)]"}))
+            helper = PODMAN_TEST.parent / "acceptance-session-state"
+            result = subprocess.run([str(helper), "read", str(path), "started"], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "")
+
     def run_session(self, commands, failure=""):
         with tempfile.TemporaryDirectory() as directory:
             script = r'''
