@@ -80,6 +80,8 @@ def main():
     elif operation == "receipt":
         number, mode, destination = args
         require(int(number) in state['completed'])
+        require(state["provisioning"] == {"source": "fresh", "published": "published"}.get(mode),
+                "warm or mismatched provisioning cannot certify a hosted watch component")
         target = Path(destination)
         receipts = json.loads(target.read_text()) if target.exists() else []
         receipts.append(dict(provisioning=mode, pass_=int(number), phases=["startup", "behavior"],

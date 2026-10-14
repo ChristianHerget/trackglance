@@ -95,6 +95,16 @@ acceptance_session behavior --session "$SESSION"
         self.assertIn("No completed startup", result.stderr)
         self.assertNotIn("phase:behavior", result.stdout)
 
+    def test_warm_session_cannot_emit_fresh_published_certification_receipts(self):
+        result, _ = self.run_session('''
+acceptance_session prepare --session "$SESSION"
+acceptance_session startup --session "$SESSION"
+acceptance_session behavior --session "$SESSION"
+"$SCRIPT_DIR/acceptance-session-state" receipt "$SESSION" 1 published "$TEMP/proof.json"
+''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("warm or mismatched provisioning", result.stderr)
+
     def test_second_pass_requires_previous_behavior(self):
         result, _ = self.run_session('''
 acceptance_session prepare --session "$SESSION" --watch-passes 2
