@@ -1,6 +1,10 @@
 #!/bin/bash
 
 ADB_SERIAL=${ADB_SERIAL:-127.0.0.1:5555}
+# The emulator image starts an older ADB server on 5037 in the shared network namespace.
+# Keep the SDK runner's server separate; ddmlib and the adb client must use the same port.
+export ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5038}
+export ADB_SERVER_SOCKET=${ADB_SERVER_SOCKET:-tcp:localhost:$ANDROID_ADB_SERVER_PORT}
 STATUS_URI=content://app.trackglance.bridge.debug-status/status
 EMULATOR_TEST_LATITUDE=50.9662
 EMULATOR_TEST_LONGITUDE=10.3065
@@ -15,6 +19,18 @@ adb_device_timeout() {
   local duration=$1
   shift
   timeout "$duration" adb -s "$ADB_SERIAL" "$@"
+}
+
+connect_to_android() {
+  local deadline=$((SECONDS + ${1:-15})) state=''
+  while (( SECONDS < deadline )); do
+    timeout 5 adb connect "$ADB_SERIAL" >/dev/null 2>&1 || true
+    state=$(adb_device_timeout 5 get-state 2>&1 || true)
+    if [[ "$state" == device ]] && (( SECONDS < deadline )); then return; fi
+    sleep 0.5
+  done
+  echo "Android connection readiness expired; last state: $state" >&2
+  return 1
 }
 
 set_emulator_test_location() {

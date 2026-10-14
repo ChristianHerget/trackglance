@@ -99,6 +99,8 @@ if [[ "$phase" == startup ]]; then
   exit 0
 fi
 else
+  # Each phase starts a new SDK runner and registers its own TCP transport.
+  connect_to_android 15
   mapfile -d '' -t startup_values < <(python3 /workspace/tools/podman/watch-phase-state.py read \
     "$phase_state" "$PEBBLE_PLATFORM")
   [[ ${#startup_values[@]} == 2 ]] || { echo "Missing valid startup state" >&2; exit 1; }

@@ -916,6 +916,7 @@ bootstrap() {
     --volume "$GOLDEN_VOLUME:/golden" \
     "$BUILD_IMAGE" bash -euo pipefail -c "
       source /workspace/tools/podman/device-lib.sh
+      connect_to_android 15
       actual_api=\$(adb_device shell getprop ro.build.version.sdk | tr -d '\r')
       test \"\$actual_api\" = '$ANDROID_SYSTEM_API'
       wait_status locus_available true 45
@@ -970,6 +971,7 @@ collect_manual_artifacts() {
   if [[ -n "$ACTIVE_RUNTIME_VOLUME" && -n "$ACTIVE_POD" ]]; then
     runner_in_pod "$MANUAL_ARTIFACTS" bash -euo pipefail -c '
       source /workspace/tools/podman/device-lib.sh
+      connect_to_android 15 || true
       adb_device_timeout 20 logcat -d -t 20000 > /artifacts/android-logcat.txt || true
       adb_device_timeout 10 shell content query --uri "$STATUS_URI" > /artifacts/final-status.txt || true
       dump_ui || true

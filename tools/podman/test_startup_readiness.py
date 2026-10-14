@@ -5,6 +5,30 @@ from script_test_support import ROOT
 
 
 class StartupReadinessTest(unittest.TestCase):
+    def test_runner_adb_server_is_separate_from_emulator_server(self):
+        script = r'''
+unset ANDROID_ADB_SERVER_PORT ADB_SERVER_SOCKET
+source "$DEVICE_LIB"
+adb() { test "$ANDROID_ADB_SERVER_PORT" == 5038 && test "$ADB_SERVER_SOCKET" == tcp:localhost:5038; }
+timeout() { shift; "$@"; }
+adb_device version
+adb_device_timeout 5 version
+'''
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "DEVICE_LIB": str(ROOT / "tools/podman/device-lib.sh")},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_explicit_runner_adb_port_is_preserved_for_client_and_ddmlib(self):
+        result = self.run_device("unused", '''
+test "$ANDROID_ADB_SERVER_PORT" == 5038
+ANDROID_ADB_SERVER_PORT=5040 ADB_SERVER_SOCKET=tcp:localhost:5040
+source "$DEVICE_LIB"
+test "$ANDROID_ADB_SERVER_PORT" == 5040
+test "$ADB_SERVER_SOCKET" == tcp:localhost:5040
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def run_device(self, scenario, command):
         script = r'''
 source "$DEVICE_LIB"
@@ -16,6 +40,7 @@ adb_device() { :; }
 adb_device_timeout() {
   shift
   case "$*" in
+    get-state) if (( tick >= 1 )); then echo device; else echo offline; fi ;;
     'shell getprop sys.boot_completed') echo 1 ;;
     *'test -d /sdcard'*) [[ "$SCENARIO" != missing-storage && "$tick" -ge 2 ]] ;;
     'shell ip -4 route show table all')
@@ -40,6 +65,10 @@ eval "$COMMAND"
 
     def test_boot_completed_waits_for_writable_storage(self):
         result = self.run_device("delayed-storage", 'wait_for_android 4; test "$tick" == 2')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_new_runner_registers_transport_and_checks_actual_state(self):
+        result = self.run_device("unused", 'connect_to_android 3; test "$tick" == 1')
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_storage_fails_without_initializing_location(self):
