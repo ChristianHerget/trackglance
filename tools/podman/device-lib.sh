@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ADB_SERIAL=${ADB_SERIAL:-127.0.0.1:5555}
-# The emulator image starts an older ADB server on 5037 in the shared network namespace.
-# Keep the SDK runner's server separate; ddmlib and the adb client must use the same port.
-export ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5038}
+# start_android isolates the emulator image's older server on 5038. Keep SDK/Gradle
+# on their default port, including test-engine subprocesses that do not propagate overrides.
+export ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5037}
 export ADB_SERVER_SOCKET=${ADB_SERVER_SOCKET:-tcp:localhost:$ANDROID_ADB_SERVER_PORT}
 STATUS_URI=content://app.trackglance.bridge.debug-status/status
 EMULATOR_TEST_LATITUDE=50.9662

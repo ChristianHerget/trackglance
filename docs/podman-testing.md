@@ -256,8 +256,8 @@ and completed passes. Startup retains the emulator for behavior; behavior verifi
 session, checks for Android restarts, and removes its runtime. Cancellation and failures retain
 bounded diagnostics and use the always-run cleanup step. Session files and emulator state are
 never uploaded. Both phases must pass before watch evidence can be finalized.
-The SDK runner uses ADB port 5038 for both the client and ddmlib, separately from the emulator
-image's older server on port 5037. This prevents a shared-port server startup/version race.
+The emulator image's older ADB server uses port 5038, separately from the SDK runner and Gradle
+on port 5037. This prevents a shared-port startup/version race while retaining test-engine compatibility.
 Settings recovery declines the Pebble App's optional call-log, calendar, contacts, and phone-state
 requests. It verifies the exact prompt again before tapping and leaves unrelated dialogs unanswered.
 

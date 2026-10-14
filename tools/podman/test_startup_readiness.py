@@ -1,7 +1,7 @@
 import os
 import subprocess
 import unittest
-from script_test_support import ROOT
+from script_test_support import ROOT, PODMAN_TEST
 
 
 class StartupReadinessTest(unittest.TestCase):
@@ -9,7 +9,7 @@ class StartupReadinessTest(unittest.TestCase):
         script = r'''
 unset ANDROID_ADB_SERVER_PORT ADB_SERVER_SOCKET
 source "$DEVICE_LIB"
-adb() { test "$ANDROID_ADB_SERVER_PORT" == 5038 && test "$ADB_SERVER_SOCKET" == tcp:localhost:5038; }
+adb() { test "$ANDROID_ADB_SERVER_PORT" == 5037 && test "$ADB_SERVER_SOCKET" == tcp:localhost:5037; }
 timeout() { shift; "$@"; }
 adb_device version
 adb_device_timeout 5 version
@@ -21,13 +21,33 @@ adb_device_timeout 5 version
 
     def test_explicit_runner_adb_port_is_preserved_for_client_and_ddmlib(self):
         result = self.run_device("unused", '''
-test "$ANDROID_ADB_SERVER_PORT" == 5038
+test "$ANDROID_ADB_SERVER_PORT" == 5037
 ANDROID_ADB_SERVER_PORT=5040 ADB_SERVER_SOCKET=tcp:localhost:5040
 source "$DEVICE_LIB"
 test "$ANDROID_ADB_SERVER_PORT" == 5040
 test "$ADB_SERVER_SOCKET" == tcp:localhost:5040
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_emulator_server_port_is_isolated_for_both_engines(self):
+        script = r'''
+source "$PODMAN_TEST"
+trap - EXIT
+ACCEPTANCE_ENGINE=$ENGINE
+ACTIVE_POD=trackglance-test
+acceptance_security_args() { :; }
+register_active_container() { :; }
+acceptance_engine() {
+  [[ "$*" == *'--env ANDROID_ADB_SERVER_PORT=5038'* ]]
+  [[ "$*" == *'--env ADB_SERVER_SOCKET=tcp:localhost:5038'* ]]
+}
+start_android trackglance-test-android data runtime
+'''
+        for engine in ("docker", "podman"):
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                    env={**os.environ, "PODMAN_TEST": str(PODMAN_TEST), "ENGINE": engine},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def run_device(self, scenario, command):
         script = r'''

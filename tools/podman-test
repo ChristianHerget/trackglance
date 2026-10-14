@@ -787,6 +787,7 @@ start_android() {
       && publish=(--publish 127.0.0.1:5173:5173)
   fi
   acceptance_engine run --detach "${network[@]}" "${publish[@]}" --name "$name" \
+    --env ANDROID_ADB_SERVER_PORT=5038 --env ADB_SERVER_SOCKET=tcp:localhost:5038 \
     --device /dev/kvm "${security[@]}" \
     --volume "$data_volume:/data" --volume "$runtime_volume:/run/trackglance" \
     "$EMULATOR_IMAGE" >/dev/null
