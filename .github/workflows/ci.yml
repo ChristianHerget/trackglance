@@ -71,7 +71,7 @@ jobs:
         run: tools/ci-evidence finalize static
       - name: Upload tested checkout evidence
         if: success() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-evidence-static-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-evidence/static.json
@@ -82,7 +82,7 @@ jobs:
         run: tools/check-diagnostics
       - name: Upload static and release diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/check-logs
@@ -107,7 +107,7 @@ jobs:
         run: tools/ci-evidence finalize documentation
       - name: Upload tested checkout evidence
         if: success() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-evidence-documentation-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-evidence/documentation.json
@@ -118,7 +118,7 @@ jobs:
         run: tools/check-diagnostics
       - name: Upload documentation diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: documentation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/check-logs
@@ -209,7 +209,7 @@ jobs:
         run: tools/ci-evidence finalize android
       - name: Upload tested checkout evidence
         if: success() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-evidence-android-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-evidence/android.json
@@ -217,7 +217,7 @@ jobs:
           retention-days: 7
       - name: Upload sanitized acceptance diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/check-logs
@@ -312,7 +312,7 @@ jobs:
         run: tools/ci-evidence finalize "$ACCEPTANCE_COMPONENT"
       - name: Upload tested checkout evidence
         if: success() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-evidence-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-evidence/${{ matrix.component }}.json
@@ -320,7 +320,7 @@ jobs:
           retention-days: 7
       - name: Upload sanitized acceptance diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/check-logs
@@ -369,7 +369,7 @@ jobs:
           predicate-type: https://github.com/ChristianHerget/trackglance/ci-certification/v1
           predicate-path: build/ci-certification.json
       - name: Upload main certification record
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: main-certification-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-certification.json
