@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+phase=${1:?phase is required}
+mode=${2:?provisioning mode is required}
+pass=${3:-1}
+: "${ACCEPTANCE_COMPONENT:?watch component is required}"
+: "${WATCH_PASSES:?watch pass count is required}"
+[[ "$ACCEPTANCE_COMPONENT" == emery || "$ACCEPTANCE_COMPONENT" == gabbro ]]
+[[ "$mode" == source || "$mode" == published ]]
+[[ "$pass" == 1 || "$pass" == 2 ]]
+session="$root/build/acceptance-sessions/${ACCEPTANCE_COMPONENT}-${mode}.json"
+remaining=6600
+if [[ -f "$session" ]]; then
+  remaining=$((6600 - $(date +%s) + $("$root/tools/acceptance-session-state" read "$session" started)))
+fi
+started=$SECONDS
+case "$phase" in
+  prepare)
+    if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+      sudo setfacl -m "u:${USER}:rw" /dev/kvm
+      test -r /dev/kvm
+      test -w /dev/kvm
+    fi
+    provisioning=--published
+    [[ "$mode" != source ]] || provisioning=--fresh
+    timeout 110m "$root/tools/podman-test" acceptance-session prepare --session "$session" \
+      "$provisioning" --component "$ACCEPTANCE_COMPONENT" --watch-passes "$WATCH_PASSES"
+    ;;
+  startup|behavior)
+    (( remaining > 0 )) || { echo "Acceptance session exceeded its 110-minute budget" >&2; exit 1; }
+    timeout "${remaining}s" "$root/tools/podman-test" acceptance-session "$phase" \
+      --session "$session" --pass "$pass"
+    ;;
+  cleanup)
+    [[ ! -f "$session" ]] || "$root/tools/podman-test" acceptance-session cleanup --session "$session"
+    ;;
+  *) echo "Unknown CI watch phase: $phase" >&2; exit 2 ;;
+esac
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  echo "- $ACCEPTANCE_COMPONENT: $mode $phase pass $pass passed in $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
+fi
+if [[ "$phase" == behavior ]]; then
+  proof="$root/build/ci-evidence/watch-${ACCEPTANCE_COMPONENT}-completion.json"
+  mkdir -p "$(dirname "$proof")"
+  "$root/tools/acceptance-session-state" receipt "$session" "$pass" "$mode" "$proof"
+fi

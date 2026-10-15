@@ -14,6 +14,20 @@ EMULATOR_CONSOLE = ROOT / "tools" / "podman" / "emulator-console.py"
 
 
 class DeviceReadinessTest(unittest.TestCase):
+    def test_guarded_tap_does_not_answer_a_replaced_permission_prompt(self):
+        script = r'''
+dump_ui() {
+  echo '<hierarchy><node text="Allow another app to use your camera?"/><node text="Don’t allow" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
+adb_device() { echo unexpectedly-tapped; }
+python3() { command python3 "$@"; }
+sleep() { SECONDS=$((SECONDS + 1)); }
+if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs?'; then exit 42; fi
+'''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
     def run_device(self, body, fail_command="", api=32):
         with tempfile.TemporaryDirectory() as directory:
             token = Path(directory) / "token"
@@ -238,6 +252,10 @@ class DeviceReadinessTest(unittest.TestCase):
                     fi
                     if [ "$1" = -s ] && [ "$3" = shell ] && [ "$4" = settings ]; then
                       exit 0
+                    fi
+                    if [ "$1" = -s ] && [ "$3" = shell ] && [ "$4" != getprop ]; then
+                      [ -f "$ADB_STATE" ]
+                      exit $?
                     fi
                     if [ "$1" = -s ] && [ "$3" = shell ] && { [ "$4" = appops ] || [ "$4" = cmd ]; }; then
                       exit 0

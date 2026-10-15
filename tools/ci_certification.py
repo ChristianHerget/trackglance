@@ -177,6 +177,21 @@ def finalize(component: str) -> None:
     changed = git("diff", "HEAD", "--name-only", "--").splitlines()
     record["tracked_changes"] = changed
     record["observed_lock_sha256"] = sha256(ROOT / "watchapp/package-lock.json")
+    if component in {"emery", "gabbro"}:
+        receipt_path = ROOT / "build/ci-evidence" / f"watch-{component}-completion.json"
+        require(receipt_path.is_file(), "watch acceptance has no completed behavior receipts")
+        receipts = json.loads(receipt_path.read_text())
+        mode = record["acceptance_provisioning"]
+        require(mode in {"source", "published", "compare"}, "invalid watch provisioning mode")
+        require(record["watch_passes"] in {"1", "2"}, "invalid watch pass count")
+        modes = ["source", "published"] if mode == "compare" else [mode]
+        inputs = str(command("bash", "-o", "pipefail", "-c",
+                             "git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1")).strip()
+        expected = [{"provisioning": selected, "pass": number, "phases": ["startup", "behavior"],
+                     "commit": commit, "inputs": inputs}
+                    for selected in modes for number in range(1, int(record["watch_passes"]) + 1)]
+        require(receipts == expected, "watch acceptance receipts are incomplete or inputs changed")
+        record["watch_completion"] = receipts
     record["finalized"] = True
     target.write_text(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
 
@@ -336,6 +351,13 @@ def assess(gh: GitHub, commit: str, *, now: datetime | None = None) -> dict:
         require(evidence.get("watch_passes") == "1"
                 and evidence.get("acceptance_provisioning") == "published",
                 f"{component} effective acceptance settings differ")
+        if component in {"emery", "gabbro"}:
+            completion = evidence.get("watch_completion", [])
+            require(len(completion) == 1 and completion[0].get("provisioning") == "published"
+                    and completion[0].get("pass") == 1
+                    and completion[0].get("phases") == ["startup", "behavior"]
+                    and completion[0].get("commit") == evidence.get("checkout_sha"),
+                    f"{component} lacks full startup and behavior completion")
         expected_fixture = fixture_sha256() if component in {"android", "emery", "gabbro"} else None
         require(evidence.get("fixture_sha256") == expected_fixture,
                 f"{component} fixture fingerprint differs")

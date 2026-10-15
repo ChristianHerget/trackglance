@@ -7,7 +7,7 @@ settings_checkpoint() {
 open_trackglance_settings() {
   # Cold first-run onboarding and WebView startup can consume more than two minutes.
   # This is a deadline, not a delay: return as soon as the settings marker is observed.
-  local deadline=$((SECONDS + ${1:-180})) foreground='' relay='' bridge='' control
+  local deadline=$((SECONDS + ${1:-180})) foreground='' relay='' bridge='' control optional_prompt
   local launched=0 last_launch=0 matched=0 next_control=Apps
   local -a controls=()
   settings_checkpoint begin
@@ -20,6 +20,30 @@ open_trackglance_settings() {
     if [[ "$bridge" != true ]] || ! python3 -c \
       'import json,sys; s=json.load(sys.stdin); sys.exit(not (s.get("phone_connected") and s.get("qemu_connected")))' \
       <<< "$relay" 2>/dev/null; then
+      sleep 1
+      continue
+    fi
+    if [[ "$foreground" == *' com.google.android.permissioncontroller/'* \
+      || "$foreground" == *' com.android.permissioncontroller/'* ]]; then
+      settings_checkpoint permission-controller
+      # These are the pinned Pebble App's optional after-connection permissions.
+      # Recheck the exact prompt in tap_text's fresh dump before declining it.
+      if dump_ui; then
+        for optional_prompt in \
+          'Allow Pebble to access your phone call logs?' \
+          'Allow Pebble to access your calendar?' \
+          'Allow Pebble to access your contacts?' \
+          'Allow Pebble to make and manage phone calls?'; do
+          if grep -Fq "text=\"$optional_prompt\"" /tmp/trackglance-window.xml; then
+            if tap_text "Don’t allow" 1 exact "$optional_prompt"; then
+              settings_checkpoint "optional-permission-denied $optional_prompt"
+            else
+              settings_checkpoint "optional-permission-disappeared $optional_prompt"
+            fi
+            break
+          fi
+        done
+      fi
       sleep 1
       continue
     fi
@@ -36,7 +60,7 @@ open_trackglance_settings() {
     # Never interpret a stale dump as a newly rendered WebView.
     rm -f /tmp/trackglance-window.xml
     if dump_ui; then
-      if grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
+      if (( SECONDS < deadline )) && grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
         settings_checkpoint settings-webview-passed
         return 0
       fi

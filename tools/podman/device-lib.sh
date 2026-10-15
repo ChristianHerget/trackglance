@@ -1,6 +1,10 @@
 #!/bin/bash
 
 ADB_SERIAL=${ADB_SERIAL:-127.0.0.1:5555}
+# start_android isolates the emulator image's older server on 5038. Keep SDK/Gradle
+# on their default port, including test-engine subprocesses that do not propagate overrides.
+export ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5037}
+export ADB_SERVER_SOCKET=${ADB_SERVER_SOCKET:-tcp:localhost:$ANDROID_ADB_SERVER_PORT}
 STATUS_URI=content://app.trackglance.bridge.debug-status/status
 EMULATOR_TEST_LATITUDE=50.9662
 EMULATOR_TEST_LONGITUDE=10.3065
@@ -15,6 +19,18 @@ adb_device_timeout() {
   local duration=$1
   shift
   timeout "$duration" adb -s "$ADB_SERIAL" "$@"
+}
+
+connect_to_android() {
+  local deadline=$((SECONDS + ${1:-15})) state=''
+  while (( SECONDS < deadline )); do
+    timeout 5 adb connect "$ADB_SERIAL" >/dev/null 2>&1 || true
+    state=$(adb_device_timeout 5 get-state 2>&1 || true)
+    if [[ "$state" == device ]] && (( SECONDS < deadline )); then return; fi
+    sleep 0.5
+  done
+  echo "Android connection readiness expired; last state: $state" >&2
+  return 1
 }
 
 set_emulator_test_location() {
@@ -70,7 +86,9 @@ wait_for_android() {
     # readiness polling so a runner that races the emulator proxy does not keep an
     # unregistered TCP serial for the entire timeout.
     timeout 10 adb connect "$ADB_SERIAL" >/dev/null 2>&1 || true
-    if [[ "$(adb_device_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+    if [[ "$(adb_device_timeout 5 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]] \
+      && adb_device_timeout 5 shell 'test -d /sdcard && test -w /sdcard && touch /sdcard/.trackglance-ready && rm /sdcard/.trackglance-ready' >/dev/null 2>&1 \
+      && (( SECONDS < deadline )); then
       adb_device shell settings put global window_animation_scale 0
       adb_device shell settings put global transition_animation_scale 0
       adb_device shell settings put global animator_duration_scale 0
@@ -83,7 +101,8 @@ wait_for_android() {
     fi
     sleep 1
   done
-  echo "Android did not finish booting within ${1:-180} seconds" >&2
+  echo "Android boot/storage readiness expired within ${1:-180} seconds" >&2
+  adb_device_timeout 5 shell 'getprop sys.boot_completed; ls -ld /sdcard; dumpsys mount' >&2 || true
   return 1
 }
 
@@ -226,6 +245,25 @@ relayctl() {
   python3 /workspace/tools/podman/relayctl.py --socket /run/trackglance/relay.sock "$@"
 }
 
+wait_for_relay_network() {
+  local deadline=$((SECONDS + ${1:-45})) routes='' relay=''
+  while (( SECONDS < deadline )); do
+    routes=$(adb_device_timeout 5 shell 'ip -4 route show table all' 2>&1 || true)
+    relay=$(relayctl status 2>&1 || true)
+    if (( SECONDS < deadline )) \
+      && grep -Eq '^10\.0\.2\.0/24 .*dev ' <<< "$routes" \
+      && grep -Eq '^default via 10\.0\.2\.2 .*dev ' <<< "$routes" \
+      && python3 -c 'import json,sys; s=json.load(sys.stdin); sys.exit(type(s.get("session_id")) is not int)' \
+        <<< "$relay" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "Relay network readiness expired; last Android routes: $routes; relay: $relay" >&2
+  adb_device_timeout 5 shell dumpsys connectivity >&2 || true
+  return 1
+}
+
 watch_button() {
   relayctl button "$1" >/dev/null
   # The relay can inject consecutive presses much faster than PebbleOS can apply menu-window
@@ -252,17 +290,24 @@ dump_ui() {
   rm -f /tmp/trackglance-window.xml
   adb_device_timeout 15 shell \
     'rm -f /sdcard/trackglance-window.xml && uiautomator dump /sdcard/trackglance-window.xml' \
-    >/dev/null
-  adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null
+    >/dev/null || return 1
+  if ! adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null; then
+    rm -f /tmp/trackglance-window.xml
+    return 1
+  fi
+  if ! python3 -c 'import sys,xml.etree.ElementTree as E; sys.exit(E.parse("/tmp/trackglance-window.xml").getroot().tag != "hierarchy")' 2>/dev/null; then
+    rm -f /tmp/trackglance-window.xml
+    return 1
+  fi
 }
 
 tap_text() {
   local needle=$1
-  local timeout=${2:-30} match=${3:-contains}
+  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
   local deadline=$((SECONDS + timeout)) coordinates
   while (( SECONDS < deadline )); do
     dump_ui || true
-    coordinates=$(python3 - "$needle" "$match" <<'PY'
+    coordinates=$(python3 - "$needle" "$match" "$required_text" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -273,6 +318,10 @@ try:
 except Exception:
     raise SystemExit
 parents = {child: parent for parent in root.iter() for child in parent}
+if len(sys.argv) > 3 and sys.argv[3] and not any(
+    node.attrib.get('text', '') == sys.argv[3] for node in root.iter('node')
+):
+    raise SystemExit
 
 def node_bounds(node):
     values = [int(value) for value in re.findall(r'\d+', node.attrib.get('bounds',''))]
