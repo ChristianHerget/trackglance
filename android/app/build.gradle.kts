@@ -126,3 +126,40 @@ spdxSbom {
         }
     }
 }
+
+// AGP resolves lint and device test tooling outside the buildscript classpath.
+configurations.configureEach {
+    if (
+        name == "androidLintTool" ||
+            name.startsWith("lint") ||
+            name.startsWith("unified-test-platform")
+    ) {
+        dependencies.add(project.dependencies.platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("com.google.guava:guava:33.7.2-jre")
+        )
+        dependencyConstraints.add(project.dependencies.constraints.create("org.jsoup:jsoup:1.23.2"))
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.bouncycastle:bcprov-jdk18on:1.85")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.bouncycastle:bcpkix-jdk18on:1.85")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.bouncycastle:bcutil-jdk18on:1.85")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.apache.commons:commons-lang3:3.20.0")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.apache.httpcomponents:httpclient:4.5.14")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.apache.httpcomponents:httpmime:4.5.14")
+        )
+        dependencyConstraints.add(
+            project.dependencies.constraints.create("org.bitbucket.b_c:jose4j:0.9.6")
+        )
+        dependencyConstraints.add(project.dependencies.constraints.create("org.jdom:jdom2:2.0.6.1"))
+    }
+}

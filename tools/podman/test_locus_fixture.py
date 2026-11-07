@@ -1,11 +1,15 @@
 import hashlib
 import http.server
+import io
+import runpy
 import subprocess
 import tempfile
 import threading
 import unittest
 from collections import Counter
+from email.message import Message
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -154,8 +158,91 @@ class DownloaderTest(unittest.TestCase):
             self.assertFalse(output.exists())
 
 
+class DriveDownloadTest(unittest.TestCase):
+    def setUp(self):
+        self.downloader = runpy.run_path(str(DOWNLOADER))
+
+    def test_shared_drive_urls_use_the_download_endpoint(self):
+        for url in (
+            "https://drive.google.com/file/d/shared-id/view?usp=sharing",
+            "https://drive.google.com/open?id=shared-id",
+            "https://docs.google.com/uc?id=shared-id&export=download",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(
+                    self.downloader["initial_url"](url),
+                    "https://drive.google.com/uc?export=download&id=shared-id",
+                )
+
+    def response(self, body, content_type):
+        response = io.BytesIO(body)
+        response.headers = Message()
+        response.headers["Content-Type"] = content_type
+        response.headers["Content-Length"] = str(len(body))
+        return response
+
+    def form(self, action="https://drive.usercontent.google.com/download", omit=None):
+        fields = {"id": "shared-id", "export": "download", "confirm": "t", "uuid": "token"}
+        return (
+            f'<html><form id="download-form" action="{action}">'
+            + "".join(f'<input name="{key}" value="{value}">' for key, value in fields.items() if key != omit)
+            + "</form></html>"
+        ).encode()
+
+    def test_confirmation_form_downloads_and_verifies_the_apk(self):
+        download = self.downloader["download_once"]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "locus.apk"
+            with patch.dict(
+                download.__globals__,
+                request=Mock(
+                    side_effect=[
+                        self.response(self.form(), "text/html"),
+                        self.response(APK_BYTES, "application/octet-stream"),
+                    ]
+                ),
+            ):
+                size, checksum = download(
+                    "https://drive.google.com/file/d/shared-id/view", output, hashlib.sha256(APK_BYTES).hexdigest(), 5
+                )
+                calls = download.__globals__["request"].call_args_list
+            self.assertEqual(
+                calls[1].args[0],
+                "https://drive.usercontent.google.com/download?id=shared-id&export=download&confirm=t&uuid=token",
+            )
+            self.assertEqual(size, len(APK_BYTES))
+            self.assertEqual(checksum, hashlib.sha256(APK_BYTES).hexdigest())
+            self.assertEqual(output.read_bytes(), APK_BYTES)
+            self.assertEqual(list(Path(directory).iterdir()), [output])
+
+    def test_invalid_confirmation_responses_leave_no_output(self):
+        for warning, confirmed in (
+            (self.form(action="https://example.com/download"), None),
+            (self.form(omit="uuid"), None),
+            (b"<html>no download form</html>", None),
+            (self.form(), b"<html>access denied</html>"),
+            (self.form(), b"not an APK"),
+            (self.form(), APK_BYTES + b"corrupted"),
+        ):
+            with self.subTest(warning=warning, confirmed=confirmed), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "locus.apk"
+                responses = [self.response(warning, "text/html")]
+                if confirmed is not None:
+                    responses.append(self.response(confirmed, "application/octet-stream"))
+                download = self.downloader["download_once"]
+                with patch.dict(download.__globals__, request=Mock(side_effect=responses)):
+                    with self.assertRaises(ValueError):
+                        download(
+                            "https://drive.google.com/file/d/shared-id/view",
+                            output,
+                            hashlib.sha256(APK_BYTES).hexdigest(),
+                            5,
+                        )
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
+
 class PinnedMetadataTest(unittest.TestCase):
-    def test_validator_rejects_the_wrong_package(self):
+    def validate_metadata(self, field=None, value=None, package="menion.android.locus"):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             apk_dir = temporary / "apks"
@@ -165,13 +252,13 @@ class PinnedMetadataTest(unittest.TestCase):
             aapt = temporary / "aapt"
             aapt.write_text(
                 "#!/bin/sh\ncat <<'EOF'\n"
-                "package: name='wrong.package' versionCode='1215' versionName='4.35.0'\n"
+                f"package: name='{package}' versionCode='1215' versionName='4.35.0'\n"
                 "sdkVersion:'24'\ntargetSdkVersion:'35'\nnative-code: 'x86_64'\nEOF\n",
                 encoding="utf-8",
             )
             apksigner = temporary / "apksigner"
             apksigner.write_text(
-                "#!/bin/sh\necho 'Signer #1 certificate SHA-256 digest: cert'\n",
+                "#!/bin/sh\necho 'Signer #1 certificate SHA-256 digest: abcd'\n",
                 encoding="utf-8",
             )
             aapt.chmod(0o755)
@@ -186,13 +273,18 @@ class PinnedMetadataTest(unittest.TestCase):
                         "LOCUS_APK_VERSION_NAME=4.35.0",
                         "LOCUS_APK_VERSION_CODE=1215",
                         "LOCUS_APK_ABI=x86_64",
-                        "LOCUS_APK_CERT_SHA256=cert",
+                        "LOCUS_APK_CERT_SHA256=abcd",
                         "LOCUS_APK_MIN_SDK=24",
                         "LOCUS_APK_TARGET_SDK=35",
                     )
                 ),
                 encoding="utf-8",
             )
+            if field is not None:
+                lines = config.read_text().splitlines()
+                config.write_text(
+                    "\n".join(f"{field}={value}" if line.startswith(field + "=") else line for line in lines)
+                )
             result = subprocess.run(
                 [
                     "python3",
@@ -209,8 +301,33 @@ class PinnedMetadataTest(unittest.TestCase):
                 text=True,
                 check=False,
             )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("package ID", result.stderr)
+            return result
+
+    def test_validator_accepts_matching_metadata(self):
+        result = self.validate_metadata()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_validator_rejects_the_wrong_package(self):
+        result = self.validate_metadata(package="wrong.package")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("package ID", result.stderr)
+
+    def test_validator_rejects_each_mismatched_pin(self):
+        for field, value, description in (
+            ("SHA256", "0" * 64, "SHA-256"),
+            ("SIZE", "999", "size"),
+            ("PACKAGE", "wrong.package", "package"),
+            ("VERSION_CODE", "999", "version code"),
+            ("VERSION_NAME", "wrong", "version name"),
+            ("MIN_SDK", "25", "minimum SDK"),
+            ("TARGET_SDK", "36", "target SDK"),
+            ("CERT_SHA256", "1234", "signing certificate"),
+            ("ABI", "arm64-v8a", "native ABI"),
+        ):
+            with self.subTest(field=field):
+                result = self.validate_metadata("LOCUS_APK_" + field, value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("pinned " + description, result.stderr)
 
 
 class PrivateApkFingerprintTest(unittest.TestCase):

@@ -54,10 +54,10 @@ and all test runs publish no ports.
 | Pebble App source | `coredevices/mobileapp` commit `38fd4c6892599d6a02b4b3ca0b3fd518a51d6170` |
 | Pebble Tool / SDK | 5.0.40 / 4.33.1 |
 | uv bootstrap | 0.12.4, SHA-256 `c8c60f47e6f88d18dbf6f33d7279fb1fbf7ae76631768152cf5578c3d65729b4` |
-| Public Locus fixture | 4.36.0 (1217), SHA-256 `8968b25633594fa45ab60b8336328fec2dffd5d07ed29a0996d9cedf55898c12` |
+| Public Locus fixture | 4.36.1 (1221), SHA-256 `3e766cbc8775be33e7686c4151a2ea61d45eb456891e2148d925a10d782e6bd3` |
 
-`tools/locus-test-apk.properties` is the fixture source of truth. Besides its official public URL
-and SHA-256, it pins size, package, version, x86_64 ABI, minimum/target SDK, and signing-certificate
+`tools/locus-test-apk.properties` is the fixture source of truth. Besides its user-managed public
+Drive URL and SHA-256, it pins size, package, version, x86_64 ABI, minimum/target SDK, and signing-certificate
 SHA-256. `tools/download-locus-apk` handles Google's unattended confirmation form, writes
 atomically, and retries temporary HTTP or connection failures up to three times before failing.
 It immediately rejects other HTTP errors, HTML, non-APK bytes, and checksum mismatches. Bootstrap
@@ -116,6 +116,8 @@ the final platform split-completeness check. Locus documents its builds for olde
 in [Devices with older Android](https://docs.locusmap.app/doku.php/manual:faq:devices_older_android)
 and publishes the APKs in its linked
 [Google Drive folder](https://drive.google.com/drive/folders/1U8U1D-NGQ9CAnqXAkleEXi46wH2T7tMR).
+The pinned fixture is the user-managed [Drive copy](https://drive.google.com/file/d/1Y8vGG30LdI42sEIsWCETpeoBTEcuOdF_/view)
+of Locus Map 4.36.1 (build 1221), recorded in `tools/locus-test-apk.properties`.
 Download the pinned API-34-compatible regular Google Play Locus Map 4 variant into a directory
 outside the repository because this image provides Google Play services. Reserve `GooglePlayAfa`
 for tests that intentionally need all-files access; the Amazon variant targets devices without
@@ -170,8 +172,8 @@ not a manual-lab provisioning path.
 
 Pull requests run `static`, documentation, the release check, and hosted acceptance on
 `ubuntu-24.04` with Docker and `/dev/kvm`. The checks remain required before merging to `main`.
-Hosted acceptance verifies the digest-pinned published runner and emulator, downloads the official
-public fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden
+Hosted acceptance verifies the digest-pinned published runner and emulator, downloads the pinned
+user-managed Google Drive fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden
 volume from scratch, runs Android/Locus instrumentation, and runs Emery plus Gabbro once. CodeQL
 and dependency review remain protected pull-request gates.
 
