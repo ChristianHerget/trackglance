@@ -5,24 +5,24 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath(platform("com.fasterxml.jackson:jackson-bom:2.22.3"))
-        classpath("com.google.guava:guava:33.7.2-jre")
-        classpath("org.jsoup:jsoup:1.23.2")
-        classpath("org.bouncycastle:bcprov-jdk18on:1.85")
-        classpath("org.bouncycastle:bcpkix-jdk18on:1.85")
-        classpath("org.bouncycastle:bcutil-jdk18on:1.85")
-        classpath("org.apache.commons:commons-lang3:3.20.0")
+        classpath(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
+        classpath("com.google.guava:guava:33.8.0-jre")
+        classpath("org.jsoup:jsoup:1.24.1")
+        classpath("org.bouncycastle:bcprov-jdk18on:1.86")
+        classpath("org.bouncycastle:bcpkix-jdk18on:1.86")
+        classpath("org.bouncycastle:bcutil-jdk18on:1.86")
+        classpath("org.apache.commons:commons-lang3:3.21.0")
         classpath("org.apache.httpcomponents:httpclient:4.5.14")
         classpath("org.apache.httpcomponents:httpmime:4.5.14")
-        classpath("org.bitbucket.b_c:jose4j:0.9.6")
+        classpath("org.bitbucket.b_c:jose4j:0.9.7")
         classpath("org.jdom:jdom2:2.0.6.1")
     }
 }
 
 plugins {
-    id("com.android.application") version "9.5.0" apply false
+    id("com.android.application") version "9.5.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.21" apply false
-    id("com.diffplug.spotless") version "8.10.4"
+    id("com.diffplug.spotless") version "8.11.0"
     id("dev.detekt") version "2.0.0-alpha.6" apply false
     id("org.cyclonedx.bom") version "3.5.1" apply false
     id("org.spdx.sbom") version "0.12.0" apply false
