@@ -596,3 +596,9 @@ During image publication, `tools/ci-images.env` records the API and system-image
 to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks
 the actual running API before recording golden-state provenance. This allows the protected gate
 to retain its certified image until the replacement has been published and compared.
+
+Acceptance ADB commands have a 30-second default deadline; explicit installation and diagnostic
+limits still apply. UI operations share their caller's remaining deadline. Commands that ignore
+termination are killed after five seconds. Behavior checkpoints are retained with each watch's
+artifacts. Runner containers are registered by immutable ID before attachment so cancellation
+cleanup can remove them before deleting their runtime volumes.
