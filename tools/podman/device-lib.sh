@@ -158,7 +158,7 @@ grant_coreapp_test_permissions() {
 
 complete_locus_onboarding() {
   local deadline=$((SECONDS + ${1:-90})) working_directory_retries=0
-  local location_prompt=$'For a better experience, turn on device location, which uses Google\u2019s location service. '
+  local location_prompt=$'For a better experience, turn on device location, which uses Google\xe2\x80\x99s location service. '
   while (( SECONDS < deadline )); do
     if ! dump_ui; then
       sleep 0.5

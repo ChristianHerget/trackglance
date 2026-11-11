@@ -478,6 +478,7 @@ class GoldenLocationPromptTest(unittest.TestCase):
     run_device = DeviceReadinessTest.run_device
     def test_onboarding_declines_only_the_observed_google_location_prompt(self):
         script = r'''
+export LC_ALL=C LANG=C
 page=prompt
 dump_ui() {
   if [[ "$page" == prompt ]]; then
