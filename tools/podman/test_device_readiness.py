@@ -472,3 +472,28 @@ if adb_device_timeout 1 shell input tap 10 20; then exit 42; fi
                                          "PATH": directory + ":" + os.environ["PATH"]},
                                     capture_output=True, text=True, timeout=9)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class GoldenLocationPromptTest(unittest.TestCase):
+    run_device = DeviceReadinessTest.run_device
+    def test_onboarding_declines_only_the_observed_google_location_prompt(self):
+        script = r'''
+page=prompt
+dump_ui() {
+  if [[ "$page" == prompt ]]; then
+    echo '<hierarchy><node text="For a better experience, turn on device location, which uses Google’s location service. "/><node text="No thanks"/></hierarchy>' > /tmp/trackglance-window.xml
+  else
+    echo '<hierarchy><node resource-id="menion.android.locus:id/drawer_layout"/></hierarchy>' > /tmp/trackglance-window.xml
+  fi
+}
+tap_text() {
+  test "$1" == "No thanks" && test "$3" == exact
+  test "$4" == "For a better experience, turn on device location, which uses Google’s location service. "
+  page=map
+}
+complete_locus_onboarding 3
+'''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        disappeared = self.run_device(script.replace("  page=map", "  page=map; return 1"))
+        self.assertEqual(disappeared.returncode, 0, disappeared.stderr)

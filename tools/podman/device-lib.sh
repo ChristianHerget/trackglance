@@ -158,6 +158,7 @@ grant_coreapp_test_permissions() {
 
 complete_locus_onboarding() {
   local deadline=$((SECONDS + ${1:-90})) working_directory_retries=0
+  local location_prompt=$'For a better experience, turn on device location, which uses Google\u2019s location service. '
   while (( SECONDS < deadline )); do
     if ! dump_ui; then
       sleep 0.5
@@ -171,6 +172,10 @@ complete_locus_onboarding() {
       # The intro screen may advance after the dump and before tap_text finds its button.
       # Recheck the map rather than failing the whole bootstrap on a vanished button.
       tap_text START 5 exact || true
+    elif grep -Fq "text=\"$location_prompt\"" /tmp/trackglance-window.xml; then
+      # Keep the golden snapshot free of active GNSS requests. Recheck this exact optional
+      # prompt in the fresh tap dump so a disappearing dialog cannot answer another prompt.
+      tap_text "No thanks" 5 exact "$location_prompt" || true
     elif grep -Fq 'text="Problem with working directory"' /tmp/trackglance-window.xml; then
       working_directory_retries=$((working_directory_retries + 1))
       if (( working_directory_retries > 3 )); then
