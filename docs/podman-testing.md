@@ -602,3 +602,6 @@ limits still apply. UI operations share their caller's remaining deadline. Comma
 termination are killed after five seconds. Behavior checkpoints are retained with each watch's
 artifacts. Runner containers are registered by immutable ID before attachment so cancellation
 cleanup can remove them before deleting their runtime volumes.
+
+Golden-state provisioning keeps GPS disabled to avoid freezing active GNSS requests into emulator
+snapshots. Watch recording checks enable GPS explicitly after startup and settings checks.
