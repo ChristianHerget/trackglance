@@ -128,3 +128,13 @@ test ! -e /tmp/trackglance-window.xml
                                     env={**os.environ, "DEVICE_LIB": str(ROOT / "tools/podman/device-lib.sh"),
                                          "SCENARIO": scenario}, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class GoldenLocationTest(unittest.TestCase):
+    def test_golden_provisioning_disables_gnss_before_installing_or_launching_apps(self):
+        source = PODMAN_TEST.read_text()
+        bootstrap = source[source.index("bootstrap() {"):source.index("new_run() {")]
+        self.assertIn("wait_for_android 180 disabled", bootstrap)
+        self.assertLess(bootstrap.index("wait_for_android 180 disabled"),
+                        bootstrap.index("install-multiple"))
+        self.assertNotIn("set_emulator_test_location", bootstrap)
