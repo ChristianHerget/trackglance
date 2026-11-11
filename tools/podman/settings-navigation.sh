@@ -28,14 +28,14 @@ open_trackglance_settings() {
       settings_checkpoint permission-controller
       # These are the pinned Pebble App's optional after-connection permissions.
       # Recheck the exact prompt in tap_text's fresh dump before declining it.
-      if dump_ui; then
+      if dump_ui "$deadline"; then
         for optional_prompt in \
           'Allow Pebble to access your phone call logs?' \
           'Allow Pebble to access your calendar?' \
           'Allow Pebble to access your contacts?' \
           'Allow Pebble to make and manage phone calls?'; do
           if grep -Fq "text=\"$optional_prompt\"" /tmp/trackglance-window.xml; then
-            if tap_text "Don’t allow" 1 exact "$optional_prompt"; then
+            if tap_text "Don’t allow" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))" exact "$optional_prompt"; then
               settings_checkpoint "optional-permission-denied $optional_prompt"
             else
               settings_checkpoint "optional-permission-disappeared $optional_prompt"
@@ -59,7 +59,7 @@ open_trackglance_settings() {
     fi
     # Never interpret a stale dump as a newly rendered WebView.
     rm -f /tmp/trackglance-window.xml
-    if dump_ui; then
+    if dump_ui "$deadline"; then
       if (( SECONDS < deadline )) && grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
         settings_checkpoint settings-webview-passed
         return 0
@@ -74,7 +74,7 @@ open_trackglance_settings() {
         [[ -n "$control" ]] || continue
         if grep -Fq "text=\"$control\"" /tmp/trackglance-window.xml; then
           matched=1
-          if tap_text "$control" 1; then
+          if tap_text "$control" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))"; then
             settings_checkpoint "tapped $control"
             last_launch=$SECONDS
             case "$control" in
