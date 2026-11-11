@@ -200,7 +200,7 @@ enable_supervision() {
   adb_device shell am start -W -n "$bridge_activity" >/dev/null
   local scroll
   for ((scroll = 0; scroll < 8; scroll++)); do
-    if tap_text "Auto-start" 2 exact; then
+    if tap_text "Auto-start" 5 exact; then
       break
     fi
     adb_device shell input swipe 540 1800 540 600 350
