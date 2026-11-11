@@ -35,7 +35,7 @@ open_trackglance_settings() {
           'Allow Pebble to access your contacts?' \
           'Allow Pebble to make and manage phone calls?'; do
           if grep -Fq "text=\"$optional_prompt\"" /tmp/trackglance-window.xml; then
-            if tap_text "Don’t allow" 1 exact "$optional_prompt"; then
+            if tap_text "Don’t allow" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))" exact "$optional_prompt"; then
               settings_checkpoint "optional-permission-denied $optional_prompt"
             else
               settings_checkpoint "optional-permission-disappeared $optional_prompt"
@@ -74,7 +74,7 @@ open_trackglance_settings() {
         [[ -n "$control" ]] || continue
         if grep -Fq "text=\"$control\"" /tmp/trackglance-window.xml; then
           matched=1
-          if tap_text "$control" 1; then
+          if tap_text "$control" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))"; then
             settings_checkpoint "tapped $control"
             last_launch=$SECONDS
             case "$control" in
