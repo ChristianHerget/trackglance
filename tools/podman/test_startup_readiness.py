@@ -10,7 +10,7 @@ class StartupReadinessTest(unittest.TestCase):
 unset ANDROID_ADB_SERVER_PORT ADB_SERVER_SOCKET
 source "$DEVICE_LIB"
 adb() { test "$ANDROID_ADB_SERVER_PORT" == 5037 && test "$ADB_SERVER_SOCKET" == tcp:localhost:5037; }
-timeout() { shift; "$@"; }
+timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
 adb_device version
 adb_device_timeout 5 version
 '''
@@ -54,7 +54,7 @@ start_android trackglance-test-android data runtime
 source "$DEVICE_LIB"
 tick=0
 sleep() { tick=$((tick + 1)); SECONDS=$((SECONDS + 1)); }
-timeout() { shift; "$@"; }
+timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
 adb() { :; }
 adb_device() { :; }
 adb_device_timeout() {
@@ -128,3 +128,13 @@ test ! -e /tmp/trackglance-window.xml
                                     env={**os.environ, "DEVICE_LIB": str(ROOT / "tools/podman/device-lib.sh"),
                                          "SCENARIO": scenario}, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class GoldenLocationTest(unittest.TestCase):
+    def test_golden_provisioning_disables_gnss_before_installing_or_launching_apps(self):
+        source = PODMAN_TEST.read_text()
+        bootstrap = source[source.index("bootstrap() {"):source.index("new_run() {")]
+        self.assertIn("wait_for_android 180 disabled", bootstrap)
+        self.assertLess(bootstrap.index("wait_for_android 180 disabled"),
+                        bootstrap.index("install-multiple"))
+        self.assertNotIn("set_emulator_test_location", bootstrap)
