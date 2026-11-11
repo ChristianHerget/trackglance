@@ -16,6 +16,7 @@ buildscript {
         classpath("org.apache.httpcomponents:httpmime:4.5.14")
         classpath("org.bitbucket.b_c:jose4j:0.9.7")
         classpath("org.jdom:jdom2:2.0.6.1")
+        classpath("org.json:json:20260719")
     }
 }
 

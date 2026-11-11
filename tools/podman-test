@@ -802,10 +802,16 @@ runner_in_pod() {
   mapfile -t arguments < <(build_container_args)
   local -a network
   mapfile -t network < <(active_network_args)
-  acceptance_engine run "${arguments[@]}" "${network[@]}" \
+  local runner status
+  runner=$(acceptance_engine create "${arguments[@]}" "${network[@]}" \
+    --name "${ACTIVE_POD:-trackglance-runner}-${BASHPID}" \
     --volume "$ACTIVE_RUNTIME_VOLUME:/run/trackglance" \
     --volume "$artifacts:/artifacts" \
-    "$BUILD_IMAGE" "$@"
+    "$BUILD_IMAGE" "$@") || return $?
+  # Register the immutable ID before attaching: a cancelled CLI must not orphan its container.
+  register_active_container "$runner"
+  if acceptance_engine start --attach "$runner"; then status=0; else status=$?; fi
+  return "$status"
 }
 
 stop_active_pod() {
