@@ -498,3 +498,21 @@ complete_locus_onboarding 3
         self.assertEqual(result.returncode, 0, result.stderr)
         disappeared = self.run_device(script.replace("  page=map", "  page=map; return 1"))
         self.assertEqual(disappeared.returncode, 0, disappeared.stderr)
+
+
+class SupervisionDeadlineTest(unittest.TestCase):
+    def test_mode_selection_budget_includes_a_slow_fresh_ui_dump(self):
+        source = (ROOT / "tools/podman/supervision-permission-stage.sh").read_text()
+        start = source.index("select_mode() {")
+        function = source[start:source.index("\n}\n", start) + 3]
+        script = r'''
+source "$DEVICE_LIB"
+adb_device() { :; }
+adb_device_timeout() { shift; test "$1 $2 $3" == "shell input tap"; }
+dump_ui() { SECONDS=$((SECONDS + 3)); }
+python3() { echo "10 20"; }
+''' + function + "\nselect_mode Notify\n"
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB)},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
