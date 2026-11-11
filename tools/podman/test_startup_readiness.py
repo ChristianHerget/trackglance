@@ -10,7 +10,7 @@ class StartupReadinessTest(unittest.TestCase):
 unset ANDROID_ADB_SERVER_PORT ADB_SERVER_SOCKET
 source "$DEVICE_LIB"
 adb() { test "$ANDROID_ADB_SERVER_PORT" == 5037 && test "$ADB_SERVER_SOCKET" == tcp:localhost:5037; }
-timeout() { shift; "$@"; }
+timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
 adb_device version
 adb_device_timeout 5 version
 '''
@@ -54,7 +54,7 @@ start_android trackglance-test-android data runtime
 source "$DEVICE_LIB"
 tick=0
 sleep() { tick=$((tick + 1)); SECONDS=$((SECONDS + 1)); }
-timeout() { shift; "$@"; }
+timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
 adb() { :; }
 adb_device() { :; }
 adb_device_timeout() {

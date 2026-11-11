@@ -28,7 +28,7 @@ open_trackglance_settings() {
       settings_checkpoint permission-controller
       # These are the pinned Pebble App's optional after-connection permissions.
       # Recheck the exact prompt in tap_text's fresh dump before declining it.
-      if dump_ui; then
+      if dump_ui "$deadline"; then
         for optional_prompt in \
           'Allow Pebble to access your phone call logs?' \
           'Allow Pebble to access your calendar?' \
@@ -59,7 +59,7 @@ open_trackglance_settings() {
     fi
     # Never interpret a stale dump as a newly rendered WebView.
     rm -f /tmp/trackglance-window.xml
-    if dump_ui; then
+    if dump_ui "$deadline"; then
       if (( SECONDS < deadline )) && grep -Fq 'resource-id="generalOpen"' /tmp/trackglance-window.xml; then
         settings_checkpoint settings-webview-passed
         return 0
