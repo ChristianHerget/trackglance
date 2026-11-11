@@ -26,7 +26,7 @@ GOLDEN_VOLUME=trackglance-android-api${ANDROID_SYSTEM_API}-golden
 DOWNLOAD_VOLUME=trackglance-android-downloads
 GRADLE_CACHE=trackglance-gradle-cache
 NPM_CACHE=trackglance-npm-cache
-BOOTSTRAP_SCHEMA=4
+BOOTSTRAP_SCHEMA=5
 LOCUS_FIXTURE_CONFIG="$SCRIPT_DIR/locus-test-apk.properties"
 ACTIVE_POD=
 ACTIVE_ANDROID_CONTAINER=
@@ -889,7 +889,9 @@ bootstrap() {
     --volume "$artifacts:/artifacts" \
     "$BUILD_IMAGE" bash -euo pipefail -c '
       source /workspace/tools/podman/device-lib.sh
-      wait_for_android 180
+      # Golden snapshots must not retain an active emulator GNSS request. Setup needs no GPS;
+      # watch recording enables it explicitly after startup/settings checks.
+      wait_for_android 180 disabled
       adb_device_timeout 180 install -r /workspace/build/podman/images/pebble-app-x86_64-debug.apk >/dev/null
       mapfile -d "" apks < <(find /private -maxdepth 1 -type f -name "*.apk" -print0)
       (( ${#apks[@]} > 0 ))
