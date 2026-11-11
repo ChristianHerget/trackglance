@@ -880,6 +880,7 @@ bootstrap() {
 
   local artifacts="$BUILD_ROOT/bootstrap-artifacts"
   mkdir -p "$artifacts"
+  [[ -z "${CHECK_LOG_DIR:-}" ]] || printf '%s\n' "$artifacts" >> "$CHECK_LOG_DIR/runs.txt"
   local -a runner_args
   mapfile -t runner_args < <(build_container_args)
   acceptance_engine run "${runner_args[@]}" "${network[@]}" \
@@ -889,6 +890,18 @@ bootstrap() {
     --volume "$artifacts:/artifacts" \
     "$BUILD_IMAGE" bash -euo pipefail -c '
       source /workspace/tools/podman/device-lib.sh
+      capture_bootstrap_failure() {
+        local status=$?
+        trap - EXIT
+        if (( status != 0 )); then
+          set +e
+          cp /tmp/trackglance-window.xml /artifacts/bootstrap-ui.xml
+          adb_device_timeout 15 logcat -d -t 20000 > /artifacts/bootstrap-logcat.txt
+          android_screenshot bootstrap-failure
+        fi
+        exit "$status"
+      }
+      trap capture_bootstrap_failure EXIT
       # Golden snapshots must not retain an active emulator GNSS request. Setup needs no GPS;
       # watch recording enables it explicitly after startup/settings checks.
       wait_for_android 180 disabled
