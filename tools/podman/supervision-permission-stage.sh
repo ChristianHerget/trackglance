@@ -15,7 +15,7 @@ select_mode() {
     adb_device shell input swipe 540 600 540 1800 350
   done
   for ((scroll = 0; scroll < 8; scroll++)); do
-    if tap_text "$mode" 2 exact; then return; fi
+    if tap_text "$mode" 5 exact; then return; fi
     adb_device shell input swipe 540 1800 540 600 350
   done
   echo "Cannot find supervision mode $mode" >&2
