@@ -97,6 +97,7 @@ class SettingsNavigationTest(unittest.TestCase):
     def navigate(self, scenario, timeout="15"):
         with tempfile.TemporaryDirectory() as directory:
             script = r'''
+source "$DEVICE_LIB"
 source "$1"
 unset SECONDS
 SECONDS=0
@@ -130,11 +131,19 @@ adb_device_timeout() {
     fi
   elif [[ "$*" == *'am start'* ]]; then
     opens=$((opens + 1)); page=apps
-    if [[ "$SCENARIO" == onboarding && "$opens" == 1 ]]; then page=intro; fi
+    if [[ "$SCENARIO" == onboarding* && "$opens" == 1 ]]; then page=intro; fi
     if [[ "$SCENARIO" == call-log || "$SCENARIO" == permission-sequence || "$SCENARIO" == vanished-call-log || "$SCENARIO" == unrelated-permission ]]; then page=permission; fi
     echo "launch:$tick" >> "$CALLS"
   elif [[ "$*" == *'input swipe'* ]]; then
-    if [[ "$page" == carousel ]]; then page=configure; else page=finish; fi
+    case "$page" in
+      carousel) page=configure ;;
+      configure)
+        if [[ "$SCENARIO" == onboarding ]]; then page=finish; else page=watchfaces; fi ;;
+      watchfaces) page=onboarding-apps ;;
+      onboarding-apps) page=language ;;
+      language) if [[ "$SCENARIO" != onboarding-stuck ]]; then page=finish; fi ;;
+      *) page=finish ;;
+    esac
     echo swipe >> "$CALLS"
   elif [[ "$*" == *'content query'* ]]; then
     echo 'Row: 0 watch_connected=true, recording_state=STOPPED'
@@ -142,6 +151,7 @@ adb_device_timeout() {
 }
 dump_ui() {
   if [[ "$SCENARIO" == deadline && "$page" == settings ]]; then SECONDS=$((SECONDS + 30)); fi
+  if [[ "$SCENARIO" == onboarding-deadline && "$page" == watchfaces ]]; then SECONDS=$((SECONDS + 30)); fi
   if [[ "$SCENARIO" == stale && "$tick" -lt 3 ]]; then return 1; fi
   if [[ "$SCENARIO" == failure ]]; then
     echo '<hierarchy><node text="Unrelated control"/></hierarchy>' > /tmp/trackglance-window.xml
@@ -159,6 +169,9 @@ dump_ui() {
     choice) echo '<hierarchy><node text="I have a:"/><node text="Watch"/></hierarchy>' ;;
     carousel) echo '<node text="Get Started!"/>' ;;
     configure) echo '<node text="Configure your watch"/>' ;;
+    watchfaces) echo '<hierarchy><node text="Add some Watchfaces"/><node text="Add"/></hierarchy>' ;;
+    onboarding-apps) echo '<hierarchy><node text="Add some Apps"/><node text="Add"/></hierarchy>' ;;
+    language) echo '<hierarchy><node text="Install a language pack"/><node text="Choose Language"/></hierarchy>' ;;
     finish) echo '<node text="Finished"/>' ;;
     apps) echo '<hierarchy><node text="Watch"/><node text="Settings"/><node text="Apps"/></hierarchy>' ;;
     list) echo '<hierarchy><node text="Settings"/><node text="TrackGlance"/></hierarchy>' ;;
@@ -201,6 +214,7 @@ fi
             result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script, 'test',
                                      str(ROOT / 'tools/podman/settings-navigation.sh')],
                                     env={**os.environ, 'SETTINGS_TRACE': str(trace), 'CALLS': str(calls),
+                                         'DEVICE_LIB': str(ROOT / 'tools/podman/device-lib.sh'),
                                          'SCENARIO': scenario, 'STATUS_URI': 'content://test',
                                          'NAV_TIMEOUT': timeout},
                                     capture_output=True, text=True, timeout=10)
@@ -293,6 +307,32 @@ fi
         self.assertEqual(calls.count('launch:'), 2)
         self.assertEqual(calls.splitlines().count('swipe'), 2)
         self.assertIn('settings-webview-passed', trace)
+
+    def test_onboarding_continues_after_intro_headings_scroll_out_of_view(self):
+        result, trace, calls = self.navigate('onboarding-long')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls.splitlines().count('swipe'), 5)
+        self.assertEqual(calls.count('launch:'), 2)
+        self.assertIn('tap:Finished', calls)
+        self.assertNotIn('tap:Add', calls)
+        self.assertNotIn('tap:Choose Language', calls)
+        self.assertIn('settings-webview-passed', trace)
+
+    def test_onboarding_that_never_exposes_finished_stays_within_deadline(self):
+        result, trace, calls = self.navigate('onboarding-stuck')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls.count('launch:'), 1)
+        self.assertLessEqual(calls.splitlines().count('swipe'), 15)
+        self.assertNotIn('tap:Finished', calls)
+        self.assertIn('expired', trace)
+        self.assertNotIn('settings-webview-passed', trace)
+
+    def test_onboarding_capture_finishing_after_deadline_never_swipes(self):
+        result, trace, calls = self.navigate('onboarding-deadline')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls.splitlines().count('swipe'), 2)
+        self.assertIn('onboarding-swipe-failed', trace)
+        self.assertNotIn('settings-webview-passed', trace)
 
     def test_settings_reopen_uses_same_marker_and_recovery(self):
         result, trace, calls = self.navigate('reopen')
