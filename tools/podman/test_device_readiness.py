@@ -425,6 +425,120 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
         self.assertNotEqual(failed.returncode, 0)
         self.assertNotIn("<allow_listener>", failed.stdout)
 
+class FreshTapDeadlineTest(unittest.TestCase):
+    def run_tap(self, body):
+        script = r'''
+source "$DEVICE_LIB"
+SECONDS=0
+captures=0
+dump_ui() {
+  captures=$((captures + 1))
+  echo '<hierarchy><node text="Done" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
+adb_device_timeout() { echo "input:$*"; }
+''' + body
+        return subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+                              env={**os.environ, 'DEVICE_LIB': str(DEVICE_LIB)},
+                              capture_output=True, text=True, timeout=5)
+
+    def test_expired_attempt_does_not_capture_or_tap(self):
+        result = self.run_tap(r'''
+if tap_text_once_until 0 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+test "$captures" == 0
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_missing_control_returns_to_caller_after_one_snapshot(self):
+        result = self.run_tap(r'''
+if tap_text_once_until 180 Absent; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == missing
+test "$captures" == 1
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_replaced_permission_is_not_answered(self):
+        result = self.run_tap(r'''
+dump_ui() {
+  echo '<hierarchy><node text="Allow another app to access your camera?"/><node text="Don’t allow" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
+if tap_text_once_until 180 "Don’t allow" exact 'Allow Pebble to access your phone call logs?'; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == missing
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_failed_capture_never_reuses_stale_coordinates(self):
+        for phase in ('dump', 'pull', 'invalid'):
+            with self.subTest(phase=phase):
+                result = self.run_tap(r'''
+dump_ui
+source "$DEVICE_LIB"
+adb_device_timeout() {
+  shift
+  if [[ "$1" == shell ]]; then
+    test "$PHASE" != dump
+  elif [[ "$1" == pull ]]; then
+    echo '<broken' > /tmp/trackglance-window.xml
+    test "$PHASE" != pull
+  else
+    echo unexpected-input
+  fi
+}
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == capture-failed
+test ! -e /tmp/trackglance-window.xml
+'''.replace('$PHASE', phase))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_parse_failure_is_distinguished_from_a_missing_target(self):
+        result = self.run_tap(r'''
+dump_ui() { echo '<broken' > /tmp/trackglance-window.xml; }
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == parse-failed
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_selection_finishing_at_deadline_never_taps(self):
+        result = self.run_tap(r'''
+ui_text_coordinates() { sleep 1; echo '10 20'; }
+if tap_text_once_until 1 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_late_input_is_not_reported_as_success(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { SECONDS=180; }
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_input_limit_is_clamped_to_remaining_budget(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { test "$1" == 2; test "$*" == '2 shell input tap 50 50'; }
+tap_text_once_until 2 Done
+test "$TAP_TEXT_OUTCOME" == tapped
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_failed_input_is_distinguished_from_a_missing_target(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { return 17; }
+status=0
+tap_text_once_until 180 Done || status=$?
+test "$status" == 17
+test "$TAP_TEXT_OUTCOME" == input-failed
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 class AdbDeadlineTest(unittest.TestCase):
     def test_hung_tap_is_terminated_by_its_own_deadline(self):
         script = r'''
