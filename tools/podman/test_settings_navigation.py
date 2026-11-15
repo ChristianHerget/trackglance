@@ -6,6 +6,91 @@ from pathlib import Path
 from script_test_support import ROOT
 
 
+class SettingsFreshTapTest(unittest.TestCase):
+    def navigate(self, timeout=180, scenario='normal'):
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / 'trace'
+            calls = Path(directory) / 'calls'
+            script = r'''
+source "$DEVICE_LIB"
+source "$NAVIGATION_LIB"
+SECONDS=0
+page=apps
+dumps=0
+sleep() { SECONDS=$((SECONDS + 1)); }
+relayctl() { echo '{"phone_connected":true,"qemu_connected":true}'; }
+status_value() { echo true; }
+adb_device_timeout() {
+  shift
+  case "$*" in
+    'shell dumpsys activity activities') echo 'topResumedActivity=ActivityRecord{ coredevices.coreapp/MainActivity}' ;;
+    'shell input tap 392 296') page=list; echo Apps >> "$CALLS" ;;
+    'shell input tap 100 200') page=details; echo TrackGlance >> "$CALLS" ;;
+    'shell input tap 100 300') page=settings; echo Settings >> "$CALLS" ;;
+    *'input tap'*) echo "Unexpected tap: $*" >&2; return 1 ;;
+  esac
+}
+dump_ui() {
+  # Model the hosted capture that takes more than the old five-second tap budget.
+  SECONDS=$((SECONDS + 6))
+  dumps=$((dumps + 1))
+  if [[ "$SCENARIO" == disappeared && "$dumps" == 2 ]]; then
+    echo '<hierarchy><node text="Screen changing"/></hierarchy>' > /tmp/trackglance-window.xml
+    return
+  fi
+  case "$page" in
+    apps)
+      # Normalized from the hosted failure: segmented Apps, heading, and bottom nav.
+      cat <<'XML'
+<hierarchy><node bounds="[0,0][1080,2400]">
+  <node checkable="true" checked="false" clickable="true" bounds="[273,233][511,359]">
+    <node content-desc="Apps" bounds="[273,233][511,359]"/>
+    <node text="Apps" bounds="[315,268][465,324]"/>
+  </node>
+  <node text="Apps" bounds="[43,102][222,192]"/>
+  <node text="Apps" bounds="[98,2266][157,2308]"/>
+</node></hierarchy>
+XML
+      ;;
+    list) echo '<hierarchy><node text="TrackGlance" clickable="true" bounds="[50,150][150,250]"/></hierarchy>' ;;
+    details) echo '<hierarchy><node text="Settings" clickable="true" bounds="[50,250][150,350]"/></hierarchy>' ;;
+    settings) echo '<hierarchy><node resource-id="generalOpen"/></hierarchy>' ;;
+  esac > /tmp/trackglance-window.xml
+}
+open_trackglance_settings "$NAV_TIMEOUT"
+'''
+            result = subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+                                    env={**os.environ, 'DEVICE_LIB': str(ROOT / 'tools/podman/device-lib.sh'),
+                                         'NAVIGATION_LIB': str(ROOT / 'tools/podman/settings-navigation.sh'),
+                                         'SETTINGS_TRACE': str(trace), 'CALLS': str(calls),
+                                         'STATUS_URI': 'content://test', 'NAV_TIMEOUT': str(timeout),
+                                         'SCENARIO': scenario},
+                                    capture_output=True, text=True, timeout=10)
+            return result, trace.read_text(), calls.read_text() if calls.exists() else ''
+
+    def test_slow_fresh_captures_select_segmented_apps_and_reach_settings(self):
+        result, trace, calls = self.navigate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls.splitlines(), ['Apps', 'TrackGlance', 'Settings'])
+        self.assertEqual(trace.count('capture_seconds=6'), 3)
+        self.assertEqual(trace.count('outcome=tapped'), 3)
+        self.assertIn('settings-webview-passed', trace)
+
+    def test_navigation_rejects_a_fresh_capture_that_exhausts_parent_deadline(self):
+        result, trace, calls = self.navigate(timeout=13)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, '')
+        self.assertIn('outcome=deadline', trace)
+        self.assertNotIn('settings-webview-passed', trace)
+
+    def test_disappearing_control_returns_to_navigation_and_is_reselected(self):
+        result, trace, calls = self.navigate(scenario='disappeared')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls.splitlines(), ['Apps', 'TrackGlance', 'Settings'])
+        self.assertEqual(trace.count('outcome=missing'), 1)
+        self.assertIn('settings-webview-passed', trace)
+
+
 class SettingsNavigationTest(unittest.TestCase):
     def navigate(self, scenario, timeout="15"):
         with tempfile.TemporaryDirectory() as directory:
@@ -77,10 +162,13 @@ dump_ui() {
     settings) echo '<node resource-id="generalOpen"/>' ;;
   esac > /tmp/trackglance-window.xml
 }
-tap_text() {
+tap_text_once_until() {
+  shift
+  TAP_TEXT_CAPTURE_SECONDS=0
+  TAP_TEXT_OUTCOME=tapped
   echo "tap:$1" >> "$CALLS"
   if [[ "$SCENARIO" == missing && "${missed[$1]:-0}" == 0 ]]; then
-    missed[$1]=1; return 1
+    missed[$1]=1; TAP_TEXT_OUTCOME=missing; return 1
   fi
   case "$1" in
     'Don’t allow')
@@ -89,7 +177,7 @@ tap_text() {
         permission_index=$((permission_index + 1))
         if (( permission_index < 4 )); then page=permission; fi
       fi
-      if [[ "$SCENARIO" == vanished-call-log ]]; then return 1; fi ;;
+      if [[ "$SCENARIO" == vanished-call-log ]]; then TAP_TEXT_OUTCOME=missing; return 1; fi ;;
     'Get Started') page=choice ;;
     Watch) page=carousel ;;
     Finished) page=apps ;;
@@ -137,7 +225,8 @@ fi
     def test_disappearing_optional_prompt_is_rechecked(self):
         result, trace, _ = self.navigate('vanished-call-log')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('optional-permission-disappeared', trace)
+        self.assertIn('optional-permission-not-denied', trace)
+        self.assertIn('outcome=missing', trace)
 
     def test_all_pinned_optional_requests_are_declined_in_one_onboarding(self):
         result, trace, calls = self.navigate('permission-sequence')
@@ -181,7 +270,8 @@ fi
         result, trace, _ = self.navigate('missing')
         self.assertEqual(result.returncode, 0, result.stderr)
         for control in ('Apps', 'TrackGlance', 'Settings'):
-            self.assertIn('missing ' + control, trace)
+            self.assertIn('control=' + control + ' capture_seconds=0', trace)
+        self.assertEqual(trace.count('outcome=missing'), 3)
         self.assertIn('settings-webview-passed', trace)
 
     def test_main_screen_watch_and_settings_controls_do_not_bypass_app_navigation(self):

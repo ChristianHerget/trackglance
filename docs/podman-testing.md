@@ -262,6 +262,10 @@ The emulator image's older ADB server uses port 5038, separately from the SDK ru
 on port 5037. This prevents a shared-port startup/version race while retaining test-engine compatibility.
 Settings recovery declines the Pebble App's optional call-log, calendar, contacts, and phone-state
 requests. It verifies the exact prompt again before tapping and leaves unrelated dialogs unanswered.
+Each settings tap makes one fresh UI read under the navigation attempt's 180-second deadline,
+with separate bounds on the dump, pull, and input commands. A disappearing control returns to
+navigation recovery. Checkpoints record capture duration, remaining time, and whether the target
+was missing, capture or input failed, or the deadline expired.
 
 For deliberate phase-by-phase diagnosis, choose a new absolute session filename:
 
