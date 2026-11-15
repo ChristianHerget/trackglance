@@ -208,3 +208,31 @@ acceptance_session behavior --session "$SESSION"
 ''')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("images were replaced", result.stderr)
+
+class RunnerOwnershipTest(unittest.TestCase):
+    def test_runner_is_registered_before_attach_and_preserves_failure(self):
+        script = r'''
+source "$PODMAN_TEST"
+trap - EXIT
+ACTIVE_RUNTIME_VOLUME=runtime
+ACTIVE_POD=trackglance-test
+BUILD_IMAGE=image
+build_container_args() { echo --rm; }
+active_network_args() { :; }
+acceptance_engine() {
+  case "$1" in
+    create)
+      [[ "$*" == *'--name trackglance-test-'* ]] || exit 44
+      echo immutable-runner-id ;;
+    start)
+      [[ "${ACTIVE_CONTAINERS[*]}" == immutable-runner-id ]] || exit 42
+      return 7 ;;
+  esac
+}
+ACCEPTANCE_ENGINE=docker
+if runner_in_pod /artifacts true; then exit 43; else test "$?" == 7; fi
+'''
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "PODMAN_TEST": str(PODMAN_TEST)},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)

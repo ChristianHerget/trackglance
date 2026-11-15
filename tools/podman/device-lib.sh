@@ -12,13 +12,23 @@ EMULATOR_CONSOLE_TOKEN=/run/trackglance/emulator-console-auth-token
 LOCUS_START_ACTIVITY=menion.android.locus/com.asamm.android.library.androidCore.features.startScreen.StartScreen
 
 adb_device() {
-  adb -s "$ADB_SERIAL" "$@"
+  adb_device_timeout 30 "$@"
 }
 
 adb_device_timeout() {
   local duration=$1
   shift
-  timeout "$duration" adb -s "$ADB_SERIAL" "$@"
+  timeout --kill-after=5 "$duration" adb -s "$ADB_SERIAL" "$@"
+}
+
+# Share an absolute deadline across nested UI operations.
+adb_device_until() {
+  local deadline=$1 limit=$2 remaining
+  shift 2
+  remaining=$((deadline - SECONDS))
+  (( remaining > 0 )) || return 124
+  (( remaining >= limit )) || limit=$remaining
+  adb_device_timeout "$limit" "$@"
 }
 
 connect_to_android() {
@@ -148,6 +158,7 @@ grant_coreapp_test_permissions() {
 
 complete_locus_onboarding() {
   local deadline=$((SECONDS + ${1:-90})) working_directory_retries=0
+  local location_prompt=$'For a better experience, turn on device location, which uses Google\xe2\x80\x99s location service. '
   while (( SECONDS < deadline )); do
     if ! dump_ui; then
       sleep 0.5
@@ -161,6 +172,10 @@ complete_locus_onboarding() {
       # The intro screen may advance after the dump and before tap_text finds its button.
       # Recheck the map rather than failing the whole bootstrap on a vanished button.
       tap_text START 5 exact || true
+    elif grep -Fq "text=\"$location_prompt\"" /tmp/trackglance-window.xml; then
+      # Keep the golden snapshot free of active GNSS requests. Recheck this exact optional
+      # prompt in the fresh tap dump so a disappearing dialog cannot answer another prompt.
+      tap_text "No thanks" 5 exact "$location_prompt" || true
     elif grep -Fq 'text="Problem with working directory"' /tmp/trackglance-window.xml; then
       working_directory_retries=$((working_directory_retries + 1))
       if (( working_directory_retries > 3 )); then
@@ -287,11 +302,12 @@ android_screenshot() {
 }
 
 dump_ui() {
+  local deadline=${1:-$((SECONDS + 25))}
   rm -f /tmp/trackglance-window.xml
-  adb_device_timeout 15 shell \
+  adb_device_until "$deadline" 15 shell \
     'rm -f /sdcard/trackglance-window.xml && uiautomator dump /sdcard/trackglance-window.xml' \
     >/dev/null || return 1
-  if ! adb_device_timeout 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null; then
+  if ! adb_device_until "$deadline" 10 pull /sdcard/trackglance-window.xml /tmp/trackglance-window.xml >/dev/null; then
     rm -f /tmp/trackglance-window.xml
     return 1
   fi
@@ -301,13 +317,8 @@ dump_ui() {
   fi
 }
 
-tap_text() {
-  local needle=$1
-  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
-  local deadline=$((SECONDS + timeout)) coordinates
-  while (( SECONDS < deadline )); do
-    dump_ui || true
-    coordinates=$(python3 - "$needle" "$match" "$required_text" <<'PY'
+ui_text_coordinates() {
+  python3 - "$1" "${2:-contains}" "${3:-}" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -316,7 +327,7 @@ match = sys.argv[2] if len(sys.argv) > 2 else "contains"
 try:
     root = ET.parse('/tmp/trackglance-window.xml').getroot()
 except Exception:
-    raise SystemExit
+    raise SystemExit(2)
 parents = {child: parent for parent in root.iter() for child in parent}
 if len(sys.argv) > 3 and sys.argv[3] and not any(
     node.attrib.get('text', '') == sys.argv[3] for node in root.iter('node')
@@ -368,9 +379,57 @@ for node in root.iter('node'):
             )
             break
 PY
-)
+}
+
+# One fresh attempt; callers recover changed screens under their own absolute deadline.
+# These diagnostics stay in the calling shell, separate from coordinate output.
+tap_text_once_until() {
+  local deadline=$1 needle=$2 match=${3:-contains} required_text=${4:-}
+  local started=$SECONDS coordinates status
+  TAP_TEXT_OUTCOME=deadline
+  TAP_TEXT_CAPTURE_SECONDS=0
+  (( SECONDS < deadline )) || return 124
+  if dump_ui "$deadline"; then
+    TAP_TEXT_OUTCOME=missing
+  else
+    TAP_TEXT_OUTCOME=capture-failed
+  fi
+  # Read by settings_tap_text in settings-navigation.sh.
+  # shellcheck disable=SC2034
+  TAP_TEXT_CAPTURE_SECONDS=$((SECONDS - started))
+  (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+  [[ "$TAP_TEXT_OUTCOME" != capture-failed ]] || return 1
+  if coordinates=$(ui_text_coordinates "$needle" "$match" "$required_text"); then
+    :
+  else
+    TAP_TEXT_OUTCOME=parse-failed
+    return 2
+  fi
+  (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+  [[ -n "$coordinates" ]] || return 1
+  if adb_device_until "$deadline" 5 shell input tap $coordinates; then
+    (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+    TAP_TEXT_OUTCOME=tapped
+    return 0
+  else
+    status=$?
+    TAP_TEXT_OUTCOME=input-failed
+    (( SECONDS < deadline )) || TAP_TEXT_OUTCOME=deadline
+    return "$status"
+  fi
+}
+
+tap_text() {
+  local needle=$1
+  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
+  local deadline=$((SECONDS + timeout)) coordinates
+  while (( SECONDS < deadline )); do
+    dump_ui "$deadline" || true
+    (( SECONDS < deadline )) || break
+    coordinates=$(ui_text_coordinates "$needle" "$match" "$required_text" || true)
     if [[ -n "$coordinates" ]]; then
-      adb_device shell input tap $coordinates
+      adb_device_until "$deadline" 5 shell input tap $coordinates || return $?
+      (( SECONDS < deadline ))
       return
     fi
     sleep 0.5

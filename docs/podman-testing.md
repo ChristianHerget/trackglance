@@ -262,6 +262,10 @@ The emulator image's older ADB server uses port 5038, separately from the SDK ru
 on port 5037. This prevents a shared-port startup/version race while retaining test-engine compatibility.
 Settings recovery declines the Pebble App's optional call-log, calendar, contacts, and phone-state
 requests. It verifies the exact prompt again before tapping and leaves unrelated dialogs unanswered.
+Each settings tap makes one fresh UI read under the navigation attempt's 180-second deadline,
+with separate bounds on the dump, pull, and input commands. A disappearing control returns to
+navigation recovery. Checkpoints record capture duration, remaining time, and whether the target
+was missing, capture or input failed, or the deadline expired.
 
 For deliberate phase-by-phase diagnosis, choose a new absolute session filename:
 
@@ -596,3 +600,12 @@ During image publication, `tools/ci-images.env` records the API and system-image
 to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks
 the actual running API before recording golden-state provenance. This allows the protected gate
 to retain its certified image until the replacement has been published and compared.
+
+Acceptance ADB commands have a 30-second default deadline; explicit installation and diagnostic
+limits still apply. UI operations share their caller's remaining deadline. Commands that ignore
+termination are killed after five seconds. Behavior checkpoints are retained with each watch's
+artifacts. Runner containers are registered by immutable ID before attachment so cancellation
+cleanup can remove them before deleting their runtime volumes.
+
+Golden-state provisioning keeps GPS disabled to avoid freezing active GNSS requests into emulator
+snapshots. Watch recording checks enable GPS explicitly after startup and settings checks.

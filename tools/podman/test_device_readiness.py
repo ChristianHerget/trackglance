@@ -35,6 +35,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
             script = r'''source "$DEVICE_LIB"
                 EMULATOR_CONSOLE_TOKEN=$TEST_TOKEN
                 exec 3>&1
+                timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
                 adb() {
                   { printf 'adb'; printf ' <%s>' "$@"; printf '\n'; } >&3
                   if [[ "$*" == "-s test:5555 shell getprop ro.build.version.sdk" ]]; then printf "%s\n" "$TEST_API"; fi
@@ -91,7 +92,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
                         """\
                         source "$DEVICE_LIB"
                         dump_ui() { cp "$UI_FIXTURE" /tmp/trackglance-window.xml; }
-                        adb_device() { printf '%s\\n' "$*" > "$ADB_LOG"; }
+                        adb_device_timeout() { shift; printf '%s\\n' "$*" > "$ADB_LOG"; }
                         tap_text Finished 2
                         """
                     ),
@@ -111,7 +112,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
             source "$DEVICE_LIB"
             dump_ui() { :; }
             python3() { printf '10 20\n'; }
-            adb_device() { test "$*" = "shell input tap 10 20"; }
+            adb_device_timeout() { shift; test "$*" = "shell input tap 10 20"; }
             tap_text Start 1
             """
         )
@@ -132,6 +133,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
             echo 0 > "$state"
             sleep() { :; }
             adb_device_timeout() {
+                [[ "$*" != *'shell am start'* ]] || return 0
                 count=$(cat "$state")
                 echo $((count + 1)) > "$state"
                 if [[ "$count" == 1 ]]; then
@@ -227,7 +229,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             state = temporary / "adb-state"
-            (temporary / "timeout").write_text("#!/bin/sh\nshift\nexec \"$@\"\n", encoding="utf-8")
+            (temporary / "timeout").write_text("#!/bin/sh\ncase \"$1\" in --kill-after=*) shift;; esac\nshift\nexec \"$@\"\n", encoding="utf-8")
             (temporary / "sleep").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             (temporary / "adb").write_text(
                 textwrap.dedent(
@@ -289,7 +291,8 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
     def test_wait_for_android_sets_wartburg_through_the_emulator_console(self):
         result = self.run_device(r'''timeout() {
             if [[ "$*" == *sys.boot_completed* ]]; then printf '1
-'; fi
+';
+            elif [[ "$*" == *settings* || "$*" == *location* ]]; then [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; fi
         }
         wait_for_android 2
         ''')
@@ -316,7 +319,7 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
     def test_instrumentation_can_disable_location_without_injecting_a_fix(self):
         script = '''timeout() {
             if [[ "$*" == *sys.boot_completed* ]]; then printf '1\n';
-            elif [[ "$*" == *set-location-enabled* ]]; then shift; "$@"; fi
+            elif [[ "$*" == *set-location-enabled* ]]; then [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; fi
         }
         wait_for_android 2 disabled
         '''
@@ -421,3 +424,209 @@ if tap_text "Don’t allow" 1 exact 'Allow Pebble to access your phone call logs
         )
         self.assertNotEqual(failed.returncode, 0)
         self.assertNotIn("<allow_listener>", failed.stdout)
+
+class FreshTapDeadlineTest(unittest.TestCase):
+    def run_tap(self, body):
+        script = r'''
+source "$DEVICE_LIB"
+SECONDS=0
+captures=0
+dump_ui() {
+  captures=$((captures + 1))
+  echo '<hierarchy><node text="Done" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
+adb_device_timeout() { echo "input:$*"; }
+''' + body
+        return subprocess.run(['bash', '-euo', 'pipefail', '-c', script],
+                              env={**os.environ, 'DEVICE_LIB': str(DEVICE_LIB)},
+                              capture_output=True, text=True, timeout=5)
+
+    def test_expired_attempt_does_not_capture_or_tap(self):
+        result = self.run_tap(r'''
+if tap_text_once_until 0 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+test "$captures" == 0
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_missing_control_returns_to_caller_after_one_snapshot(self):
+        result = self.run_tap(r'''
+if tap_text_once_until 180 Absent; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == missing
+test "$captures" == 1
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_replaced_permission_is_not_answered(self):
+        result = self.run_tap(r'''
+dump_ui() {
+  echo '<hierarchy><node text="Allow another app to access your camera?"/><node text="Don’t allow" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
+if tap_text_once_until 180 "Don’t allow" exact 'Allow Pebble to access your phone call logs?'; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == missing
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_failed_capture_never_reuses_stale_coordinates(self):
+        for phase in ('dump', 'pull', 'invalid'):
+            with self.subTest(phase=phase):
+                result = self.run_tap(r'''
+dump_ui
+source "$DEVICE_LIB"
+adb_device_timeout() {
+  shift
+  if [[ "$1" == shell ]]; then
+    test "$PHASE" != dump
+  elif [[ "$1" == pull ]]; then
+    echo '<broken' > /tmp/trackglance-window.xml
+    test "$PHASE" != pull
+  else
+    echo unexpected-input
+  fi
+}
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == capture-failed
+test ! -e /tmp/trackglance-window.xml
+'''.replace('$PHASE', phase))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, '')
+
+    def test_parse_failure_is_distinguished_from_a_missing_target(self):
+        result = self.run_tap(r'''
+dump_ui() { echo '<broken' > /tmp/trackglance-window.xml; }
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == parse-failed
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_selection_finishing_at_deadline_never_taps(self):
+        result = self.run_tap(r'''
+ui_text_coordinates() { sleep 1; echo '10 20'; }
+if tap_text_once_until 1 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_late_input_is_not_reported_as_success(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { SECONDS=180; }
+if tap_text_once_until 180 Done; then exit 42; fi
+test "$TAP_TEXT_OUTCOME" == deadline
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_input_limit_is_clamped_to_remaining_budget(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { test "$1" == 2; test "$*" == '2 shell input tap 50 50'; }
+tap_text_once_until 2 Done
+test "$TAP_TEXT_OUTCOME" == tapped
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_failed_input_is_distinguished_from_a_missing_target(self):
+        result = self.run_tap(r'''
+adb_device_timeout() { return 17; }
+status=0
+tap_text_once_until 180 Done || status=$?
+test "$status" == 17
+test "$TAP_TEXT_OUTCOME" == input-failed
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class AdbDeadlineTest(unittest.TestCase):
+    def test_hung_tap_is_terminated_by_its_own_deadline(self):
+        script = r'''
+source "$DEVICE_LIB"
+dump_ui() { :; }
+python3() { echo '10 20'; }
+adb() { sleep 30; }
+export -f adb
+# timeout executes an external program, so substitute a disposable adb executable.
+directory=$(mktemp -d)
+trap 'rm -rf "$directory"' EXIT
+printf '#!/bin/bash\nsleep 30\n' > "$directory/adb"
+chmod +x "$directory/adb"
+PATH="$directory:$PATH"
+if tap_text Done 1; then exit 42; fi
+'''
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB)},
+                                capture_output=True, text=True, timeout=9)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_expired_deadline_never_sends_input(self):
+        script = r'''
+source "$DEVICE_LIB"
+adb_device_timeout() { echo unexpectedly-called; }
+if adb_device_until "$SECONDS" 5 shell input tap 10 20; then exit 42; fi
+'''
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB)},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_command_ignoring_termination_is_force_killed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            adb = Path(directory) / "adb"
+            adb.write_text('#!/bin/bash\ntrap "" TERM\nsleep 30\n')
+            adb.chmod(0o755)
+            script = r'''
+source "$DEVICE_LIB"
+if adb_device_timeout 1 shell input tap 10 20; then exit 42; fi
+'''
+            result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                    env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB),
+                                         "PATH": directory + ":" + os.environ["PATH"]},
+                                    capture_output=True, text=True, timeout=9)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class GoldenLocationPromptTest(unittest.TestCase):
+    run_device = DeviceReadinessTest.run_device
+    def test_onboarding_declines_only_the_observed_google_location_prompt(self):
+        script = r'''
+export LC_ALL=C LANG=C
+page=prompt
+dump_ui() {
+  if [[ "$page" == prompt ]]; then
+    echo '<hierarchy><node text="For a better experience, turn on device location, which uses Google’s location service. "/><node text="No thanks"/></hierarchy>' > /tmp/trackglance-window.xml
+  else
+    echo '<hierarchy><node resource-id="menion.android.locus:id/drawer_layout"/></hierarchy>' > /tmp/trackglance-window.xml
+  fi
+}
+tap_text() {
+  test "$1" == "No thanks" && test "$3" == exact
+  test "$4" == "For a better experience, turn on device location, which uses Google’s location service. "
+  page=map
+}
+complete_locus_onboarding 3
+'''
+        result = self.run_device(script)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        disappeared = self.run_device(script.replace("  page=map", "  page=map; return 1"))
+        self.assertEqual(disappeared.returncode, 0, disappeared.stderr)
+
+
+class SupervisionDeadlineTest(unittest.TestCase):
+    def test_mode_selection_budget_includes_a_slow_fresh_ui_dump(self):
+        source = (ROOT / "tools/podman/supervision-permission-stage.sh").read_text()
+        start = source.index("select_mode() {")
+        function = source[start:source.index("\n}\n", start) + 3]
+        script = r'''
+source "$DEVICE_LIB"
+adb_device() { :; }
+adb_device_timeout() { shift; test "$1 $2 $3" == "shell input tap"; }
+dump_ui() { SECONDS=$((SECONDS + 3)); }
+python3() { echo "10 20"; }
+''' + function + "\nselect_mode Notify\n"
+        result = subprocess.run(["bash", "-euo", "pipefail", "-c", script],
+                                env={**os.environ, "DEVICE_LIB": str(DEVICE_LIB)},
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)

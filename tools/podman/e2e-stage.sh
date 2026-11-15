@@ -15,6 +15,12 @@ phase=${1:-full}
 case "$phase" in full|startup|behavior) ;; *) echo "Unknown watch phase: $phase" >&2; exit 2 ;; esac
 phase_state=/artifacts/watch-startup.json
 
+behavior_checkpoint() {
+  printf '%s %s\n' "$SECONDS" "$*" | tee -a "/artifacts/${PEBBLE_PLATFORM}-behavior-checkpoints.txt"
+}
+behavior_checkpoint "phase=$phase begin"
+
+
 capture_artifacts() {
   local original_status=$? retention_status=0
   set +e
@@ -116,6 +122,7 @@ else
   open_trackglance_settings
 fi
 
+behavior_checkpoint configure-profile
 tap_text "$recording_profile" 30
 tap_text "Use watch steps for this activity" 30
 tap_text "Done" 30
@@ -193,7 +200,7 @@ enable_supervision() {
   adb_device shell am start -W -n "$bridge_activity" >/dev/null
   local scroll
   for ((scroll = 0; scroll < 8; scroll++)); do
-    if tap_text "Auto-start" 2 exact; then
+    if tap_text "Auto-start" 5 exact; then
       break
     fi
     adb_device shell input swipe 540 1800 540 600 350
@@ -221,6 +228,7 @@ screen_off_supervision_recovery() {
 }
 
 run_step_acceptance() {
+  behavior_checkpoint recording-and-steps
   mute_locus_watch_notifications
   enable_supervision
   adb_device_timeout 10 shell cmd location set-location-enabled true
@@ -352,6 +360,7 @@ else
 fi
 
 # Reject a system restart even if later UI recovery made the behavioral assertions pass.
+behavior_checkpoint behavior-complete
 final_system_server_pid=$(adb_device_timeout 5 shell pidof system_server | tr -d '\r')
 if [[ "$final_system_server_pid" != "$system_server_pid" ]]; then
   echo "Android system_server restarted during watch acceptance" >&2
