@@ -4,6 +4,13 @@ settings_checkpoint() {
   printf '%s %s\n' "$SECONDS" "$*" >> "${SETTINGS_TRACE:-/artifacts/${PEBBLE_PLATFORM}-settings-checkpoints.txt}"
 }
 
+settings_tap_text() {
+  local deadline=$1 control=$2 status=0
+  tap_text_once_until "$@" || status=$?
+  settings_checkpoint "tap control=$control capture_seconds=$TAP_TEXT_CAPTURE_SECONDS remaining_seconds=$((deadline - SECONDS)) outcome=$TAP_TEXT_OUTCOME"
+  return "$status"
+}
+
 open_trackglance_settings() {
   # Cold first-run onboarding and WebView startup can consume more than two minutes.
   # This is a deadline, not a delay: return as soon as the settings marker is observed.
@@ -27,7 +34,7 @@ open_trackglance_settings() {
       || "$foreground" == *' com.android.permissioncontroller/'* ]]; then
       settings_checkpoint permission-controller
       # These are the pinned Pebble App's optional after-connection permissions.
-      # Recheck the exact prompt in tap_text's fresh dump before declining it.
+      # Recheck the exact prompt in a fresh dump before declining it.
       if dump_ui "$deadline"; then
         for optional_prompt in \
           'Allow Pebble to access your phone call logs?' \
@@ -35,10 +42,10 @@ open_trackglance_settings() {
           'Allow Pebble to access your contacts?' \
           'Allow Pebble to make and manage phone calls?'; do
           if grep -Fq "text=\"$optional_prompt\"" /tmp/trackglance-window.xml; then
-            if tap_text "Don’t allow" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))" exact "$optional_prompt"; then
+            if settings_tap_text "$deadline" "Don’t allow" exact "$optional_prompt"; then
               settings_checkpoint "optional-permission-denied $optional_prompt"
             else
-              settings_checkpoint "optional-permission-disappeared $optional_prompt"
+              settings_checkpoint "optional-permission-not-denied $optional_prompt"
             fi
             break
           fi
@@ -74,7 +81,7 @@ open_trackglance_settings() {
         [[ -n "$control" ]] || continue
         if grep -Fq "text=\"$control\"" /tmp/trackglance-window.xml; then
           matched=1
-          if tap_text "$control" "$((deadline - SECONDS < 5 ? deadline - SECONDS : 5))"; then
+          if settings_tap_text "$deadline" "$control"; then
             settings_checkpoint "tapped $control"
             last_launch=$SECONDS
             case "$control" in
@@ -83,8 +90,6 @@ open_trackglance_settings() {
               Settings) next_control='' ;;
               Finished) launched=0 ;;
             esac
-          else
-            settings_checkpoint "missing $control"
           fi
           break
         fi
