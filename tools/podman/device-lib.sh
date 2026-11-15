@@ -317,14 +317,8 @@ dump_ui() {
   fi
 }
 
-tap_text() {
-  local needle=$1
-  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
-  local deadline=$((SECONDS + timeout)) coordinates
-  while (( SECONDS < deadline )); do
-    dump_ui "$deadline" || true
-    (( SECONDS < deadline )) || break
-    coordinates=$(python3 - "$needle" "$match" "$required_text" <<'PY'
+ui_text_coordinates() {
+  python3 - "$1" "${2:-contains}" "${3:-}" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -333,7 +327,7 @@ match = sys.argv[2] if len(sys.argv) > 2 else "contains"
 try:
     root = ET.parse('/tmp/trackglance-window.xml').getroot()
 except Exception:
-    raise SystemExit
+    raise SystemExit(2)
 parents = {child: parent for parent in root.iter() for child in parent}
 if len(sys.argv) > 3 and sys.argv[3] and not any(
     node.attrib.get('text', '') == sys.argv[3] for node in root.iter('node')
@@ -385,7 +379,54 @@ for node in root.iter('node'):
             )
             break
 PY
-)
+}
+
+# One fresh attempt; callers recover changed screens under their own absolute deadline.
+# These diagnostics stay in the calling shell, separate from coordinate output.
+tap_text_once_until() {
+  local deadline=$1 needle=$2 match=${3:-contains} required_text=${4:-}
+  local started=$SECONDS coordinates status
+  TAP_TEXT_OUTCOME=deadline
+  TAP_TEXT_CAPTURE_SECONDS=0
+  (( SECONDS < deadline )) || return 124
+  if dump_ui "$deadline"; then
+    TAP_TEXT_OUTCOME=missing
+  else
+    TAP_TEXT_OUTCOME=capture-failed
+  fi
+  # Read by settings_tap_text in settings-navigation.sh.
+  # shellcheck disable=SC2034
+  TAP_TEXT_CAPTURE_SECONDS=$((SECONDS - started))
+  (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+  [[ "$TAP_TEXT_OUTCOME" != capture-failed ]] || return 1
+  if coordinates=$(ui_text_coordinates "$needle" "$match" "$required_text"); then
+    :
+  else
+    TAP_TEXT_OUTCOME=parse-failed
+    return 2
+  fi
+  (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+  [[ -n "$coordinates" ]] || return 1
+  if adb_device_until "$deadline" 5 shell input tap $coordinates; then
+    (( SECONDS < deadline )) || { TAP_TEXT_OUTCOME=deadline; return 124; }
+    TAP_TEXT_OUTCOME=tapped
+    return 0
+  else
+    status=$?
+    TAP_TEXT_OUTCOME=input-failed
+    (( SECONDS < deadline )) || TAP_TEXT_OUTCOME=deadline
+    return "$status"
+  fi
+}
+
+tap_text() {
+  local needle=$1
+  local timeout=${2:-30} match=${3:-contains} required_text=${4:-}
+  local deadline=$((SECONDS + timeout)) coordinates
+  while (( SECONDS < deadline )); do
+    dump_ui "$deadline" || true
+    (( SECONDS < deadline )) || break
+    coordinates=$(ui_text_coordinates "$needle" "$match" "$required_text" || true)
     if [[ -n "$coordinates" ]]; then
       adb_device_until "$deadline" 5 shell input tap $coordinates || return $?
       (( SECONDS < deadline ))
