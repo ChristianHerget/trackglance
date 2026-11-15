@@ -522,8 +522,26 @@ test "$TAP_TEXT_OUTCOME" == deadline
 
     def test_input_limit_is_clamped_to_remaining_budget(self):
         result = self.run_tap(r'''
+# Use a manual clock so Python startup and runner scheduling cannot consume this budget.
+unset SECONDS
+SECONDS=100
+dump_ui() {
+  SECONDS=$((SECONDS + 3))
+  echo '<hierarchy><node text="Done" clickable="true" bounds="[0,0][100,100]"/></hierarchy>' > /tmp/trackglance-window.xml
+}
 adb_device_timeout() { test "$1" == 2; test "$*" == '2 shell input tap 50 50'; }
-tap_text_once_until 2 Done
+tap_text_once_until 105 Done
+test "$TAP_TEXT_CAPTURE_SECONDS" == 3
+test "$TAP_TEXT_OUTCOME" == tapped
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_input_limit_keeps_operation_cap_with_more_time_available(self):
+        result = self.run_tap(r'''
+unset SECONDS
+SECONDS=100
+adb_device_timeout() { test "$1" == 5; test "$*" == '5 shell input tap 50 50'; }
+tap_text_once_until 130 Done
 test "$TAP_TEXT_OUTCOME" == tapped
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
