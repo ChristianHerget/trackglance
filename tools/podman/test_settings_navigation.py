@@ -14,6 +14,8 @@ class SettingsFreshTapTest(unittest.TestCase):
             script = r'''
 source "$DEVICE_LIB"
 source "$NAVIGATION_LIB"
+# Only the fake capture and sleep functions advance simulated navigation time.
+unset SECONDS
 SECONDS=0
 page=apps
 dumps=0
@@ -96,6 +98,8 @@ class SettingsNavigationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             script = r'''
 source "$1"
+unset SECONDS
+SECONDS=0
 tick=0
 page=bridge
 opens=0
