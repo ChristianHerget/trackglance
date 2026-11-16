@@ -273,7 +273,9 @@ certification after a merge; merges made with the built-in `GITHUB_TOKEN` can su
 See [GitHub's workflow token rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 The workflow uses verified Dependabot commit metadata, executes only trusted base-branch code,
-and enables squash auto-merge only when every updated dependency is classified as minor or patch.
+and enables squash auto-merge only for a single verified Dependabot commit at the inspected head,
+with every updated dependency classified as minor or patch. The metadata action reads only the
+first commit, so additional commits require manual review even when they are signed.
 Major updates, unknown metadata, and PRs containing human commits remain manual. Every PR update
 rechecks eligibility and removes an existing auto-merge request when the PR becomes ineligible.
 Missing App configuration reports the setup requirement and does not enable auto-merge.

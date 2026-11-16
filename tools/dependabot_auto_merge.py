@@ -45,6 +45,24 @@ def manual_reason(pr, outcome, metadata):
     return None
 
 
+def commit_reason(commits, expected_head):
+    # fetch-metadata reads only the first commit. Its metadata covers the whole
+    # update only when that verified commit is also the PR's sole current head.
+    if not isinstance(commits, list) or len(commits) != 1:
+        return "the PR does not contain exactly one update commit"
+    commit = commits[0]
+    if not isinstance(commit, dict) or commit.get("sha") != expected_head:
+        return "the update commit does not match the inspected head"
+    if (commit.get("author") or {}).get("login") != "dependabot[bot]":
+        return "the update commit was not authored by Dependabot"
+    if (commit.get("committer") or {}).get("login") not in {"dependabot[bot]", "web-flow"}:
+        return "the update commit has an unexpected committer"
+    verification = (commit.get("commit") or {}).get("verification") or {}
+    if verification.get("verified") is not True or verification.get("reason") != "valid":
+        return "the update commit signature is not verified"
+    return None
+
+
 def gh(*arguments):
     result = subprocess.run(
         ["gh", *arguments], capture_output=True, text=True, check=True, timeout=60,
@@ -88,6 +106,14 @@ def main():
         current, os.environ.get("DEPENDABOT_METADATA_OUTCOME"),
         os.environ.get("DEPENDABOT_UPDATED_DEPENDENCIES", ""),
     )
+    if reason is None:
+        try:
+            commits = json.loads(gh("api", f"repos/{REPOSITORY}/pulls/{number}/commits?per_page=2"))
+            reason = commit_reason(commits, expected_head)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as error:
+            detail = error.stderr if isinstance(error, subprocess.CalledProcessError) and error.stderr else str(error)
+            print(f"Update commit lookup failed: {detail.strip()}", flush=True)
+            reason = "the update commit could not be verified"
     arguments = ("pr", "merge", str(number), "--repo", REPOSITORY)
     if reason:
         if current.get("auto_merge") is not None:
