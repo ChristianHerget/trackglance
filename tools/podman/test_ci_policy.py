@@ -19,6 +19,15 @@ VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
+    def test_dependency_cache_never_rescans_generated_files_and_cannot_fail_tests(self):
+        for path in (CI_WORKFLOW, CODEQL_WORKFLOW):
+            source = path.read_text()
+            cache = source.split("- uses: actions/cache@", 1)[1].split("\n      - ", 1)[0]
+            self.assertNotIn("hashFiles", cache)
+            self.assertIn("steps.dependency-key.outputs.value", cache)
+            self.assertIn("continue-on-error: true", cache)
+            self.assertLess(source.index("id: dependency-key"), source.index("- uses: actions/cache@"))
+
     def test_validation_runs_synthetic_checks_on_prs_and_main(self):
         ci = CI_WORKFLOW.read_text()
         self.assertIn("  push:\n    branches: [main]", ci)

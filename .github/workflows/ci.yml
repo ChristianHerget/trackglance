@@ -37,10 +37,16 @@ jobs:
             name: Helpers and policy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Capture dependency cache key before building
+        id: dependency-key
+        env:
+          DEPENDENCY_KEY: ${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', '**/package-lock.json', 'tools/ci-images.env') }}
+        run: printf 'value=%s\n' "$DEPENDENCY_KEY" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
         with:
           path: build/dev-container-cache
-          key: synthetic-${{ runner.os }}-${{ matrix.component }}-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', '**/package-lock.json', 'tools/ci-images.env') }}
+          key: synthetic-${{ runner.os }}-${{ matrix.component }}-${{ steps.dependency-key.outputs.value }}
           restore-keys: synthetic-${{ runner.os }}-${{ matrix.component }}-
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
@@ -111,7 +117,7 @@ jobs:
   # Keep the existing protected check during rollout. Enable the new gate only
   # after synthetic checks pass, then set SYNTHETIC_CI_ENABLED=true.
   legacy-acceptance:
-    if: vars.SYNTHETIC_CI_ENABLED != 'true'
+    if: github.event_name == 'pull_request' && vars.SYNTHETIC_CI_ENABLED != 'true'
     uses: ./.github/workflows/acceptance.yml
   legacy-static:
     name: Android, Pebble, protocol, and helpers
@@ -125,7 +131,7 @@ jobs:
   legacy-complete:
     name: Hosted full-stack acceptance
     needs: legacy-acceptance
-    if: always() && vars.SYNTHETIC_CI_ENABLED != 'true'
+    if: always() && github.event_name == 'pull_request' && vars.SYNTHETIC_CI_ENABLED != 'true'
     runs-on: ubuntu-24.04
     steps:
       - env:
