@@ -192,7 +192,6 @@ class CiImageKeyTest(unittest.TestCase):
     def test_application_dependencies_and_gradle_wrapper_do_not_change_keys(self):
         before = self.keys()
         for name in (
-            "android/app/gradle.lockfile", "gradle/verification-metadata.xml",
             "gradle/wrapper/gradle-wrapper.properties", "gradle/wrapper/gradle-wrapper.jar",
             "gradlew", "gradlew.bat", "watchapp/package-lock.json", "docs/package-lock.json",
         ):

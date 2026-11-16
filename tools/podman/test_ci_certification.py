@@ -93,6 +93,14 @@ class FakeGitHub:
 
 
 class CaptureEvidenceTest(unittest.TestCase):
+    def test_evidence_fingerprints_work_without_gradle_lock_or_verification_files(self):
+        fingerprints = ci.input_fingerprints()
+        self.assertIn("android/app/build.gradle.kts", fingerprints)
+        self.assertIn("watchapp/package-lock.json", fingerprints)
+        self.assertIn("docs/package-lock.json", fingerprints)
+        self.assertNotIn("android/app/gradle.lockfile", fingerprints)
+        self.assertTrue(all(len(value) == 64 for value in fingerprints.values()))
+
     def test_watch_finalization_requires_all_selected_behavior_receipts(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

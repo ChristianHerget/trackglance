@@ -350,11 +350,11 @@ fixture files before pushing new images.
 The acceptance key changes when any emulator download/revision, Android or Pebble tool version,
 Pebble App commit/patch, emulator generator/entrypoint, or relevant container definition changes.
 The Kotlin CodeQL key changes for its Android/Gradle toolchain pins or container definition;
-project dependency locks remain runtime inputs from the checked-out commit. `tools/ci-image-key` is
+project dependency declarations remain runtime inputs from the checked-out commit. `tools/ci-image-key` is
 the executable list of these invalidation rules. Run `tools/ci-image-key acceptance --list-inputs`
 or `tools/ci-image-key codeql-kotlin --list-inputs` for one input path per line. Publication triggers
 cover those inputs plus explicit publication orchestration and verification files. Application
-dependency locks, Gradle verification metadata, and the Gradle wrapper do not trigger publication.
+dependency declarations, npm lockfiles, and the Gradle wrapper do not trigger publication.
 A changed key requires a new publication and a reviewed digest-only pin update; existing tags and
 manifests are never overwritten.
 
