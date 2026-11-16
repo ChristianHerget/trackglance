@@ -94,10 +94,15 @@ open_trackglance_settings() {
           break
         fi
       done
-      if (( ! matched )) && grep -Eq 'text="(Get Started!|Configure your watch)"' /tmp/trackglance-window.xml; then
-        adb_device_timeout 5 shell input swipe 540 2100 540 400 200 || true
-        settings_checkpoint onboarding-swipe
-        last_launch=$SECONDS
+      # The first swipe can hide the introductory headings before Finished is visible.
+      # Continue through the pinned onboarding's app/watchface and language sections too.
+      if (( ! matched )) && grep -Eq 'text="(Get Started!|Configure your watch|Add some Watchfaces|Add some Apps|Install a language pack)"' /tmp/trackglance-window.xml; then
+        if adb_device_until "$deadline" 5 shell input swipe 540 2100 540 400 200; then
+          settings_checkpoint onboarding-swipe
+          last_launch=$SECONDS
+        else
+          settings_checkpoint onboarding-swipe-failed
+        fi
       fi
     fi
     if (( SECONDS - last_launch >= 20 )); then
