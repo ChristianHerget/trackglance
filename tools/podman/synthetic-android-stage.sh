@@ -14,9 +14,10 @@ capture_synthetic_diagnostics() {
 trap capture_synthetic_diagnostics EXIT
 # Build while the clean emulator boots. No third-party APKs or golden state are used.
 check_stage android-build
-python3 tools/podman/check-gradle.py ./gradlew verifyPebbleTargets \
+python3 tools/podman/check-gradle.py ./gradlew --build-cache -PsyntheticCi=true verifyPebbleTargets \
   :android:app:testDebugUnitTest :android:app:lintDebug :android:app:detekt \
-  :android:app:assembleDebug :android:app:assembleDebugAndroidTest :android:app:cyclonedxDirectBom
+  :android:app:assembleDebug :android:app:assembleDebugAndroidTest :android:app:assembleRelease \
+  :android:app:cyclonedxDirectBom
 check_stage android-readiness
 wait_for_android 180 disabled
 for package in menion.android.locus coredevices.coreapp; do

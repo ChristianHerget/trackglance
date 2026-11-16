@@ -1,4 +1,5 @@
 import org.cyclonedx.model.Component
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application")
@@ -77,6 +78,14 @@ detekt {
 }
 
 kotlin { jvmToolchain(17) }
+
+// Reuse compilation outputs while executing JVM tests on every synthetic CI run.
+if (providers.gradleProperty("syntheticCi").orNull == "true") {
+    tasks.withType<Test>().configureEach {
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+    }
+}
 
 dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")

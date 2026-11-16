@@ -1,5 +1,7 @@
 import importlib.util
 from pathlib import Path
+import tempfile
+import threading
 import unittest
 from unittest import mock
 from uuid import UUID
@@ -11,6 +13,29 @@ spec.loader.exec_module(smoke)
 
 
 class SmokeHarnessTest(unittest.TestCase):
+    def test_sdk_rgb_pixels_preserve_screenshot_width(self):
+        import png
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "watch.png"
+            with mock.patch.object(smoke, "Screenshot") as screenshot:
+                screenshot.return_value.grab_image.return_value = [bytearray([0, 0, 0, 255, 255, 255])]
+                smoke.capture_watch(mock.Mock(), path)
+            with path.open("rb") as source:
+                width, height, rows, _ = png.Reader(file=source).read()
+                list(rows)
+            self.assertEqual((width, height), (2, 1))
+
+    def test_unresponsive_screenshot_cannot_hold_cleanup_open(self):
+        release = threading.Event()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(smoke, "Screenshot") as screenshot:
+                screenshot.return_value.grab_image.side_effect = lambda: release.wait()
+                try:
+                    with self.assertRaisesRegex(TimeoutError, "screenshot"):
+                        smoke.capture_watch(mock.Mock(), Path(directory) / "watch.png", timeout=0.01)
+                finally:
+                    release.set()
+
     def runtime(self):
         return smoke.Smoke(mock.Mock(), UUID(int=1), 5, "0.2.8", mock.Mock())
 
