@@ -274,7 +274,7 @@ gh secret set DEPENDABOT_MERGE_APP_PRIVATE_KEY --repo ChristianHerget/trackglanc
 
 The **Dependabot auto-merge** workflow generates a short-lived installation token scoped to this
 repository. A separate App token preserves the normal `push` workflows and exact-commit main
-certification after a merge; merges made with the built-in `GITHUB_TOKEN` can suppress those runs.
+CI after a merge; merges made with the built-in `GITHUB_TOKEN` can suppress those runs.
 See [GitHub's workflow token rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 The workflow uses verified Dependabot commit metadata, executes only trusted base-branch code,

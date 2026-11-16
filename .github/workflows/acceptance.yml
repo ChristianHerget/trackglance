@@ -13,14 +13,6 @@ on:
         default: published
   schedule:
     - cron: '41 5 * * 2'
-  workflow_call:
-    inputs:
-      watch_passes:
-        type: string
-        default: '1'
-      acceptance_provisioning:
-        type: string
-        default: published
 
 permissions:
   contents: read

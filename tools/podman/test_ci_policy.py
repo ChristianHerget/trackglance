@@ -65,6 +65,7 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("languages: java-kotlin", source)
         self.assertIn("build-mode: none", source)
         self.assertIn("build-mode: manual", source)
+        self.assertIn("./gradlew --no-daemon --no-build-cache :android:app:assembleDebug", source)
         self.assertEqual(source.count("queries: security-extended"), 2)
         for category in (
             "/language:${{ matrix.language }}",
@@ -78,10 +79,10 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertNotIn("tools:", source)
         self.assertNotIn("codeql-bundle-linux64.tar.gz", source)
 
-    def test_rollout_keeps_real_acceptance_until_synthetic_gate_is_enabled(self):
+    def test_routine_gate_requires_all_synthetic_components_without_real_apps(self):
         source = CI_WORKFLOW.read_text()
-        self.assertIn("vars.SYNTHETIC_CI_ENABLED != 'true'", source)
-        self.assertIn("uses: ./.github/workflows/acceptance.yml", source)
+        self.assertNotIn("SYNTHETIC_CI_ENABLED", source)
+        self.assertNotIn("uses: ./.github/workflows/acceptance.yml", source)
         self.assertIn("needs: [synthetic, documentation]", source)
         self.assertIn('test "$SYNTHETIC_RESULT" = success', source)
         self.assertIn('test "$DOCUMENTATION_RESULT" = success', source)
@@ -141,11 +142,11 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             versions,
         )
 
-    def test_full_acceptance_is_weekly_manual_and_reusable(self):
+    def test_full_acceptance_is_weekly_and_manual(self):
         source = (ROOT / ".github/workflows/acceptance.yml").read_text()
         events = source.split("permissions:", 1)[0]
         self.assertIn("workflow_dispatch:", events)
-        self.assertIn("workflow_call:", events)
+        self.assertNotIn("workflow_call:", events)
         self.assertIn("schedule:", events)
         self.assertNotIn("pull_request:", events)
         self.assertIn("options: [source, published, compare]", events)
