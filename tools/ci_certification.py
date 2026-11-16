@@ -40,7 +40,6 @@ INPUT_PATHS = (
     "gradle.properties",
     "pyproject.toml",
     "android/app/build.gradle.kts",
-    "android/app/gradle.lockfile",
     "watchapp/package.json",
     "watchapp/package-lock.json",
     "docs/package.json",
@@ -56,7 +55,7 @@ INVALIDATION_EXACT = {
     "android/app/build.gradle.kts", "watchapp/package.json", "watchapp/package-lock.json",
     "docs/requirements.txt", "docs/requirements.lock", "docs/package.json",
     "docs/package-lock.json", "build.gradle.kts", "settings.gradle.kts",
-    "gradle.properties", "pyproject.toml", "android/app/gradle.lockfile",
+    "gradle.properties", "pyproject.toml",
 }
 MAX_EVIDENCE_BYTES = 64 * 1024
 

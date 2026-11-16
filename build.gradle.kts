@@ -94,7 +94,6 @@ val verifyProtocolParity =
             layout.projectDirectory.file("docs/podman-testing.md"),
             layout.projectDirectory.file("docs/sphinx/conf.py"),
             layout.projectDirectory.file("docs/sphinx/getting-started.rst"),
-            layout.projectDirectory.file("gradle/verification-metadata.xml"),
             layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.jar"),
             layout.projectDirectory.file("gradle/wrapper/gradle-wrapper.properties"),
             layout.projectDirectory.file("protocol/README.md"),
@@ -228,9 +227,6 @@ tasks.register<Exec>("verifyPebbleBundle") {
 }
 
 project(":android:app") {
-    dependencyLocking {
-        lockAllConfigurations()
-    }
     tasks
         .matching { it.name == "check" }
         .configureEach {

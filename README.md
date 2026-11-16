@@ -91,14 +91,18 @@ regenerateDocumentationScreenshots` only when intentionally updating those image
 The PBW check then
 verifies the actual archive, including both platform payloads, executable PKJS, manifest CRCs, and
 an embedded hash of every local watch build input. The Gradle distribution and wrapper JAR are
-checksum-pinned; Android dependency versions are locked and every resolved plugin/library artifact
-is SHA-256 verified. Deliberate dependency updates must regenerate and review both lock and
-verification data with the repository wrapper, for example:
+checksum-pinned. Gradle dependencies use explicit versions without dependency locks or a checksum
+allowlist, so dependency updates do not need generated verification files. Transitive versions are
+resolved from repository metadata and are not frozen. Validate updates with the repository wrapper:
 
 ```sh
-./tools/podman-test dev ./gradlew --write-locks --write-verification-metadata sha256 \
+./tools/podman-test dev ./gradlew \
   verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
 ```
+
+Dependabot groups weekly minor and patch updates and proposes major upgrades separately. Eligible
+updates can merge automatically after required checks pass; see
+[dependency update setup](docs/development.md#dependency-updates).
 
 `./tools/podman-test static` runs the public development-container suite without KVM or Locus
 inputs. For fast local end-to-end feedback, `acceptance-suite --locus-apks /absolute/private/path`

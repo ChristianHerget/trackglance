@@ -223,14 +223,73 @@ regenerateAndroidBridgeScreenshots` to refresh the native Bridge light/dark imag
 the debug APK, fixes font scale and orientation during capture, and restores the device settings
 afterward.
 
-Dependency updates should be intentional and reviewed:
+## Dependency updates
+
+Gradle dependencies use explicit versions without dependency locks or a checksum allowlist.
+Transitive versions are resolved from repository metadata and are not frozen. The Gradle wrapper
+checksums, npm lockfiles, container image pins, security scanning, SBOM generation, and protected
+CI checks remain required. Validate dependency changes in the development container:
 
 ```sh
-./tools/podman-test dev ./gradlew --write-locks --write-verification-metadata sha256 \
+./tools/podman-test dev ./gradlew \
   verifyPebbleTargets :android:app:testDebugUnitTest :android:app:assembleDebug
 ```
 
 The first resolution may use the network; populated caches can run Gradle tasks with `--offline`.
+
+Dependabot checks GitHub Actions, Gradle, watchapp npm, and docs npm every Monday at 06:00
+Europe/Berlin. Each area has one minor/patch group; major upgrades are separate PRs. A major
+classification still requires manual review for date-based versions such as `org.json:json`.
+This policy also applies to security updates. Version classification does not guarantee compatibility:
+all required CI and code scanning checks must pass before a merge.
+
+### Enable automatic merging
+
+Open the [prefilled GitHub App registration form](https://github.com/settings/apps/new?name=ChristianHerget-TrackGlance-Merge&url=https%3A%2F%2Fgithub.com%2FChristianHerget%2Ftrackglance&public=false&webhook_active=false&contents=write&pull_requests=write&workflows=write)
+and create a private App owned by your account. Install it only on
+`ChristianHerget/trackglance`. The form uses the repository URL as its homepage, disables webhooks, and requests
+these repository permissions:
+
+- **Contents: Read and write** to merge changes.
+- **Pull requests: Read and write** to enable or disable auto-merge.
+- **Workflows: Read and write** to merge GitHub Actions dependency updates.
+
+Do not grant the App branch protection or ruleset bypass rights. Save its **Client ID** as the
+repository Actions variable `DEPENDABOT_MERGE_APP_CLIENT_ID`. Generate a private key and save its
+contents as the repository Actions secret `DEPENDABOT_MERGE_APP_PRIVATE_KEY`. Keep the key outside
+the repository and never paste it into a PR, issue, or chat.
+
+You can save both values through the repository's **Settings → Secrets and variables → Actions**,
+or use the authenticated GitHub CLI after replacing the example Client ID and private key path:
+
+```sh
+gh variable set DEPENDABOT_MERGE_APP_CLIENT_ID --repo ChristianHerget/trackglance --body YOUR_CLIENT_ID
+gh secret set DEPENDABOT_MERGE_APP_PRIVATE_KEY --repo ChristianHerget/trackglance < /absolute/private/path/app.pem
+```
+
+The **Dependabot auto-merge** workflow generates a short-lived installation token scoped to this
+repository. A separate App token preserves the normal `push` workflows and exact-commit main
+certification after a merge; merges made with the built-in `GITHUB_TOKEN` can suppress those runs.
+See [GitHub's workflow token rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+The workflow uses verified Dependabot commit metadata, executes only trusted base-branch code,
+and enables squash auto-merge only when every updated dependency is classified as minor or patch.
+Major updates, unknown metadata, and PRs containing human commits remain manual. Every PR update
+rechecks eligibility and removes an existing auto-merge request when the PR becomes ineligible.
+Missing App configuration reports the setup requirement and does not enable auto-merge.
+
+After setup, check the first eligible Dependabot PR: auto-merge should wait for required checks,
+then merge without bypassing protection. Confirm that CI starts on the resulting `main` commit and
+that **Main commit certification** succeeds. To pause new automatic merges, remove the Client ID
+variable; disable any already-pending auto-merge requests separately.
+
+For merge emails, enable **Email** in your
+[GitHub notification settings](https://github.com/settings/notifications), then watch this repository
+for **Pull requests**. Delivery depends on your personal notification preferences. CI success and
+merging are separate events; the merge notification indicates that the PR has landed.
+
+## Acceptance environments
+
 For hosted acceptance, private fixture setup, warm/fresh provisioning, image publishing, and the
 interactive Emery/Gabbro lab, use [Containerized acceptance](podman-testing.md). The lab's browser
 dashboard remains bound to host loopback and uses disposable clones of validated golden state.

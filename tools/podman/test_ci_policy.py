@@ -1,3 +1,4 @@
+import re
 import unittest
 from script_test_support import (
     ROOT,
@@ -109,6 +110,19 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         source = DEPENDABOT.read_text(encoding="utf-8")
         self.assertIn("package-ecosystem: github-actions", source)
         self.assertIn("interval: weekly", source)
+
+    def test_dependabot_keeps_major_updates_outside_all_weekly_groups(self):
+        source = DEPENDABOT.read_text(encoding="utf-8")
+        areas = re.findall(r"  - package-ecosystem:.*?(?=  - package-ecosystem:|\Z)", source, re.S)
+        self.assertEqual(len(areas), 4)
+        for area in areas:
+            with self.subTest(area=area.splitlines()[0]):
+                self.assertIn('update-types: ["minor", "patch"]', area)
+                self.assertIn("interval: weekly", area)
+                self.assertIn("day: monday", area)
+                self.assertIn('time: "06:00"', area)
+                self.assertIn("timezone: Europe/Berlin", area)
+                self.assertNotIn("ignore:", area)
 
     def test_actionlint_is_checksum_pinned_in_the_build_container(self):
         containerfile = BUILD_CONTAINERFILE.read_text(encoding="utf-8")

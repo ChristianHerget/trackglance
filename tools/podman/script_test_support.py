@@ -8,6 +8,7 @@ EMULATOR_ENTRYPOINT = ROOT / "tools" / "podman" / "android-emulator-entrypoint.s
 PUBLISH_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 ACTION_MAJORS = {
+    "actions/checkout": 7,
     "actions/configure-pages": 6,
     "actions/upload-pages-artifact": 5,
     "actions/deploy-pages": 5,
@@ -16,6 +17,8 @@ ACTION_MAJORS = {
     "github/codeql-action/analyze": 4,
     "crazy-max/ghaction-virustotal": 5,
     "actions/upload-artifact": 7,
+    "dependabot/fetch-metadata": 3,
+    "actions/create-github-app-token": 3,
 }
 
 
