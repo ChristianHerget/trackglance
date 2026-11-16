@@ -273,7 +273,9 @@ certification after a merge; merges made with the built-in `GITHUB_TOKEN` can su
 See [GitHub's workflow token rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 The workflow uses verified Dependabot commit metadata, executes only trusted base-branch code,
-and enables squash auto-merge only when every updated dependency is classified as minor or patch.
+and enables squash auto-merge only for a single verified Dependabot commit at the inspected head,
+with every updated dependency classified as minor or patch. The metadata action reads only the
+first commit, so additional commits require manual review even when they are signed.
 Major updates, unknown metadata, and PRs containing human commits remain manual. Every PR update
 rechecks eligibility and removes an existing auto-merge request when the PR becomes ineligible.
 Missing App configuration reports the setup requirement and does not enable auto-merge.
@@ -282,6 +284,12 @@ After setup, check the first eligible Dependabot PR: auto-merge should wait for 
 then merge without bypassing protection. Confirm that CI starts on the resulting `main` commit and
 that **Main commit certification** succeeds. To pause new automatic merges, remove the Client ID
 variable; disable any already-pending auto-merge requests separately.
+
+A green PR can still wait for auto-merge when its branch is behind `main`. Request
+`@dependabot rebase` on the PR to keep the update authored and signed by Dependabot. If the command
+is not acknowledged, open **Insights → Dependency graph → Dependabot**, select the affected update
+entry, open **Last checked**, and choose **Check for updates**. Adding human commits makes the PR
+ineligible for automatic merging, so such changes need a manual review and merge.
 
 For merge emails, enable **Email** in your
 [GitHub notification settings](https://github.com/settings/notifications), then watch this repository

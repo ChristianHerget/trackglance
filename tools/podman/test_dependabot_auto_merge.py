@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,10 @@ class DependabotAutoMergeTest(unittest.TestCase):
             "head": {"sha": HEAD, "repo": {"full_name": merge.REPOSITORY}},
         }
         self.event = {"number": 126, "pull_request": copy.deepcopy(self.pr)}
+        self.commits = [{"sha": HEAD, "author": {"login": "dependabot[bot]"},
+                         "committer": {"login": "web-flow"},
+                         "commit": {"verification": {"verified": True, "reason": "valid"}}}]
+        self.commit_error = None
         self.environment = {
             "GITHUB_EVENT_NAME": "pull_request_target",
             "GITHUB_REPOSITORY": merge.REPOSITORY,
@@ -44,8 +49,18 @@ class DependabotAutoMergeTest(unittest.TestCase):
 
     def invoke(self, current=None):
         Path(self.environment["GITHUB_EVENT_PATH"]).write_text(json.dumps(self.event))
+
+        def github(*arguments):
+            if arguments[0] == "api":
+                if arguments[1].endswith("/commits?per_page=2"):
+                    if self.commit_error:
+                        raise self.commit_error
+                    return json.dumps(self.commits)
+                return json.dumps(self.pr if current is None else current)
+            return ""
+
         with mock.patch.dict(os.environ, self.environment, clear=True), \
-             mock.patch.object(merge, "gh", side_effect=[json.dumps(current or self.pr), ""]) as gh, \
+             mock.patch.object(merge, "gh", side_effect=github) as gh, \
              mock.patch("sys.stdout", new_callable=io.StringIO):
             merge.main()
         return [call.args for call in gh.call_args_list]
@@ -58,6 +73,7 @@ class DependabotAutoMergeTest(unittest.TestCase):
                 calls = self.invoke()
                 self.assertEqual(calls, [
                     ("api", f"repos/{merge.REPOSITORY}/pulls/126"),
+                    ("api", f"repos/{merge.REPOSITORY}/pulls/126/commits?per_page=2"),
                     ("pr", "merge", "126", "--repo", merge.REPOSITORY,
                      "--auto", "--squash", "--match-head-commit", HEAD),
                 ])
@@ -144,6 +160,48 @@ class DependabotAutoMergeTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "API unavailable"):
                 merge.main()
         self.assertEqual(gh.call_count, 1)
+
+    def test_human_commit_after_verified_bot_commit_disables_auto_merge(self):
+        self.pr["auto_merge"] = {"merge_method": "squash"}
+        first = copy.deepcopy(self.commits[0])
+        first["sha"] = "b" * 40
+        human = {**copy.deepcopy(self.commits[0]), "author": {"login": "human"}}
+        self.commits = [first, human]
+        # The upstream action still reports success and the first bot commit's
+        # minor metadata. The local guard must inspect the rest of the PR.
+        calls = self.invoke()
+        self.assertEqual(calls[-1][-1], "--disable-auto")
+        self.assertEqual(len(calls), 3)
+
+    def test_additional_bot_commit_cannot_hide_a_major_update_from_first_commit_metadata(self):
+        self.pr["auto_merge"] = {"merge_method": "squash"}
+        first = copy.deepcopy(self.commits[0])
+        first["sha"] = "b" * 40
+        self.commits = [first, self.commits[0]]
+        self.assertEqual(self.invoke()[-1][-1], "--disable-auto")
+
+    def test_missing_stale_human_or_unverified_commit_requires_manual_merge(self):
+        original = copy.deepcopy(self.commits[0])
+        invalid = [[], None, [{}],
+                   [{**original, "sha": "b" * 40}],
+                   [{**original, "author": {"login": "human"}}],
+                   [{**original, "committer": {"login": "human"}}],
+                   [{**original, "commit": {"verification": {"verified": False, "reason": "unsigned"}}}],
+                   [{**original, "commit": {"verification": {"verified": "true", "reason": "valid"}}}]]
+        for commits in invalid:
+            with self.subTest(commits=commits):
+                self.commits = commits
+                calls = self.invoke()
+                self.assertEqual(len(calls), 2)
+                self.assertFalse(any("--auto" in call for call in calls))
+
+    def test_commit_lookup_failure_disables_a_pending_auto_merge_request(self):
+        self.pr["auto_merge"] = {"merge_method": "squash"}
+        for error in (subprocess.CalledProcessError(1, "gh", stderr="API unavailable"),
+                      subprocess.TimeoutExpired("gh", 60)):
+            with self.subTest(error=error):
+                self.commit_error = error
+                self.assertEqual(self.invoke()[-1][-1], "--disable-auto")
 
 
 class DependabotWorkflowPolicyTest(unittest.TestCase):
