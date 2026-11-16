@@ -283,6 +283,12 @@ then merge without bypassing protection. Confirm that CI starts on the resulting
 that **Main commit certification** succeeds. To pause new automatic merges, remove the Client ID
 variable; disable any already-pending auto-merge requests separately.
 
+A green PR can still wait for auto-merge when its branch is behind `main`. Request
+`@dependabot rebase` on the PR to keep the update authored and signed by Dependabot. If the command
+is not acknowledged, open **Insights → Dependency graph → Dependabot**, select the affected update
+entry, open **Last checked**, and choose **Check for updates**. Adding human commits makes the PR
+ineligible for automatic merging, so such changes need a manual review and merge.
+
 For merge emails, enable **Email** in your
 [GitHub notification settings](https://github.com/settings/notifications), then watch this repository
 for **Pull requests**. Delivery depends on your personal notification preferences. CI success and

@@ -90,8 +90,8 @@ validate Sphinx against committed images, and run `./tools/podman-test dev ./gra
 regenerateDocumentationScreenshots` only when intentionally updating those images.
 The PBW check then
 verifies the actual archive, including both platform payloads, executable PKJS, manifest CRCs, and
-an embedded hash of every local watch build input. The Gradle distribution and wrapper JAR are
-checksum-pinned. Gradle dependencies use explicit versions without dependency locks or a checksum
+an embedded hash of every local watch build input. The Gradle distribution has an explicit checksum;
+the wrapper JAR is tracked in Git. Gradle dependencies use explicit versions without dependency locks or a checksum
 allowlist, so dependency updates do not need generated verification files. Transitive versions are
 resolved from repository metadata and are not frozen. Validate updates with the repository wrapper:
 
@@ -106,7 +106,7 @@ updates can merge automatically after required checks pass; see
 
 `./tools/podman-test static` runs the public development-container suite without KVM or Locus
 inputs. For fast local end-to-end feedback, `acceptance-suite --locus-apks /absolute/private/path`
-reuses the validated API 32 golden state and runs Android, Emery, and Gabbro once. Every pull request
+reuses the validated API 34 golden state and runs Android, Emery, and Gabbro once. Every pull request
 must also pass the ephemeral GitHub-hosted Docker/KVM suite from a fresh bootstrap; manual dispatch
 can request a second watch pass as a soak test.
 
