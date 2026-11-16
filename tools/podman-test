@@ -8,6 +8,7 @@ source "$SCRIPT_DIR/podman/release-metadata.sh"
 source "$SCRIPT_DIR/ci-images.env"
 source "$SCRIPT_DIR/podman/check-report.sh"
 source "$SCRIPT_DIR/podman/acceptance-session.sh"
+source "$SCRIPT_DIR/podman/synthetic.sh"
 load_release_metadata "$PROJECT_DIR"
 
 BUILD_ROOT="$PROJECT_DIR/build/podman"
@@ -62,6 +63,7 @@ Commands:
   bootstrap --locus-apks DIR     Create the onboarded pinned Android golden state
   manual --platform PLATFORM     Start a disposable Android/Pebble manual-test lab
   static                         Run every public check inside the development container
+  synthetic [COMPONENT]          Run all|android|watch|helpers without third-party apps
   documentation                  Validate committed documentation in the development container
   release-check                  Assemble release and enforce the compiled APK security policy
   release-artifacts [--published]
@@ -275,6 +277,11 @@ build_container_args() {
     --volume "$GRADLE_CACHE:/root/.gradle" \
     --volume "$NPM_CACHE:/root/.npm" \
     --workdir /workspace
+  if [[ "$ACCEPTANCE_ENGINE" == docker && "${CI_PUBLISHED_TOOLS:-false}" == true ]]; then
+    mkdir -p "$PROJECT_DIR/build/dev-container-cache/gradle" "$PROJECT_DIR/build/dev-container-cache/npm"
+    printf '%s\n' --env GRADLE_USER_HOME=/workspace/build/dev-container-cache/gradle \
+      --env npm_config_cache=/workspace/build/dev-container-cache/npm
+  fi
   if [[ -n "${CHECK_LOG_DIR:-}" ]]; then
     printf '%s\n' --env "CHECK_LOG_DIR=/workspace/build/check-logs/${CHECK_LOG_DIR##*/}"
   fi
@@ -529,6 +536,9 @@ run_static_container() {
   fi
   local cache_root="$PROJECT_DIR/build/dev-container-cache"
   local -a signing_args=()
+  local owner
+  owner="$(id -u):$(id -g)"
+  [[ "${CI_PUBLISHED_TOOLS:-false}" != true ]] || owner=0:0
   if [[ -n "${CHECK_LOG_DIR:-}" ]]; then
     signing_args+=(--env "CHECK_LOG_DIR=/workspace/build/check-logs/${CHECK_LOG_DIR##*/}")
   fi
@@ -541,7 +551,7 @@ run_static_container() {
   fi
   mkdir -p "$cache_root/gradle" "$cache_root/npm"
   docker run --rm \
-    --user "$(id -u):$(id -g)" \
+    --user "$owner" \
     --env HOME=/tmp \
     --env GRADLE_USER_HOME=/workspace/build/dev-container-cache/gradle \
     --env npm_config_cache=/workspace/build/dev-container-cache/npm \
@@ -1113,8 +1123,7 @@ manual_lab() {
 
 static_tests() {
   check_stage static-provisioning
-  doctor_static
-  static_image_exists || build_static_image
+  prepare_synthetic_tools
   new_run static
   set +e
   run_static_container bash -euo pipefail -c '
@@ -1162,8 +1171,7 @@ static_tests() {
 
 documentation_tests() {
   check_stage documentation-provisioning
-  doctor_static
-  static_image_exists || build_static_image
+  prepare_synthetic_tools
   check_stage documentation
   run_static_container bash -euo pipefail -c '
     mkdir -p "$HOME"
@@ -1173,8 +1181,7 @@ documentation_tests() {
 
 release_check() {
   check_stage release-provisioning
-  doctor_static
-  static_image_exists || build_static_image
+  prepare_synthetic_tools
   check_stage release-check
   run_static_container bash -euo pipefail -c '
     mkdir -p "$HOME"
@@ -1654,7 +1661,7 @@ main() {
   [[ -n "$command" ]] || { usage; return 2; }
   shift
   case "$command" in
-    static|documentation|release-check|android|acceptance|e2e|acceptance-suite|startup|acceptance-session|all)
+    static|synthetic|documentation|release-check|android|acceptance|e2e|acceptance-suite|startup|acceptance-session|all)
       local -a options=()
       local option
       for option in "$@"; do
@@ -1717,6 +1724,7 @@ main() {
     bootstrap) bootstrap "$@" ;;
     manual) manual_lab "$@" ;;
     static) [[ $# -eq 0 ]] || die "static takes no options"; static_tests ;;
+    synthetic) [[ $# -le 1 ]] || die "synthetic accepts one component"; synthetic_tests "$@" ;;
     documentation) [[ $# -eq 0 ]] || die "documentation takes no options"; documentation_tests ;;
     release-check) [[ $# -eq 0 ]] || die "release-check takes no options"; release_check ;;
     release-artifacts)

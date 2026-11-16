@@ -1,0 +1,28 @@
+ARG BUILD_IMAGE
+FROM $BUILD_IMAGE AS toolchain
+ARG ANDROID_NDK_VERSION
+
+# Keep the pinned analyzer and formatter, omitting Android native build tools.
+RUN llvm=/opt/android-sdk/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64 && \
+    resource_dir=$("$llvm/bin/clang" -print-resource-dir) && \
+    resource_version=$(basename "$resource_dir") && \
+    mkdir -p /opt/trackglance/llvm/bin "/opt/trackglance/llvm/lib/clang/$resource_version" && \
+    cp -L "$llvm/bin/clang" "$llvm/bin/clang-format" /opt/trackglance/llvm/bin/ && \
+    cp -a "$resource_dir/include" "/opt/trackglance/llvm/lib/clang/$resource_version/" && \
+    rm -rf /opt/android-sdk/ndk /opt/android-sdk/cmake
+
+# Copy the resulting filesystem into a new image so omitted files occupy no layer.
+FROM scratch
+COPY --from=toolchain / /
+ARG ANDROID_BUILD_TOOLS_VERSION
+ENV DEBIAN_FRONTEND=noninteractive \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    ANDROID_HOME=/opt/android-sdk \
+    XDG_DATA_HOME=/opt/pebble-data \
+    UV_TOOL_DIR=/opt/uv-tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/build-tools/$ANDROID_BUILD_TOOLS_VERSION:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+WORKDIR /workspace
+RUN test ! -e /opt/android-sdk/ndk && test ! -e /opt/android-sdk/cmake && \
+    /opt/trackglance/llvm/bin/clang --version && \
+    /opt/trackglance/llvm/bin/clang-format --version && java -version

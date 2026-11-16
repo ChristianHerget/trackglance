@@ -40,8 +40,3 @@ esac
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   echo "- $ACCEPTANCE_COMPONENT: $mode $phase pass $pass passed in $((SECONDS - started))s" >> "$GITHUB_STEP_SUMMARY"
 fi
-if [[ "$phase" == behavior ]]; then
-  proof="$root/build/ci-evidence/watch-${ACCEPTANCE_COMPONENT}-completion.json"
-  mkdir -p "$(dirname "$proof")"
-  "$root/tools/acceptance-session-state" receipt "$session" "$pass" "$mode" "$proof"
-fi

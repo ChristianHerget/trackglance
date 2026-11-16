@@ -68,7 +68,7 @@ Run modules, classes, or individual methods with native unittest selection:
 ```
 
 The script-policy groups are `test_action_pin_policy`, `test_release_workflows`, `test_ci_policy`,
-`test_ci_certification`, `test_release_certification`, `test_dependabot_auto_merge`, `test_published_images`, `test_ci_image_publication`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
+`test_github_checks`, `test_synthetic_reports`, `test_dependabot_auto_merge`, `test_published_images`, `test_ci_image_publication`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
 `test_acceptance_orchestration`, `test_acceptance_components`, `test_settings_navigation`,
 `test_startup_readiness`, `test_acceptance_session`,
 `test_relay`, and `test_manual_harness`. Fixture validation and fingerprinting
@@ -133,10 +133,10 @@ private fixture:
 The [container acceptance guide](podman-testing.md) owns fixture setup, provisioning, cleanup,
 image publishing, and the documented local private fixture path. Use `--published --cleanup` to
 reproduce hosted provisioning; use `--fresh --cleanup` for provisioning changes or replacement
-image validation. The protected pull-request workflow remains the authoritative acceptance gate. For CI policy
-changes, run the focused certification and release-policy tests, Python discovery, `static`, and
-`documentation`. The policy PR's main push takes the full-suite fallback. Verify the reuse path
-with a subsequent same-repository documentation canary PR, and compare time to main certification,
-completed runner time, repeated component count, and fallback reasons in the main job summary.
+image validation. The required PR workflow runs synthetic Android, standalone Emery/Gabbro smoke, helpers, documentation,
+packaging, and security checks. Real-app acceptance runs weekly, manually, and before releases.
+For CI policy changes, run focused workflow/qualification tests, Python discovery, `static`, and
+`documentation`. Exercise synthetic Android without either third-party app installed and both
+standalone watch smoke checks. Validate full real-app acceptance when its harness changes.
 Documentation and workflow changes that cannot affect runtime do not need duplicate local full
 acceptance. Record commands, results, devices/platforms, and any unexecuted checks in the review.

@@ -45,6 +45,17 @@ jobs:
       image: ghcr.io/christianherget/trackglance-codeql-kotlin@sha256:4271e25523576b81663b25b5ae5bdaa202fbf5c062d5951ba1a88a14f0ec38d4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Capture dependency cache key before building
+        id: dependency-key
+        env:
+          DEPENDENCY_KEY: ${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', 'tools/ci-images.env') }}
+        run: printf 'value=%s\n' "$DEPENDENCY_KEY" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ~/.gradle
+          key: codeql-${{ runner.os }}-${{ steps.dependency-key.outputs.value }}
+          restore-keys: codeql-${{ runner.os }}-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:

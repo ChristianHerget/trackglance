@@ -280,7 +280,10 @@ class CiImagePublicationTest(unittest.TestCase):
                 self.assertEqual([e for e in self.events if e[0] == "podman-test"], expected_builds)
                 self.assertEqual(any(e[0] == "sudo" for e in self.events), "runner" in missing or "emulator" in missing)
                 built = [e[e.index("--tag") + 1].split(":")[0] for e in self.events if e[:2] == ["docker", "build"]]
-                self.assertEqual(built, [REPOSITORIES[name] for name in ("runner", "codeql") if name in missing])
+                expected_images = [REPOSITORIES["runner"]] if "runner" in missing else []
+                if "codeql" in missing:
+                    expected_images += ["localhost/trackglance/ci-toolchain", REPOSITORIES["codeql"]]
+                self.assertEqual(built, expected_images)
                 tagged = [e[-1].split(":")[0] for e in self.events if e[:2] == ["docker", "tag"]]
                 self.assertEqual(tagged, [REPOSITORIES["emulator"]] if "emulator" in missing else [])
                 pushes = [e[2].split(":")[0] for e in self.events if e[:2] == ["docker", "push"]]

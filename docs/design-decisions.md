@@ -32,10 +32,13 @@ acceptance emulator level, not the product installation minimum.
 
 ## 4. Verification levels
 
+**Status:** Decision 12 defines the synthetic and real-app test tiers. The rollout keeps the
+previous required acceptance check until the replacement synthetic gate is validated.
+
 **Decision:** Routine `verifyPebbleTargets` performs only fast stack and protocol checks.
 `verifyDocumentation` validates Sphinx using committed images, while
 `regenerateDocumentationScreenshots` is the only Gradle task that intentionally rewrites those
-images. `fullAcceptance` is the explicit Podman Android/CoreApp/Pebble QEMU entry point.
+images. `fullAcceptance` is the explicit Podman Android/Pebble App/Pebble QEMU entry point.
 
 ## 5. Profile-list delivery observation
 
@@ -114,12 +117,14 @@ not a release-blocking defect.
 
 ## 11. Release certification and artifact-only builds
 
-**Decision:** A distributable build is authorized by signed certification from the successful
-`CI` push workflow for the exact squash-merged commit. The main workflow reuses a fresh, verified,
-complete same-repository PR run when its tested merge tree and effective inputs match. Otherwise it
-runs static/release checks, committed-documentation validation, and hosted Android, Emery, and
-Gabbro acceptance. The protected PR checks always run. A release tag must equal the current `main`
-HEAD both before access to signing secrets and immediately before the draft is changed.
+**Status:** Updated by decision 12. GitHub workflow results authorize releases; artifact,
+signing, SBOM, and publication requirements remain applicable.
+
+**Decision:** Require successful synthetic main CI and full real-app acceptance for the exact
+release commit. A manual or weekly acceptance result can qualify that commit; otherwise the
+release workflow dispatches full acceptance before signing. Failed or superseded results cannot
+qualify it. A release tag must equal current main before access to signing secrets and immediately
+before the draft is changed. There are no signed CI records or PR-to-main evidence reuse.
 
 The protected tag build verifies the signed and attested, digest-pinned acceptance runner and uses
 it only as an immutable build toolchain. It freshly builds and validates the signed APK, generated
@@ -141,9 +146,142 @@ protected `release` environment, then downloads and verifies everything again be
 It does not require the older reviewed tag to remain the current `main` HEAD. Published releases
 are not mutated; a correction requires a new patch release.
 
-**Rationale:** This binds artifacts to the certified main commit while avoiding duplicate acceptance
-for an unchanged, recently tested tree. The signed main record names the source run and attempt,
-checks, workflow and toolchain inputs, and fallback reason. It keeps signing access short
-and compilation-only. A durable documentation asset makes the deployed manual independently
-reviewable, and explicit publication removes the fragile automatic publish chain without weakening
-artifact identity or human approval.
+**Rationale:** This binds artifacts to the qualified main commit while keeping signing access
+short and compilation-only. A durable documentation asset makes the deployed manual independently
+reviewable, and explicit publication preserves artifact identity and human approval.
+
+## 12. Synthetic CI and release qualification
+
+**Status:** Confirmed; implementation and rollout validation are in progress.
+
+**Decision:** Use synthetic integration tests for required PR and main CI. Run acceptance with
+real Locus Map and the Pebble App weekly, manually, and before releases. Replace signed CI
+certification and PR-to-main evidence reuse with checks of successful GitHub workflow runs for
+the exact release commit. Keep image and release artifact signatures and attestations.
+
+### Context, goals, and boundaries
+
+The existing CI provisions real apps for Android instrumentation and both watch acceptance jobs.
+The watch jobs wait for Android instrumentation, extending the critical path. Routine static and
+documentation jobs also build the development image on an empty runner, exposing each run to SDK
+provisioning failures. Strict hosted-runner matching can prevent reuse of otherwise successful PR
+evidence on main.
+
+Aim for required PR checks to finish within five minutes on a fresh hosted runner. This is an
+optimization target: retain the selected coverage if timing exceeds it, and report the overrun.
+Measure from the first required job starting until all required checks complete, including
+provisioning and downloads. Report restored-cache and cache-miss timings separately; report queue
+time separately from execution.
+
+Production behavior, application identities, supported platforms, and the wire protocol do not
+change. Extend the existing in-process fakes instead of maintaining replacement Locus and Pebble
+App APKs. Synthetic tests complement real-app acceptance and do not establish external app
+compatibility.
+
+### Components, data flow, and interfaces
+
+| Layer | Required routine coverage |
+| --- | --- |
+| Android | JVM tests, lint, builds, packaging checks, and instrumentation on a clean Android emulator using fake Locus and Pebble transport collaborators |
+| Watch | C sanitizer tests, JavaScript and settings tests, protocol checks, and Emery/Gabbro builds |
+| Watch runtime | Standalone QEMU launch and settings smoke checks on both platforms using the pinned SDK protocol client and a Node phone peer |
+| Documentation and security | Committed-documentation validation, dependency review, and existing CodeQL protections |
+
+The Android suite uses the real Android runtime with existing `LocusBridgeGateway` and transport
+fakes. Explicitly exclude real-Locus integration tests from synthetic execution rather than
+allowing them to skip. Validate the expected test cases in fresh reports; missing results and
+unexpected skips fail the job. Keep production service trust checks intact.
+
+Each watch smoke run installs the PBW built by the current workflow, confirms launch, exchanges
+representative AppMessages, and exercises settings opening, saving, and application. Use the
+packaged JavaScript in Node and the SDK protocol client. Headless settings-page checks cover the HTML and
+configuration exchange; the real Pebble App's Android WebView remains a real-app acceptance
+responsibility. A successful build or transport acknowledgement alone does not pass the smoke
+check.
+
+Keep test fixtures and simulator control in the test harness. Cover recording states, command
+results, profile and configuration transfers, malformed messages, transport failures, reconnects,
+and stale sessions. Do not add production protocol messages or runtime behavior solely for these
+tests. Share current-run build outputs between jobs; do not treat cached APK/PBW files or earlier
+test reports as current results.
+
+Keep the existing container-based development entry points and full acceptance suite. Provide
+focused entry points for synthetic Android execution and standalone watch smoke tests. Command
+names, helper organization, and test layout remain implementation choices.
+
+### Workflow, release qualification, and trust
+
+Run independent Android, watch, documentation, and security work in parallel. Replace the required
+full-stack PR acceptance aggregate with a required synthetic aggregate after validation. Preserve
+dependency review and CodeQL protections, including the high-severity merge rule. Main runs the
+synthetic checks directly; it does not reuse PR evidence.
+
+Remove signed CI certification records, host fingerprints, and their release consumers together.
+Use GitHub workflow and job conclusions instead. This changes test authorization, not image trust
+or release artifact provenance: retain digest pins, keyless image signature verification, image
+provenance/SBOM attestations, and release artifact attestations.
+
+Run the full real-app suite weekly on main and expose a manual qualification trigger before
+tagging. Weekly failures remain visible through GitHub's notifications and do not become PR merge
+requirements. They prevent that unsuccessful result from qualifying the commit for release.
+
+Before signing or creating a release draft, require successful synthetic main CI and full real-app
+acceptance for the exact tagged commit. Retain the requirement that the tag equals current main
+before access to signing secrets and before changing the draft. Reuse an exact-commit manual or
+weekly qualification result when available; otherwise run full acceptance automatically for the
+release tag. Keep acceptance outside the signing job.
+
+Qualification checks must verify the repository, trusted workflow identity, tested commit, latest
+run/attempt, and all required job conclusions. Wait for pending qualification. Failed, cancelled,
+incomplete, or skipped required results cannot qualify a release or be hidden by an older success.
+An API lookup failure also cannot authorize signing. Do not automatically rerun failed
+qualification to obtain a green result.
+
+### Runtime, reliability, and failure handling
+
+Use a lean, digest-pinned CI toolchain published through the protected image workflow. Routine
+jobs must not rebuild the SDK image or install Locus Map or the Pebble App. Keep toolchains inside
+the container, emulator state disposable, and dependency caches optional for correctness. Preserve
+the existing private-fixture, image-content, and cleanup constraints for real-app acceptance.
+
+Use bounded readiness assertions instead of fixed sleeps. Retain bounded logs, fresh test reports,
+screenshots, and cleanup on failure or cancellation. Record provisioning, build, and test durations
+separately. Keep the evidence-based retry policy: diagnose the exact failed attempt, retry failed
+jobs once only for a supported isolated external failure, and investigate recurrence before another
+retry.
+
+### Migration, rollback, and acceptance
+
+Introduce the synthetic tier alongside the current required gates. Publish and verify replacement
+toolchain images before adopting their digests. Replace branch protection only after synthetic
+Android tests and both standalone QEMU smoke checks pass. Update release consumers and operational
+documentation when retiring CI certification; this architecture document does not itself remove
+any current gate. Rollback restores the previous workflow, matching release consumers, and required
+checks together.
+
+Validate the following before completing the migration:
+
+- Routine tests pass without Locus Map or the Pebble App installed.
+- Both watch platforms launch and complete settings save/apply checks using the current PBW.
+- Missing tests, crashes, malformed transfers, and stale results fail the appropriate gate.
+- Manual qualification works before tagging; automatic release qualification runs when no result
+  exists for the exact commit.
+- Release authorization rejects another commit and unsuccessful or incomplete qualification.
+- Full real-app acceptance still passes after harness changes.
+- Fresh-runner timings cover every required check, with restored caches and cache misses reported
+  separately. Disclose any five-minute overrun without dropping coverage.
+
+The pinned SDK provides installation, AppMessage, and screenshot interfaces. A Node phone peer
+executes the actual packaged JavaScript and settings HTML. Standalone smoke checks pass on Emery
+and Gabbro, and the clean API 34 Android suite passes without either third-party app installed.
+The five-minute target still requires fresh hosted-runner measurements.
+
+**Rationale:** Existing boundary fakes retain Android lifecycle coverage without third-party app
+onboarding. Both watch emulators retain launch and settings coverage. Weekly and release acceptance
+detect external compatibility drift. GitHub run checks remove routine certification complexity
+while exact-commit qualification continues to protect releases.
+
+**Acceptance of architecture:** Implementation may proceed without requiring the implementer to
+make additional material architectural decisions. Internal helper structure and command naming
+remain delegated to implementation. The implementation must retain the
+previous required gate until the migration checks above pass.

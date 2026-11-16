@@ -19,26 +19,25 @@ VERSIONS = ROOT / "tools" / "podman" / "versions.env"
 
 
 class ContinuousIntegrationWorkflowTest(unittest.TestCase):
-    def test_validation_keeps_protected_pr_checks_and_certifies_main_pushes(self):
-        ci = CI_WORKFLOW.read_text(encoding="utf-8")
-        ci_events = ci.split("permissions:\n", 1)[0]
-        self.assertIn("  push:\n    branches: [main]", ci_events)
-        self.assertIn("  pull_request:\n    branches: [main]", ci_events)
-        self.assertIn("  workflow_dispatch:", ci_events)
-        self.assertIn("  plan:\n    name: Select main CI evidence", ci)
-        self.assertIn("tools/ci-evidence decide", ci)
-        self.assertIn("name: Main commit certification", ci)
-        self.assertIn("tools/ci-evidence certify", ci)
-        self.assertIn("predicate-path: build/ci-certification.json", ci)
-        self.assertIn("if: always() && github.event_name == 'push'", ci)
-        self.assertIn("ci-${{ github.event_name }}-${{ github.workflow }}-${{ github.ref }}", ci)
+    def test_dependency_cache_never_rescans_generated_files_and_cannot_fail_tests(self):
+        for path in (CI_WORKFLOW, CODEQL_WORKFLOW):
+            source = path.read_text()
+            cache = source.split("- uses: actions/cache@", 1)[1].split("\n      - ", 1)[0]
+            self.assertNotIn("hashFiles", cache)
+            self.assertIn("steps.dependency-key.outputs.value", cache)
+            self.assertIn("continue-on-error: true", cache)
+            self.assertLess(source.index("id: dependency-key"), source.index("- uses: actions/cache@"))
 
-        codeql = CODEQL_WORKFLOW.read_text(encoding="utf-8")
-        codeql_events = codeql.split("permissions:\n", 1)[0]
-        self.assertNotIn("  push:", codeql_events)
-        self.assertIn("  pull_request:\n    branches: [main]", codeql_events)
-        self.assertIn("  schedule:", codeql_events)
-        self.assertIn("  workflow_dispatch:", codeql_events)
+    def test_validation_runs_synthetic_checks_on_prs_and_main(self):
+        ci = CI_WORKFLOW.read_text()
+        self.assertIn("  push:\n    branches: [main]", ci)
+        self.assertIn("  pull_request:\n    branches: [main]", ci)
+        self.assertIn("  workflow_dispatch:", ci)
+        self.assertIn("name: Synthetic CI", ci)
+        self.assertNotIn("tools/ci-evidence", ci)
+        self.assertNotIn("attestations: write", ci)
+        self.assertNotIn("Main commit certification", ci)
+        self.assertIn("cancel-in-progress: true", ci)
 
     def test_dependency_review_is_one_pull_request_only_pinned_v5_check(self):
         source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
@@ -79,17 +78,13 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertNotIn("tools:", source)
         self.assertNotIn("codeql-bundle-linux64.tar.gz", source)
 
-    def test_every_pull_request_runs_one_hosted_acceptance_pass(self):
-        source = CI_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("branches: [main]", source)
-        self.assertNotIn("tags: ['v*']", source)
-        self.assertIn("  acceptance-hosted:\n    name: Hosted full-stack acceptance", source)
-        self.assertIn("if: always() && needs.plan.outputs.mode != 'reuse'", source)
-        self.assertIn("if: success() && github.event_name == 'pull_request'", source)
-        self.assertIn("WATCH_PASSES: ${{ inputs.watch_passes || '1' }}", source)
-        self.assertIn("tools/podman-test acceptance-suite", source)
-        self.assertIn('source) run_suite Source --fresh', source)
-        self.assertIn('"$provisioning" --cleanup --watch-passes', source)
+    def test_rollout_keeps_real_acceptance_until_synthetic_gate_is_enabled(self):
+        source = CI_WORKFLOW.read_text()
+        self.assertIn("vars.SYNTHETIC_CI_ENABLED != 'true'", source)
+        self.assertIn("uses: ./.github/workflows/acceptance.yml", source)
+        self.assertIn("needs: [synthetic, documentation]", source)
+        self.assertIn('test "$SYNTHETIC_RESULT" = success', source)
+        self.assertIn('test "$DOCUMENTATION_RESULT" = success', source)
 
     def test_obsolete_probe_and_self_hosted_jobs_are_absent(self):
         source = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -146,51 +141,32 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             versions,
         )
 
-    def test_manual_acceptance_can_compare_source_and_published_provisioning(self):
-        source = CI_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("options: [source, published, compare]", source)
-        self.assertIn("default: published", source)
-        self.assertIn("inputs.acceptance_provisioning || 'published'", source)
+    def test_full_acceptance_is_weekly_manual_and_reusable(self):
+        source = (ROOT / ".github/workflows/acceptance.yml").read_text()
+        events = source.split("permissions:", 1)[0]
+        self.assertIn("workflow_dispatch:", events)
+        self.assertIn("workflow_call:", events)
+        self.assertIn("schedule:", events)
+        self.assertNotIn("pull_request:", events)
+        self.assertIn("options: [source, published, compare]", events)
         self.assertIn("run_suite Source --fresh", source)
         self.assertIn("run_suite Published --published", source)
-        self.assertNotIn("build/acceptance-timings.txt", source)
-        run_suite = source.split("run_suite() {", 1)[1].split("\n          }", 1)[0]
-        self.assertIn('sudo setfacl -m "u:${USER}:rw" /dev/kvm', run_suite)
-        self.assertIn("test -w /dev/kvm", run_suite)
+        self.assertNotIn("ci-evidence", source)
 
 
 class AcceptanceComponentsPolicyTest(unittest.TestCase):
-    def test_android_precedes_parallel_watches_and_aggregate_requires_all(self):
-        source = CI_WORKFLOW.read_text()
-        android = source.split("  acceptance-android:", 1)[1].split("  acceptance-watch:", 1)[0]
-        watch = source.split("  acceptance-watch:", 1)[1].split("  acceptance-hosted:", 1)[0]
-        aggregate = source.split("  acceptance-hosted:", 1)[1]
-        self.assertIn("ACCEPTANCE_COMPONENT: android", android)
-        self.assertIn("needs: [plan, acceptance-android]", watch)
-        self.assertIn("fail-fast: false", watch)
-        self.assertIn("component: [emery, gabbro]", watch)
-        self.assertNotIn("max-parallel: 1", watch)
-        self.assertIn("needs: [plan, acceptance-android, acceptance-watch]", aggregate)
-        self.assertIn("if: always()", aggregate)
-        self.assertIn('test "$ANDROID_RESULT" = success', aggregate)
-        self.assertIn('test "$WATCH_RESULT" = success', aggregate)
-        self.assertEqual(source.count("name: Hosted full-stack acceptance"), 1)
-        self.assertEqual(source.count("- name: Upload tested checkout evidence"), 4)
-        self.assertEqual(source.count("tools/ci-evidence capture"), 4)
-        self.assertEqual(source.count("tools/ci-evidence finalize"), 4)
-        for job in (android, watch):
-            self.assertIn("acceptance-${{ env.ACCEPTANCE_COMPONENT }}-diagnostics-", job)
-            self.assertIn("retention-days: 7", job)
-            self.assertIn("if: failure()", job)
-        self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', android)
-        phase_helper = (ROOT / 'tools/ci-watch-phase').read_text()
-        self.assertIn(' --component "$ACCEPTANCE_COMPONENT"', phase_helper)
-        self.assertIn('"$GITHUB_STEP_SUMMARY"', phase_helper)
-        for mode in ('source', 'published'):
-            self.assertIn(f'tools/ci-watch-phase prepare {mode}', watch)
-            self.assertIn(f'Close {mode} watch session', watch)
+    def test_full_acceptance_requires_android_and_both_watch_platforms(self):
+        source = (ROOT / ".github/workflows/acceptance.yml").read_text()
+        self.assertIn("needs: [acceptance-android]", source)
+        self.assertIn("component: [emery, gabbro]", source)
+        self.assertIn("fail-fast: false", source)
+        self.assertIn("needs: [acceptance-android, acceptance-watch]", source)
+        self.assertIn('test "$ANDROID_RESULT" = success', source)
+        self.assertIn('test "$WATCH_RESULT" = success', source)
+        self.assertIn("if: always()", source)
+        for mode in ("source", "published"):
             for number in (1, 2):
-                start = f'tools/ci-watch-phase startup {mode} {number}'
-                behavior = f'tools/ci-watch-phase behavior {mode} {number}'
-                self.assertLess(watch.index(start), watch.index(behavior))
-        self.assertNotIn('tools/podman-test acceptance-suite', watch)
+                self.assertLess(
+                    source.index(f"tools/ci-watch-phase startup {mode} {number}"),
+                    source.index(f"tools/ci-watch-phase behavior {mode} {number}"),
+                )
