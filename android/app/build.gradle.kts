@@ -134,22 +134,22 @@ configurations.configureEach {
             name.startsWith("lint") ||
             name.startsWith("unified-test-platform")
     ) {
-        dependencies.add(project.dependencies.platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
+        dependencies.add(project.dependencies.platform("com.fasterxml.jackson:jackson-bom:2.23.0"))
         dependencyConstraints.add(
             project.dependencies.constraints.create("com.google.guava:guava:33.8.0-jre")
         )
         dependencyConstraints.add(project.dependencies.constraints.create("org.jsoup:jsoup:1.24.1"))
         dependencyConstraints.add(
-            project.dependencies.constraints.create("org.bouncycastle:bcprov-jdk18on:1.86")
+            project.dependencies.constraints.create("org.bouncycastle:bcprov-jdk18on:1.87")
         )
         dependencyConstraints.add(
-            project.dependencies.constraints.create("org.bouncycastle:bcpkix-jdk18on:1.86")
+            project.dependencies.constraints.create("org.bouncycastle:bcpkix-jdk18on:1.87")
         )
         dependencyConstraints.add(
-            project.dependencies.constraints.create("org.bouncycastle:bcutil-jdk18on:1.86")
+            project.dependencies.constraints.create("org.bouncycastle:bcutil-jdk18on:1.87")
         )
         dependencyConstraints.add(
-            project.dependencies.constraints.create("org.apache.commons:commons-lang3:3.21.0")
+            project.dependencies.constraints.create("org.apache.commons:commons-lang3:3.22.0")
         )
         dependencyConstraints.add(
             project.dependencies.constraints.create("org.apache.httpcomponents:httpclient:4.5.14")
