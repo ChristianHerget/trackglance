@@ -273,7 +273,11 @@ Validate the following before completing the migration:
 The pinned SDK provides installation, AppMessage, and screenshot interfaces. A Node phone peer
 executes the actual packaged JavaScript and settings HTML. Standalone smoke checks pass on Emery
 and Gabbro, and the clean API 34 Android suite passes without either third-party app installed.
-The five-minute target still requires fresh hosted-runner measurements.
+The first hosted cache-miss run with compilation caching took 9m15s, including CodeQL and the
+synthetic aggregate, using the original large toolchain
+([run](https://github.com/ChristianHerget/trackglance/actions/runs/43931384781)). This exceeds the
+five-minute target. The lean image and restored-cache measurements belong to the subsequent
+image-adoption PR; keep coverage intact when reporting any remaining overrun.
 
 **Rationale:** Existing boundary fakes retain Android lifecycle coverage without third-party app
 onboarding. Both watch emulators retain launch and settings coverage. Weekly and release acceptance
