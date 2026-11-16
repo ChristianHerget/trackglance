@@ -43,6 +43,7 @@ jobs:
           DEPENDENCY_KEY: ${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', '**/package-lock.json', 'tools/ci-images.env') }}
         run: printf 'value=%s\n' "$DEPENDENCY_KEY" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'workflow_dispatch'
         continue-on-error: true
         with:
           path: build/dev-container-cache
