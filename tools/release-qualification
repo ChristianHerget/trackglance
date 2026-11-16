@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Require exact-main CI; find or request real-app qualification before release."""
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import time
+
+from github_checks import (
+    ACCEPTANCE_JOBS, SYNTHETIC_JOBS, CheckError, GitHub, latest_run, require_run,
+)
+
+
+def git(*args):
+    return subprocess.check_output(["git", *args], text=True).strip()
+
+
+def output(key, value):
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            stream.write(f"{key}={value}\n")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("tag")
+    parser.add_argument("--probe", action="store_true")
+    args = parser.parse_args()
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", args.tag):
+        raise CheckError("expected a release version tag")
+    commit = git("rev-parse", f"{args.tag}^{{commit}}")
+    gh = GitHub(os.environ["GITHUB_REPOSITORY"])
+    if gh.json("git/ref/heads/main")["object"]["sha"] != commit:
+        raise CheckError("release tag must equal current main")
+    ci = latest_run(gh, "ci.yml", commit, {"push"})
+    creation_timeout = float(os.environ.get("RELEASE_QUALIFICATION_CREATION_TIMEOUT", "300"))
+    creation_deadline = time.monotonic() + creation_timeout
+    while ci is None and time.monotonic() < creation_deadline:
+        time.sleep(5)
+        ci = latest_run(gh, "ci.yml", commit, {"push"})
+    if ci is None:
+        raise CheckError("no synthetic main CI for the release commit")
+    require_run(gh, ci, SYNTHETIC_JOBS)
+    acceptance = latest_run(gh, "acceptance.yml", commit, {"workflow_dispatch", "schedule"})
+    output("source_commit", commit)
+    output("ci_run_url", ci["html_url"])
+    if args.probe and acceptance is None:
+        output("needs_acceptance", "true")
+        return
+    deadline = time.monotonic() + creation_timeout
+    while acceptance is None and time.monotonic() < deadline:
+        time.sleep(15)
+        acceptance = latest_run(gh, "acceptance.yml", commit, {"workflow_dispatch", "schedule"})
+    if acceptance is None:
+        raise CheckError("no full acceptance run for the release commit")
+    require_run(gh, acceptance, ACCEPTANCE_JOBS)
+    newest = latest_run(gh, "acceptance.yml", commit, {"workflow_dispatch", "schedule"})
+    if newest is None or (newest["id"], newest["run_attempt"]) != (
+        acceptance["id"], acceptance["run_attempt"]
+    ):
+        raise CheckError("acceptance was superseded")
+    output("needs_acceptance", "false")
+    output("acceptance_run_url", acceptance["html_url"])
+    print(f"Release qualification passed: {commit} {acceptance['html_url']}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (CheckError, KeyError, ValueError, subprocess.CalledProcessError) as error:
+        sys.exit(f"Release qualification failed: {error}")

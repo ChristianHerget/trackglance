@@ -72,7 +72,8 @@ class ReleaseWorkflowTest(unittest.TestCase):
     def test_draft_build_is_artifact_only_attested_and_checks_tag_twice(self):
         source = RELEASE_WORKFLOW.read_text(encoding="utf-8")
         self.assertEqual(source.count('tools/release-preflight "${GITHUB_REF_NAME}"'), 2)
-        self.assertIn("tools/release-certification", source)
+        self.assertIn("tools/release-qualification", source)
+        self.assertIn("gh workflow run acceptance.yml --ref main", source)
         self.assertIn("tools/podman-test release-artifacts --published", source)
         self.assertEqual(source.count("actions/attest@"), 7)
         self.assertEqual(source.count("sbom-path:"), 4)

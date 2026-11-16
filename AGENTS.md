@@ -63,7 +63,8 @@ protected `Publish CI images` workflow, retain provenance/SBOM attestations and 
 verification, and compare source versus published acceptance before adopting new pins. Published
 images must never contain Locus, TrackGlance APK/PBW files, signing material, emulator state, or
 persistent caches. Hosted acceptance downloads and validates the public fixture in `$RUNNER_TEMP`,
-creates fresh golden state, and runs Android, Emery, and Gabbro; preserve this protected gate.
+creates fresh golden state, and runs Android, Emery, and Gabbro. Run this full suite weekly,
+manually, and before releases; routine PR/main gates use synthetic Android and watch checks.
 
 [docs/development.md](docs/development.md) owns ARCVM/hardware and real-device commands. The opt-in
 Locus contract test is non-mutating: it validates numeric profile identities and rejection of
@@ -94,7 +95,8 @@ History uses short imperative subjects such as `Route resume through Locus start
 commit focused and include tests with behavioral fixes. Pull requests should explain user-visible
 behavior, list verified commands and hardware/platforms, link relevant issues, and include watch
 photos or screenshots for layout changes. The protected pull-request workflow is the authoritative
-full acceptance gate and uses the published GHCR image set. Run focused local checks appropriate to
+synthetic gate and uses the published GHCR image set. Real-app acceptance remains mandatory for
+the exact release commit. Run focused local checks appropriate to
 the change before opening a pull request. For changes that affect Android/watch runtime behavior or
 the acceptance harness, a warm local suite provides useful end-to-end feedback:
 

@@ -170,42 +170,42 @@ not a manual-lab provisioning path.
 
 ## GitHub-hosted acceptance
 
-Pull requests run `static`, documentation, the release check, and hosted acceptance on
-`ubuntu-24.04` with Docker and `/dev/kvm`. The checks remain required before merging to `main`.
-Hosted acceptance verifies the digest-pinned published runner and emulator, downloads the pinned
-user-managed Google Drive fixture only into `$RUNNER_TEMP`, builds the current TrackGlance APK/PBW, creates its golden
-volume from scratch, runs Android/Locus instrumentation, and runs Emery plus Gabbro once. CodeQL
-and dependency review remain protected pull-request gates.
+PR and main CI run synthetic checks on `ubuntu-24.04` with Docker. Android instrumentation uses
+a clean emulator and in-process Locus/transport fakes; neither Locus Map nor the Pebble App is
+installed. The watch checks build both targets and run standalone launch/settings smoke tests
+through the SDK protocol client and a Node phone peer. Documentation, dependency review, packaging, and CodeQL remain
+required.
 
-A push to `main` first checks whether it can reuse the newest CI run for the merged, same-repository
-PR. Each PR test job records its actual checkout, including GitHub's synthetic merge commit and
-tree, plus effective settings and pinned inputs. The main job verifies those records against the
-GitHub run, latest complete attempt, artifact digests, recomputed merge tree, required job results,
-current source tree, runner image and Docker versions, fixture, and toolchain fingerprints. Pebble
-Tool can update `watchapp/package-lock.json` during a build; the evidence also records its observed
-post-build fingerprint and rejects unrelated tracked changes or disagreement between test jobs.
-Evidence must be no older than 24 hours. A changed workflow, test policy, fixture, external-input definition,
-or toolchain forces the complete main suite. Missing, failed, skipped, cancelled, partial, fork, or
-unverifiable evidence does the same. Manual dispatches always run the selected suite. Mutable
-hosted packages remain bounded by the 24-hour window; the runner image version must match.
+```sh
+DEV_CONTAINER_ENGINE=podman ./tools/podman-test synthetic helpers
+DEV_CONTAINER_ENGINE=podman ./tools/podman-test synthetic watch
+DEV_CONTAINER_ENGINE=podman ./tools/podman-test synthetic android
+```
 
-The main push always creates a lightweight exact-commit certification from trusted main context.
-It records reuse or the full-suite result, source run and attempt, tested tree, inputs, check links,
-fallback reason, and timing. The record receives a GitHub attestation. The release gate verifies the
-record and latest attempt before signing; the release artifacts remain bound to the release SHA.
-The `Main commit certification` job summary shows the decision and check links. Its
-`main-certification-<run-id>-<attempt>` artifact retains the JSON record for 90 days.
-The policy change itself forces a full main suite when first merged. A later same-repository canary
-PR proves the reuse path without changing protected PR checks.
+Hosted jobs set `CI_PUBLISHED_TOOLS=true` to verify and pull the digest-pinned Kotlin/CI toolchain
+rather than rebuild SDKs. Local synthetic checks default to the existing development image.
+The protected publisher builds the Kotlin/CI toolchain without the Android NDK/CMake used only
+for compiling the Pebble App fixture. Existing pins remain usable during image rollout.
 
-For the completed PR #89, PR CI took 30m52s and 62m54s of summed job time; the unchanged
-main push repeated five test components in 31m28s and 63m03s of summed job time. These are the
-pre-change baseline from [PR run 36504113460](https://github.com/ChristianHerget/trackglance/actions/runs/36504113460)
-and [main run 36506588022](https://github.com/ChristianHerget/trackglance/actions/runs/36506588022).
-After the canary merge, compare its main certification summary and run job timestamps with this
-baseline: elapsed time to certification, summed runner time, repeated component count, and any
-fallback reason. A reused tree should report zero repeated test components; changed or untrusted
-inputs must report the full-suite reason and run all five.
+The `Full acceptance` workflow runs weekly on main and can be dispatched manually, including before
+tagging. It retains published/source/compare provisioning, downloads the pinned Locus fixture only
+into `$RUNNER_TEMP`, creates fresh golden state, and runs Android plus Emery/Gabbro acceptance.
+It validates the real Locus API and Pebble App WebView integration that synthetic checks cannot prove.
+
+A release requires successful synthetic main CI and full acceptance for its exact commit. A manual
+or weekly acceptance result for that commit can qualify it; otherwise the release workflow dispatches
+acceptance on main before entering signing. Failed, cancelled, partial, skipped, or superseded
+qualification cannot authorize a release. There are no signed CI records, runner fingerprints,
+or PR-to-main reuse artifacts. Image and release artifact attestations remain required.
+
+During rollout, the existing `Hosted full-stack acceptance` PR check continues to run until
+`SYNTHETIC_CI_ENABLED=true` is configured after the synthetic checks pass and branch protection
+requires `Synthetic CI`. Keep documentation, dependency review, and CodeQL protection in place.
+
+The performance target is five minutes from the first required job starting to all required checks
+finishing. Report queue time separately. Compare fresh hosted runners with restored dependency
+caches and with cache misses, including image verification/pull, build, and test time. Retain
+coverage and report any overrun instead of treating a deadline as permission to skip checks.
 
 The workflow prints `df -h`, `docker system df`, and relevant directory sizes after each major
 stage. On failure it uploads a seven-day diagnostic bundle containing only bounded logs, JUnit/XML

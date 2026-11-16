@@ -41,12 +41,17 @@ analyses.
 
 ## Release environment prerequisites
 
-Every push to `main` produces a signed certification for the exact squash commit. It either
-verifies matching, fresh, complete PR evidence or runs the full static, documentation, and hosted
-acceptance suite. Before tagging, confirm `Main commit certification` succeeded, fetch `main`,
-and create `vMAJOR.MINOR.PATCH` at that exact HEAD. The tag-triggered draft job verifies the
-certification record before entering the protected GitHub `release` environment. Confirm that
-the environment contains the signing secrets and a working `VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
+Every push to `main` runs synthetic CI. Before tagging, confirm `Synthetic CI` succeeded,
+fetch `main`, and create `vMAJOR.MINOR.PATCH` at that exact HEAD. The release preflight requires
+synthetic CI and real-app acceptance for that exact commit. It uses an existing successful manual
+or weekly qualification, or dispatches `Full acceptance` automatically before signing. You can
+qualify main before tagging with:
+
+```sh
+gh workflow run acceptance.yml --ref main --repo ChristianHerget/trackglance
+```
+
+The `release` environment also needs `VIRUSTOTAL_API_KEY`. Set the VirusTotal key interactively so its value never appears in a command
 argument or log:
 
 ```sh
@@ -282,7 +287,7 @@ Missing App configuration reports the setup requirement and does not enable auto
 
 After setup, check the first eligible Dependabot PR: auto-merge should wait for required checks,
 then merge without bypassing protection. Confirm that CI starts on the resulting `main` commit and
-that **Main commit certification** succeeds. To pause new automatic merges, remove the Client ID
+that **Synthetic CI** succeeds on main. To pause new automatic merges, remove the Client ID
 variable; disable any already-pending auto-merge requests separately.
 
 A green PR can still wait for auto-merge when its branch is behind `main`. Request

@@ -85,6 +85,12 @@ if [[ ${states[runner]} == missing || ${states[emulator]} == missing || ${states
   if [[ ${states[codeql]} == missing ]]; then
     docker build \
       --build-arg "BUILD_IMAGE=$build_image" \
+      --build-arg "ANDROID_NDK_VERSION=$ANDROID_NDK_VERSION" \
+      --build-arg "ANDROID_BUILD_TOOLS_VERSION=$ANDROID_BUILD_TOOLS_VERSION" \
+      --file tools/podman/Containerfile.ci \
+      --tag "localhost/trackglance/ci-toolchain:${RELEASE_VERSION}" .
+    docker build \
+      --build-arg "BUILD_IMAGE=localhost/trackglance/ci-toolchain:${RELEASE_VERSION}" \
       --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
       --file tools/podman/Containerfile.codeql-kotlin \
       --tag "${tags[codeql]}" .

@@ -8,6 +8,7 @@ EMULATOR_ENTRYPOINT = ROOT / "tools" / "podman" / "android-emulator-entrypoint.s
 PUBLISH_RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 ACTION_MAJORS = {
+    "actions/cache": 6,
     "actions/checkout": 7,
     "actions/configure-pages": 6,
     "actions/upload-pages-artifact": 5,

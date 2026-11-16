@@ -16,6 +16,7 @@ on:
       - tools/podman/Containerfile.acceptance-runner
       - tools/podman/Containerfile.build
       - tools/podman/Containerfile.codeql-kotlin
+      - tools/podman/Containerfile.ci
       - tools/podman/Containerfile.emulator
       - tools/podman/Containerfile.generator
       - tools/podman/android-emulator-entrypoint.sh

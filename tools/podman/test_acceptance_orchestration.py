@@ -146,8 +146,10 @@ class AcceptanceOrchestrationTest(unittest.TestCase):
     def test_static_path_does_not_require_acceptance_inputs(self):
         source = PODMAN_TEST.read_text(encoding="utf-8")
         static_body = source.split("static_tests() {", 1)[1].split("\n}", 1)[0]
-        self.assertIn("doctor_static", static_body)
-        self.assertIn("static_image_exists || build_static_image", static_body)
+        self.assertIn("prepare_synthetic_tools", static_body)
+        preparation = (ROOT / "tools/podman/synthetic.sh").read_text().split("prepare_synthetic_tools() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("doctor_static", preparation)
+        self.assertIn("static_image_exists || build_static_image", preparation)
         self.assertIn("run_static_container", static_body)
         for forbidden in ("require_images", "require_current_golden", "/dev/kvm", "LOCUS_INPUT_DIR"):
             self.assertNotIn(forbidden, static_body)

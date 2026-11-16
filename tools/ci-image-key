@@ -25,6 +25,7 @@ case "$kind" in
     files=(
       tools/podman/versions.env
       tools/podman/Containerfile.build
+      tools/podman/Containerfile.ci
       tools/podman/Containerfile.codeql-kotlin
     )
     ;;
