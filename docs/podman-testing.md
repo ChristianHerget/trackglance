@@ -184,8 +184,10 @@ DEV_CONTAINER_ENGINE=podman ./tools/podman-test synthetic android
 
 Hosted jobs set `CI_PUBLISHED_TOOLS=true` to verify and pull the digest-pinned Kotlin/CI toolchain
 rather than rebuild SDKs. Local synthetic checks default to the existing development image.
-The protected publisher builds the Kotlin/CI toolchain without the Android NDK/CMake used only
-for compiling the Pebble App fixture. Existing pins remain usable during image rollout.
+The protected publisher builds the Kotlin/CI toolchain without the full Android NDK/CMake used
+for compiling the Pebble App fixture. It retains the pinned C analyzer, formatter, and headers.
+Synthetic Android builds cache compilation outputs, but execute JVM and instrumentation tests
+on every run. CodeQL disables compilation caching so its tracer observes the build.
 
 The `Full acceptance` workflow runs weekly on main and can be dispatched manually, including before
 tagging. It retains published/source/compare provisioning, downloads the pinned Locus fixture only
@@ -198,9 +200,9 @@ acceptance on main before entering signing. Failed, cancelled, partial, skipped,
 qualification cannot authorize a release. There are no signed CI records, runner fingerprints,
 or PR-to-main reuse artifacts. Image and release artifact attestations remain required.
 
-During rollout, the existing `Hosted full-stack acceptance` PR check continues to run until
-`SYNTHETIC_CI_ENABLED=true` is configured after the synthetic checks pass and branch protection
-requires `Synthetic CI`. Keep documentation, dependency review, and CodeQL protection in place.
+Branch protection requires `Synthetic CI`, `Committed documentation`, and `Dependency review`,
+with the existing CodeQL rule rejecting high-severity security findings. Full real-app acceptance
+qualifies releases separately from routine PR checks.
 
 The performance target is five minutes from the first required job starting to all required checks
 finishing. Report queue time separately. Compare fresh hosted runners with restored dependency

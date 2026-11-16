@@ -113,27 +113,3 @@ jobs:
         run: |
           test "$SYNTHETIC_RESULT" = success
           test "$DOCUMENTATION_RESULT" = success
-
-  # Keep the existing protected check during rollout. Enable the new gate only
-  # after synthetic checks pass, then set SYNTHETIC_CI_ENABLED=true.
-  legacy-acceptance:
-    if: github.event_name == 'pull_request' && vars.SYNTHETIC_CI_ENABLED != 'true'
-    uses: ./.github/workflows/acceptance.yml
-  legacy-static:
-    name: Android, Pebble, protocol, and helpers
-    needs: synthetic
-    if: always()
-    runs-on: ubuntu-24.04
-    steps:
-      - env:
-          RESULT: ${{ needs.synthetic.result }}
-        run: test "$RESULT" = success
-  legacy-complete:
-    name: Hosted full-stack acceptance
-    needs: legacy-acceptance
-    if: always() && github.event_name == 'pull_request' && vars.SYNTHETIC_CI_ENABLED != 'true'
-    runs-on: ubuntu-24.04
-    steps:
-      - env:
-          RESULT: ${{ needs.legacy-acceptance.result }}
-        run: test "$RESULT" = success

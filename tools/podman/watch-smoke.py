@@ -28,7 +28,7 @@ from libpebble2.services.screenshot import Screenshot
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def capture_watch(connection, path):
+def capture_watch(connection, path, timeout=5):
     result = queue.Queue()
 
     def capture():
@@ -42,7 +42,7 @@ def capture_watch(connection, path):
 
     threading.Thread(target=capture, daemon=True).start()
     try:
-        error = result.get(timeout=5)
+        error = result.get(timeout=timeout)
     except queue.Empty as error:
         raise TimeoutError("watch screenshot exceeded five seconds") from error
     if error:

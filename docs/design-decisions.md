@@ -32,8 +32,7 @@ acceptance emulator level, not the product installation minimum.
 
 ## 4. Verification levels
 
-**Status:** Decision 12 defines the synthetic and real-app test tiers. The rollout keeps the
-previous required acceptance check until the replacement synthetic gate is validated.
+**Status:** Active. Decision 12 defines the synthetic and real-app test tiers.
 
 **Decision:** Routine `verifyPebbleTargets` performs only fast stack and protocol checks.
 `verifyDocumentation` validates Sphinx using committed images, while
@@ -152,7 +151,8 @@ reviewable, and explicit publication preserves artifact identity and human appro
 
 ## 12. Synthetic CI and release qualification
 
-**Status:** Confirmed; implementation and rollout validation are in progress.
+**Status:** Implemented. Synthetic CI is the required PR and main gate; real-app acceptance
+qualifies releases and runs weekly or manually.
 
 **Decision:** Use synthetic integration tests for required PR and main CI. Run acceptance with
 real Locus Map and the Pebble App weekly, manually, and before releases. Replace signed CI
@@ -252,12 +252,11 @@ retry.
 
 ### Migration, rollback, and acceptance
 
-Introduce the synthetic tier alongside the current required gates. Publish and verify replacement
-toolchain images before adopting their digests. Replace branch protection only after synthetic
-Android tests and both standalone QEMU smoke checks pass. Update release consumers and operational
-documentation when retiring CI certification; this architecture document does not itself remove
-any current gate. Rollback restores the previous workflow, matching release consumers, and required
-checks together.
+The migration validated synthetic Android and both standalone QEMU smoke checks alongside the
+previous full-stack gate before changing branch protection. Replacement toolchain digests are
+adopted only after protected publication and signature/provenance verification. Release consumers
+and operational documentation use exact-commit workflow qualification. Rollback restores the
+previous workflow, matching release consumers, and required checks together.
 
 Validate the following before completing the migration:
 
@@ -281,7 +280,5 @@ onboarding. Both watch emulators retain launch and settings coverage. Weekly and
 detect external compatibility drift. GitHub run checks remove routine certification complexity
 while exact-commit qualification continues to protect releases.
 
-**Acceptance of architecture:** Implementation may proceed without requiring the implementer to
-make additional material architectural decisions. Internal helper structure and command naming
-remain delegated to implementation. The implementation must retain the
-previous required gate until the migration checks above pass.
+**Acceptance of architecture:** Internal helper structure and command naming remain delegated
+to implementation. Changes must preserve the test coverage and release qualification above.
