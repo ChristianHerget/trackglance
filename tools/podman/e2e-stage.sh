@@ -20,6 +20,34 @@ behavior_checkpoint() {
 }
 behavior_checkpoint "phase=$phase begin"
 
+print_failure_diagnostics() {
+  local status_file=$1 logcat_file=$2
+  echo "--- $PEBBLE_PLATFORM bridge status ---" >&2
+  if [[ -s "$status_file" ]]; then
+    head -c 4096 "$status_file" >&2
+    echo >&2
+  else
+    echo 'Bridge status was unavailable.' >&2
+  fi
+  echo '--- bounded Locus crash diagnostics ---' >&2
+  awk '
+    / E AndroidRuntime: FATAL EXCEPTION:/ { header=$0; locus=0; next }
+    / E AndroidRuntime: Process:/ {
+      locus=($0 ~ /Process: menion[.]android[.]locus,/)
+      if (locus && printed < 30) {
+        print substr(header, 1, 500)
+        print substr($0, 1, 500)
+        printed+=2
+      }
+      next
+    }
+    locus && / E AndroidRuntime:/ && printed < 30 {
+      print substr($0, 1, 500)
+      printed++
+    }
+    END { if (!printed) print "No Locus Java crash found in captured logcat." }
+  ' "$logcat_file" >&2
+}
 
 capture_artifacts() {
   local original_status=$? retention_status=0
@@ -29,7 +57,9 @@ capture_artifacts() {
   dump_ui
   cp /tmp/trackglance-window.xml "/artifacts/${PEBBLE_PLATFORM}-failure-ui.xml"
   adb_device_timeout 10 shell content query --uri "$STATUS_URI" > "/artifacts/${PEBBLE_PLATFORM}-failure-status.txt"
-  adb_device_timeout 15 logcat -d > "/artifacts/${PEBBLE_PLATFORM}-logcat.txt" || retention_status=74
+  adb_device_timeout 15 logcat -d -t 20000 > "/artifacts/${PEBBLE_PLATFORM}-logcat.txt" || retention_status=74
+  print_failure_diagnostics "/artifacts/${PEBBLE_PLATFORM}-failure-status.txt" \
+    "/artifacts/${PEBBLE_PLATFORM}-logcat.txt"
   (( original_status != 0 )) || original_status=$retention_status
   exit "$original_status"
 }
@@ -227,6 +257,33 @@ screen_off_supervision_recovery() {
   watch_screenshot "${PEBBLE_PLATFORM}-supervision-recovered"
 }
 
+stop_and_save_recording() {
+  # Locus 4.36.1 can crash in StartScreen when stop/save restores its background UI.
+  # Keep screen-off supervision separate, then stop through the watch with Locus ready.
+  behavior_checkpoint stop-save-foreground
+  local locus_pid restored_pid
+  locus_pid=$(adb_device_timeout 5 shell pidof menion.android.locus | tr -d '\r')
+  [[ "$locus_pid" =~ ^[0-9]+$ ]] || { echo 'Locus is not running before stop/save' >&2; return 1; }
+  foreground_locus
+  restored_pid=$(adb_device_timeout 5 shell pidof menion.android.locus | tr -d '\r')
+  if [[ "$restored_pid" != "$locus_pid" ]]; then
+    echo 'Locus restarted while restoring the foreground before stop/save' >&2
+    return 1
+  fi
+  wait_status recording_state RECORDING 10
+  behavior_checkpoint stop-save-command
+  watch_button select
+  sleep 1
+  watch_button down
+  watch_button select
+  sleep 1
+  watch_button select
+  wait_status last_command STOP_SAVE 15
+  wait_status last_command_result OK 15
+  wait_status recording_state STOPPED 30
+  behavior_checkpoint stop-save-complete
+}
+
 run_step_acceptance() {
   behavior_checkpoint recording-and-steps
   mute_locus_watch_notifications
@@ -313,15 +370,7 @@ if [[ "$PEBBLE_PLATFORM" == "emery" ]]; then
   watch_button back
   sleep 1
 
-  watch_button select
-  sleep 1
-  watch_button down
-  watch_button select
-  sleep 1
-  watch_button select
-  wait_status recording_state STOPPED 30
-  wait_status last_command STOP_SAVE 15
-  wait_status last_command_result OK 15
+  stop_and_save_recording
   watch_screenshot emery-stopped
 else
   if grep -q "Send watch heart rate to Locus" /tmp/trackglance-window.xml; then
@@ -350,13 +399,7 @@ else
   watch_button select
   wait_status recording_state RECORDING 30
   screen_off_supervision_recovery "STEPS"
-  watch_button select
-  sleep 1
-  watch_button down
-  watch_button select
-  sleep 1
-  watch_button select
-  wait_status recording_state STOPPED 30
+  stop_and_save_recording
 fi
 
 # Reject a system restart even if later UI recovery made the behavioral assertions pass.

@@ -302,6 +302,14 @@ marker. Missing controls remain recoverable within the bounded navigation loop. 
 the foreground activity, relay and Bridge status, UI dump, and checkpoint trace. The relay replaces
 an obsolete phone/QEMU pair on reconnect and records session IDs and disconnect reasons.
 
+Before watch connection, relay readiness requires the emulator subnet, default gateway, and relay
+control socket. API 34 `netd` can report a connected Wi-Fi network while failing to install its
+default gateway with `Network is unreachable`. If the subnet is present, the gateway is missing,
+and the captured `netd` error names that gateway, provisioning reconnects emulator Wi-Fi once.
+This recovery shares the original 45-second deadline and still requires the actual routes and
+relay control to become ready. Missing routes without that diagnostic, an unsuccessful reconnect,
+or an unavailable relay fail startup. It does not restart Android or retry application tests.
+
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
 [run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
 at commit `47d9eb36a3ec10d80bffe337686b5e36120f972d`. The 34-minute-41-second job built
@@ -598,6 +606,15 @@ queries during that interval. The isolated Pebble App receives its location and 
 permissions so its foreground service can run on Android 14. Locus notification mirroring is muted
 in that test profile to keep recording notifications from covering watch controls; TrackGlance
 outage notifications remain enabled.
+
+After screen-off supervision succeeds, both watch tests restore Locus to the foreground before
+Stop/Save. Locus 4.36.1 crashed in its own `StartScreen` during background stop/save in scheduled
+run [44107797865](https://github.com/ChristianHerget/trackglance/actions/runs/44107797865).
+This fixture workaround preserves screen-off supervision coverage; stop/save is verified with
+Locus foregrounded. Both platforms still send the command through the watch and require
+`last_command=STOP_SAVE`, `last_command_result=OK`, and `recording_state=STOPPED`.
+Foreground restoration, command dispatch, and completion have separate checkpoints. A failure
+prints bounded bridge status and Locus Java crash details alongside the retained diagnostics.
 
 During image publication, `tools/ci-images.env` records the API and system-image checksum belonging
 to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks

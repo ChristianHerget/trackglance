@@ -262,8 +262,9 @@ relayctl() {
 
 wait_for_relay_network() {
   local deadline=$((SECONDS + ${1:-45})) routes='' relay=''
+  local wifi_reconnected=false netd_errors=''
   while (( SECONDS < deadline )); do
-    routes=$(adb_device_timeout 5 shell 'ip -4 route show table all' 2>&1 || true)
+    routes=$(adb_device_until "$deadline" 5 shell 'ip -4 route show table all' 2>&1 || true)
     relay=$(relayctl status 2>&1 || true)
     if (( SECONDS < deadline )) \
       && grep -Eq '^10\.0\.2\.0/24 .*dev ' <<< "$routes" \
@@ -271,6 +272,20 @@ wait_for_relay_network() {
       && python3 -c 'import json,sys; s=json.load(sys.stdin); sys.exit(type(s.get("session_id")) is not int)' \
         <<< "$relay" 2>/dev/null; then
       return 0
+    fi
+    if [[ "$wifi_reconnected" == false ]] \
+      && grep -Eq '^10\.0\.2\.0/24 .*dev wlan0( |$)' <<< "$routes" \
+      && ! grep -Eq '^default via 10\.0\.2\.2 .*dev ' <<< "$routes"; then
+      netd_errors=$(adb_device_until "$deadline" 5 logcat -d -s netd:E 2>/dev/null | tail -c 8192 || true)
+      # API 34 netd can publish a connected network but fail its gateway installation.
+      # Reconnect only for that recorded error, once, before any watch connection or recording.
+      if grep -Eq 'Error adding route 0[.]0[.]0[.]0/0 -> 10[.]0[.]2[.]2 wlan0 to table [0-9]+: Network is unreachable' \
+        <<< "$netd_errors" && (( SECONDS < deadline )); then
+        echo 'Reconnecting emulator Wi-Fi once after netd failed to install its default gateway.' >&2
+        wifi_reconnected=true
+        adb_device_until "$deadline" 5 shell cmd wifi set-wifi-enabled disabled || break
+        adb_device_until "$deadline" 5 shell cmd wifi set-wifi-enabled enabled || break
+      fi
     fi
     sleep 0.5
   done
