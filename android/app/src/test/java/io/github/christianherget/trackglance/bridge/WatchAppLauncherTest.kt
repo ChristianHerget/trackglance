@@ -7,6 +7,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -125,8 +126,13 @@ class WatchAppLauncherTest {
                     timeoutMillis = 25,
                 )
 
-            assertEquals(WatchAppLaunchResult.TIMED_OUT, blocked.launch())
+            // Enter the launch on this event loop, then establish that the foreign worker is
+            // blocked before letting the loop process its timeout. A loaded host may otherwise
+            // cancel the queued lookup before its worker starts, which is valid production
+            // behavior.
+            val running = async(start = CoroutineStart.UNDISPATCHED) { blocked.launch() }
             assertTrue(lookupStarted.await(1, TimeUnit.SECONDS))
+            assertEquals(WatchAppLaunchResult.TIMED_OUT, running.await())
             releaseLookup.countDown()
             assertTrue(lookupExited.await(1, TimeUnit.SECONDS))
             // The lookup's finally block runs before the executor releases its permit.
