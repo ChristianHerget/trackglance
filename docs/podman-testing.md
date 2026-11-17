@@ -599,6 +599,15 @@ permissions so its foreground service can run on Android 14. Locus notification 
 in that test profile to keep recording notifications from covering watch controls; TrackGlance
 outage notifications remain enabled.
 
+After screen-off supervision succeeds, both watch tests restore Locus to the foreground before
+Stop/Save. Locus 4.36.1 crashed in its own `StartScreen` during background stop/save in scheduled
+run [44107797865](https://github.com/ChristianHerget/trackglance/actions/runs/44107797865).
+This fixture workaround preserves screen-off supervision coverage; stop/save is verified with
+Locus foregrounded. Both platforms still send the command through the watch and require
+`last_command=STOP_SAVE`, `last_command_result=OK`, and `recording_state=STOPPED`.
+Foreground restoration, command dispatch, and completion have separate checkpoints. A failure
+prints bounded bridge status and Locus Java crash details alongside the retained diagnostics.
+
 During image publication, `tools/ci-images.env` records the API and system-image checksum belonging
 to its immutable emulator pin. The source image uses `tools/podman/versions.env`. Bootstrap checks
 the actual running API before recording golden-state provenance. This allows the protected gate
