@@ -302,6 +302,14 @@ marker. Missing controls remain recoverable within the bounded navigation loop. 
 the foreground activity, relay and Bridge status, UI dump, and checkpoint trace. The relay replaces
 an obsolete phone/QEMU pair on reconnect and records session IDs and disconnect reasons.
 
+Before watch connection, relay readiness requires the emulator subnet, default gateway, and relay
+control socket. API 34 `netd` can report a connected Wi-Fi network while failing to install its
+default gateway with `Network is unreachable`. If the subnet is present, the gateway is missing,
+and the captured `netd` error names that gateway, provisioning reconnects emulator Wi-Fi once.
+This recovery shares the original 45-second deadline and still requires the actual routes and
+relay control to become ready. Missing routes without that diagnostic, an unsuccessful reconnect,
+or an unavailable relay fail startup. It does not restart Android or retry application tests.
+
 Hosted acceptance was proved on a standard four-CPU `ubuntu-24.04` runner by
 [run 32677775620](https://github.com/ChristianHerget/trackglance/actions/runs/32677775620)
 at commit `47d9eb36a3ec10d80bffe337686b5e36120f972d`. The 34-minute-41-second job built

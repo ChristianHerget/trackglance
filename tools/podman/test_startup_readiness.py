@@ -53,6 +53,7 @@ start_android trackglance-test-android data runtime
         script = r'''
 source "$DEVICE_LIB"
 tick=0
+wifi_reconnections=0
 sleep() { tick=$((tick + 1)); SECONDS=$((SECONDS + 1)); }
 timeout() { [[ "$1" != --kill-after=* ]] || shift; shift; "$@"; }
 adb() { :; }
@@ -65,16 +66,39 @@ adb_device_timeout() {
     *'test -d /sdcard'*) [[ "$SCENARIO" != missing-storage && "$tick" -ge 2 ]] ;;
     'shell ip -4 route show table all')
       echo '10.0.2.0/24 dev wlan0 proto kernel scope link src 10.0.2.16 table 1016'
-      if [[ "$SCENARIO" != missing-route && "$tick" -ge 1 ]]; then
+      if [[ "$SCENARIO" == recovery-* ]]; then
+        if (( wifi_reconnections > 0 )) && [[ "$SCENARIO" != recovery-no-route ]]; then
+          echo 'default via 10.0.2.2 dev wlan0 table 1016'
+        fi
+      elif [[ "$SCENARIO" != missing-route && "$SCENARIO" != other-gateway && "$tick" -ge 1 ]]; then
         echo 'default via 10.0.2.2 dev wlan0 table 1016'
       fi ;;
+    'logcat -d -s netd:E')
+      if [[ "$SCENARIO" == recovery-* ]]; then
+        echo '11-17 21:30:24 E netd    : Error adding route 0.0.0.0/0 -> 10.0.2.2 wlan0 to table 1016: Network is unreachable'
+      elif [[ "$SCENARIO" == other-gateway ]]; then
+        echo 'E netd: Error adding route 0.0.0.0/0 -> 10.0.3.2 wlan0 to table 1016: Network is unreachable'
+      fi ;;
+    'shell cmd wifi set-wifi-enabled disabled')
+      echo wifi-disabled
+      [[ "$SCENARIO" != recovery-disable-failed ]] ;;
+    'shell cmd wifi set-wifi-enabled enabled')
+      echo wifi-enabled
+      wifi_reconnections=$((wifi_reconnections + 1)) ;;
     'shell dumpsys connectivity') echo 'last route installation failed' ;;
   esac
 }
 set_emulator_test_location() { echo configured; }
 relayctl() {
+  [[ "$SCENARIO" != recovery-no-relay ]] || return 1
   if [[ "$SCENARIO" == delayed-relay && "$tick" -lt 2 ]]; then return 1; fi
   echo '{"session_id":0,"phone_connected":false,"qemu_connected":false}'
+}
+grep() {
+  if [[ "$SCENARIO" == recovery-deadline && "$*" == *'Error adding route'* ]]; then
+    SECONDS=$((SECONDS + 10))
+  fi
+  command grep "$@"
 }
 eval "$COMMAND"
 '''
@@ -107,6 +131,39 @@ eval "$COMMAND"
         self.assertIn("Relay network readiness expired", result.stderr)
         self.assertIn("10.0.2.16", result.stderr)
         self.assertIn("last route installation failed", result.stderr)
+
+    def test_recorded_netd_gateway_failure_reconnects_wifi_then_requires_live_routes(self):
+        result = self.run_device("recovery-ready", 'wait_for_relay_network 4; test "$wifi_reconnections" == 1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["wifi-disabled", "wifi-enabled"])
+        self.assertIn("Reconnecting emulator Wi-Fi once", result.stderr)
+
+    def test_healthy_missing_and_unrelated_gateway_failures_never_reset_wifi(self):
+        for scenario in ("delayed-relay", "missing-route", "other-gateway"):
+            with self.subTest(scenario=scenario):
+                result = self.run_device(scenario, 'wait_for_relay_network 4')
+                self.assertNotIn("wifi-", result.stdout)
+                self.assertNotIn("Reconnecting emulator Wi-Fi", result.stderr)
+
+    def test_recovery_without_routes_or_relay_still_fails_after_one_reconnection(self):
+        for scenario in ("recovery-no-route", "recovery-no-relay"):
+            with self.subTest(scenario=scenario):
+                result = self.run_device(scenario, 'wait_for_relay_network 4')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout.splitlines(), ["wifi-disabled", "wifi-enabled"])
+                self.assertIn("Relay network readiness expired", result.stderr)
+
+    def test_failed_wifi_command_does_not_retry_or_claim_readiness(self):
+        result = self.run_device("recovery-disable-failed", 'wait_for_relay_network 4')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.splitlines(), ["wifi-disabled"])
+        self.assertIn("Relay network readiness expired", result.stderr)
+
+    def test_gateway_diagnostics_cannot_start_recovery_after_the_original_deadline(self):
+        result = self.run_device("recovery-deadline", 'wait_for_relay_network 4')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("wifi-", result.stdout)
+        self.assertNotIn("Reconnecting emulator Wi-Fi", result.stderr)
 
     def test_partial_and_malformed_ui_dumps_cannot_supply_readiness(self):
         for scenario in ("partial", "malformed"):
