@@ -196,6 +196,10 @@ release AAR metadata in the selected build image. An incompatible dependency sto
 Gradle invocation to passing runs; its duration is recorded separately in the check report.
 The full build and runtime tests still run after this check.
 
+Documentation installs its pinned Python requirements with the container's pinned `uv` into
+`build/docs-venv`. The requirements stamp is written only after installation succeeds. Matching
+healthy environments reuse their dependencies; missing Sphinx modules trigger installation again.
+
 Dependabot groups AndroidX updates separately from other Gradle dependencies. A library can raise
 its required compile SDK in a minor or patch update, so version grouping alone cannot establish
 compatibility. When a new SDK is required, first add its pinned platform revision to the source

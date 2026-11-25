@@ -68,7 +68,7 @@ Run modules, classes, or individual methods with native unittest selection:
 ```
 
 The script-policy groups are `test_action_pin_policy`, `test_release_workflows`, `test_ci_policy`,
-`test_github_checks`, `test_synthetic_reports`, `test_synthetic_preflight`, `test_dependabot_auto_merge`, `test_published_images`, `test_ci_image_publication`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
+`test_github_checks`, `test_synthetic_reports`, `test_synthetic_preflight`, `test_documentation_dependencies`, `test_dependabot_auto_merge`, `test_published_images`, `test_ci_image_publication`, `test_device_readiness`, `test_cleanup`, `test_static_preflight`,
 `test_acceptance_orchestration`, `test_acceptance_components`, `test_settings_navigation`,
 `test_startup_readiness`, `test_acceptance_session`,
 `test_relay`, and `test_manual_harness`. Fixture validation and fingerprinting
