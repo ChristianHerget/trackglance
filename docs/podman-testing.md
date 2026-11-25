@@ -46,7 +46,8 @@ and all test runs publish no ports.
 | --- | --- |
 | Build image | `debian:12-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241` |
 | Android command-line tools | `13114758`, SHA-256 `7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee` |
-| Android SDK packages | Platform Tools 37.0.1; API 32 revision 1; API 36 revision 2; API 37.0 revision 2; Build Tools 36.0.0; NDK 28.2.13676358; CMake 3.22.1 |
+| Android SDK packages | Platform Tools 37.0.1; API 32 revision 1; API 36 revision 2; API 37.0 revision 2; API 37.1 revision 1; Build Tools 36.0.0; NDK 28.2.13676358; CMake 3.22.1 |
+| Android Platform Tools archive | `platform-tools_r37.0.1-linux.zip`, SHA-256 `d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1` |
 | Android emulator container scripts | `0654f694b46794fae4b178f1e1a17cb60c5d2d34` |
 | Android emulator WebRTC protocol definitions | AEMU `emu-main-dev` commit `863dffe2c8c7d278c918f1fc409f85d3188c691e` |
 | API 34 Google APIs x86_64 image | revision 14, `x86_64-34_r14.zip`, SHA-256 `783a40134baf4f3012d4464fbe1571b1612a0dbd2e7a44d14bd8328923443833` |
@@ -188,6 +189,22 @@ The protected publisher builds the Kotlin/CI toolchain without the full Android 
 for compiling the Pebble App fixture. It retains the pinned C analyzer, formatter, and headers.
 Synthetic Android builds cache compilation outputs, but execute JVM and instrumentation tests
 on every run. CodeQL disables compilation caching so its tracer observes the build.
+
+Before provisioning the synthetic emulator, the Android job checks debug, instrumentation, and
+release AAR metadata in the selected build image. An incompatible dependency stops the job at
+`android-dependency-compatibility`, retaining AGP's SDK requirement diagnostics. This adds one
+Gradle invocation to passing runs; its duration is recorded separately in the check report.
+The full build and runtime tests still run after this check.
+
+Dependabot groups AndroidX updates separately from other Gradle dependencies. A library can raise
+its required compile SDK in a minor or patch update, so version grouping alone cannot establish
+compatibility. When a new SDK is required, first add its pinned platform revision to the source
+build image while retaining the application's current compile SDK. Merge that prerequisite,
+publish through `Publish CI images`, and verify the replacement image set. Then update the
+application's explicit major/minor compile SDK, the immutable image pins, and the Kotlin CodeQL
+workflow's matching image digest together. Compare source and published acceptance on that
+candidate before merging the adoption change. Compile SDK upgrades do not require changing
+`minSdk`, `targetSdk`, or the emulator API.
 
 The `Full acceptance` workflow runs weekly on main and can be dispatched manually, including before
 tagging. It retains published/source/compare provisioning, downloads the pinned Locus fixture only
