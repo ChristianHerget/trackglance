@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "io.github.christianherget.trackglance.bridge"
-    compileSdk = 37
+    compileSdk { version = release(37) { minorApiLevel = 1 } }
 
     val releaseKeystorePath = providers.environmentVariable("ANDROID_RELEASE_KEYSTORE_PATH").orNull
     val releaseKeystorePassword =
