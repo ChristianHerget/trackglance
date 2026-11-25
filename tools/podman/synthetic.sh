@@ -61,6 +61,12 @@ synthetic_watch() {
 
 synthetic_android() {
   prepare_synthetic_tools
+  check_stage android-dependency-compatibility
+  run_static_container bash -euo pipefail -c '
+    python3 tools/podman/check-gradle.py ./gradlew --build-cache \
+      :android:app:checkDebugAarMetadata :android:app:checkDebugAndroidTestAarMetadata \
+      :android:app:checkReleaseAarMetadata
+  '
   check_stage android-provisioning
   select_acceptance_engine
   ensure_cache_volumes

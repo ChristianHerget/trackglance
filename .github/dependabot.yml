@@ -21,9 +21,13 @@ updates:
       time: "06:00"
       timezone: Europe/Berlin
     groups:
+      androidx:
+        update-types: ["minor", "patch"]
+        patterns: ["androidx.*"]
       gradle:
         update-types: ["minor", "patch"]
         patterns: ["*"]
+        exclude-patterns: ["androidx.*"]
   - package-ecosystem: npm
     directory: /watchapp
     schedule:

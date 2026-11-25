@@ -1,3 +1,5 @@
+import fnmatch
+import json
 import re
 import unittest
 from script_test_support import (
@@ -120,6 +122,43 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
                 self.assertIn("timezone: Europe/Berlin", area)
                 self.assertNotIn("ignore:", area)
 
+    def test_androidx_updates_cannot_block_the_general_gradle_group(self):
+        source = DEPENDABOT.read_text(encoding="utf-8")
+        gradle = source.split("  - package-ecosystem: gradle\n", 1)[1].split(
+            "  - package-ecosystem:", 1
+        )[0]
+        groups = re.findall(r"^      (\S+):\n((?:^        .*\n)+)", gradle, re.M)
+
+        def matching_group(dependency):
+            for name, rules in groups:
+                patterns = json.loads(re.search(r"^        patterns: (.+)$", rules, re.M)[1])
+                excluded = re.search(r"^        exclude-patterns: (.+)$", rules, re.M)
+                exclusions = json.loads(excluded[1]) if excluded else []
+                if any(fnmatch.fnmatchcase(dependency, pattern) for pattern in patterns) and not any(
+                    fnmatch.fnmatchcase(dependency, pattern) for pattern in exclusions
+                ):
+                    return name
+            return None
+
+        self.assertEqual({name for name, _ in groups}, {"androidx", "gradle"})
+        for name, rules in groups:
+            with self.subTest(group=name):
+                kinds = json.loads(re.search(r"^        update-types: (.+)$", rules, re.M)[1])
+                self.assertEqual(set(kinds), {"minor", "patch"})
+        for dependency in (
+            "androidx.compose:compose-bom",
+            "androidx.core:core-ktx",
+            "androidx.lifecycle:lifecycle-runtime-compose",
+        ):
+            with self.subTest(dependency=dependency):
+                self.assertEqual(matching_group(dependency), "androidx")
+        for dependency in ("com.android.application", "org.cyclonedx.bom", "gradle-wrapper"):
+            with self.subTest(dependency=dependency):
+                self.assertEqual(matching_group(dependency), "gradle")
+        # The exclusion must also hold independently of YAML group ordering.
+        general = dict(groups)["gradle"]
+        self.assertIn('exclude-patterns: ["androidx.*"]', general)
+
     def test_actionlint_is_checksum_pinned_in_the_build_container(self):
         containerfile = BUILD_CONTAINERFILE.read_text(encoding="utf-8")
         versions = VERSIONS.read_text(encoding="utf-8")
@@ -141,6 +180,19 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
             "d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
             versions,
         )
+
+    def test_platform_tools_use_the_pinned_archive_instead_of_sdkmanagers_latest(self):
+        source = BUILD_CONTAINERFILE.read_text(encoding="utf-8")
+        versions = VERSIONS.read_text(encoding="utf-8")
+        self.assertIn("platform-tools_r${ANDROID_PLATFORM_TOOLS_VERSION}-linux.zip", source)
+        self.assertIn(
+            'echo "${ANDROID_PLATFORM_TOOLS_SHA256}  /tmp/android-tools/platform-tools.zip"'
+            ' | sha256sum --check --strict',
+            source,
+        )
+        self.assertRegex(versions, r"(?m)^ANDROID_PLATFORM_TOOLS_SHA256=[a-f0-9]{64}$")
+        install = source.split("sdkmanager --install", 1)[1].split("sdk_revision", 1)[0]
+        self.assertNotIn('"platform-tools"', install)
 
     def test_full_acceptance_is_weekly_and_manual(self):
         source = (ROOT / ".github/workflows/acceptance.yml").read_text()
