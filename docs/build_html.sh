@@ -34,7 +34,7 @@ REQUIREMENTS_STAMP="$VENV_DIR/.requirements.sha256"
 
 if [[ ! -f "$REQUIREMENTS_STAMP" ]] || [[ "$(cat "$REQUIREMENTS_STAMP")" != "$REQUIREMENTS_HASH" ]] || \
     ! "$VENV_DIR/bin/python" -c 'import sphinx, sphinx_rtd_theme'; then
-  "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check --requirement "$REQUIREMENTS"
+  uv pip install --python "$VENV_DIR/bin/python" --requirement "$REQUIREMENTS"
   printf '%s\n' "$REQUIREMENTS_HASH" > "$REQUIREMENTS_STAMP"
 fi
 
